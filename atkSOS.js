@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  Automação do Caçadas/Atacar com tratamento de Captcha, Firebase e recuperação de erros HTTP 500.
+// @version      2.2
+// @description  Automação do Caçadas/Atacar com tratamento de Captcha, Firebase, recuperação de erros HTTP 500 e nível dinâmico via localStorage.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -30,15 +30,18 @@
     measurementId: "G-LDVNCKS73Z"
   };
 
-  // Credenciais do Usuário
+  // Credenciais do Usuário e Configuração de Caçadas
   var USUARIO_DEFAULT = 'Shiroe';
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
+  // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
+  var NIVEL_CACADAS_DEFAULT = '1';
+  var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+
   // --- DETECÇÃO DE ERROS DE SERVIDOR (HTTP 500, 502, 503, 504, etc.) ---
   function checarErroServidor() {
-    // 1. Checa por elementos específicos de erro
     var elErro = document.querySelector('.error-code');
     if (elErro) {
       var txtErro = (elErro.innerText || elErro.textContent || '').toUpperCase();
@@ -47,7 +50,6 @@
       }
     }
 
-    // 2. Checa o texto geral do documento para páginas de erro genéricas do navegador/servidor
     var textoCorpo = (document.body ? document.body.innerText || document.body.textContent || '' : '').toUpperCase();
     if (
       textoCorpo.indexOf('HTTP ERROR 500') !== -1 ||
@@ -248,7 +250,7 @@
     window.location.href = URL_CACADAS;
   }
 
-  console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL);
+  console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL + ' | Nível Caçada: ' + NIVEL_CACADAS_FINAL);
 
   setTimeout(function() {
     try {
@@ -341,7 +343,7 @@
             var selectNivel = document.getElementById('por_nivel');
 
             if (selectNivel) {
-              selectNivel.value = '1';
+              selectNivel.value = NIVEL_CACADAS_FINAL;
               selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
 
               var formNivel = selectNivel.closest('form');
