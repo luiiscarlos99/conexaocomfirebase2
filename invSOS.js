@@ -1,9 +1,12 @@
 var TEMPO_ESPERA = 2000;
 var TEMPO_RELOAD_FALHA = 20000;
-var TEMPO_RELOAD_PADRAO = 60000; // 1 minuto por padrão
-var TEMPO_RELOAD_GERENCIADA = 2000; // 2 segundos se for conta gerenciada
+var TEMPO_RELOAD_PADRAO = 60000; // 1 minuto
+var TEMPO_RELOAD_GERENCIADA = 2000; // 2 segundos
 var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
 var reloadAgendado = false;
+
+// URL do Webhook do Discord
+var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
 
 // Configurações do Firebase Realtime Database
 var FIREBASE_CONFIG = {
@@ -23,8 +26,53 @@ var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
 var SENHA_DEFAULT = 'lulacarlos';
 var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
+// --- CARREGA O HTML2CANVAS DINAMICAMENTE ---
+function carregarBibliotecaPrint() {
+  if (window.html2canvas) return Promise.resolve();
+  
+  return new Promise(function(resolve, reject) {
+    var script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// --- CAPTURA O PRINT E ENVIA AO DISCORD DE FORMA ASSÍNCRONA ---
+async function capturarEEnviarPrintDiscord(motivo) {
+  if (!DISCORD_WEBHOOK_URL) {
+    console.warn('[Discord] URL de Webhook não configurada.');
+    return;
+  }
+
+  try {
+    await carregarBibliotecaPrint();
+
+    var canvas = await html2canvas(document.body, { logging: false, useCORS: true });
+    
+    canvas.toBlob(async function(blob) {
+      if (!blob) return;
+
+      var formData = new FormData();
+      formData.append('file', blob, 'print-invasor.png');
+      formData.append('content', '⚔️ **Ataque disparado no Invasor!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`');
+
+      await fetch(DISCORD_WEBHOOK_URL, {
+        method: 'POST',
+        body: formData
+      });
+
+      console.log('[Discord] Print enviado com sucesso!');
+    }, 'image/png');
+
+  } catch (erro) {
+    console.error('[Discord] Erro ao processar envio do print:', erro);
+  }
+}
+
 // --- FUNÇÃO PARA DISPARAR 10 ATAQUES SEGUIDOS (1ms) ---
-function executarAtaqueCombo() {
+function executarAtaqueCombo(motivo) {
   var btnAtacar = document.querySelector('form[action*="invasor"] input[type="submit"]') ||
                   document.querySelector('form[action*="atacar"] input[type="submit"]') ||
                   document.querySelector('input[type="submit"][value*="Atacar"]') ||
@@ -35,8 +83,12 @@ function executarAtaqueCombo() {
     return;
   }
 
-  console.log('[Invasor] Gatilho acionado! Iniciando combo de 10 ataques (1ms)...');
-  
+  console.log('[Invasor] Gatilho acionado (' + motivo + ')! Disparando print e ataques...');
+
+  // Dispara o envio do print em segundo plano
+  capturarEEnviarPrintDiscord(motivo);
+
+  // Executa os 10 ataques seguidos a cada 1ms
   var disparos = 0;
   var intervalo = setInterval(function() {
     disparos++;
@@ -50,30 +102,22 @@ function executarAtaqueCombo() {
   }, 1);
 }
 
-// --- VERIFICAÇÃO DE MENSAGENS E ESTADOS DA TELA ---
-function verificarGatilhosAtaque() {
+// --- VERIFICAÇÃO DE GATILHO NA TELA ---
+function verificarGatilhoAtaque() {
   var textoPagina = document.body ? document.body.innerText : '';
 
-  // 1. Mensagem de bloqueio por vital da imagem
-  var textoVital = "Contas em automação não podem atacar o invasor quando a vital dele está abaixo de 30.000";
-  if (textoPagina.indexOf(textoVital) !== -1) {
-    console.warn('[Invasor] Alerta de Vital detectado na tela! Disparando ataque...');
-    executarAtaqueCombo();
-    return true;
-  }
-
-  // 2. Verifica ausência do botão e do tempo de espera ("próximo ataque")
   var btnAtacar = document.querySelector('form[action*="invasor"] input[type="submit"]') ||
                   document.querySelector('form[action*="atacar"] input[type="submit"]') ||
                   document.querySelector('input[type="submit"][value*="Atacar"]') ||
                   document.querySelector('button[type="submit"]');
 
   var temProximoAtaque = textoPagina.toLowerCase().indexOf("próximo ataque") !== -1 || 
-                         textoPagina.toLowerCase().indexOf("proximo ataque") !== -1;
+                         textoPagina.toLowerCase().indexOf("1proximo ataque") !== -1;
 
+  // Se NÃO tem botão E NÃO tem o texto "próximo ataque" -> Dispara!
   if (!btnAtacar && !temProximoAtaque) {
-    console.warn('[Invasor] Nem o botão nem o texto de "próximo ataque" foram encontrados. Disparando ataque...');
-    executarAtaqueCombo();
+    console.warn('[Invasor] Ausência do botão de ataque e sem tempo de próximo ataque na tela!');
+    executarAtaqueCombo('Sem Botão e Sem Próximo Ataque');
     return true;
   }
 
@@ -86,7 +130,7 @@ function checarContaGerenciada() {
   var possuiTextoGerenciada = document.body && document.body.innerText.indexOf("Você está jogando com a conta gerenciada") !== -1;
 
   if (linkVoltar || possuiTextoGerenciada) {
-    console.log('[Invasor] Conta gerenciada detectada na página!');
+    console.log('[Invasor] Conta gerenciada detectada na página.');
     return true;
   }
   return false;
@@ -121,7 +165,7 @@ function iniciarEscutaFirebaseAtaque() {
 
             if (comando === 'atacar' || comando === '1') {
               fetch(urlDelete, { method: 'DELETE' }).finally(function() {
-                executarAtaqueCombo();
+                executarAtaqueCombo('Comando Manual via Firebase');
               });
             }
           }
@@ -194,13 +238,13 @@ setTimeout(function() {
     // 2. TELA DO INVASOR
     if (urlAtual.indexOf('invasor') !== -1) {
 
-      // A) Checa as condições na tela (mensagem de vital ou ausência de botão + próximo ataque)
-      verificarGatilhosAtaque();
+      // A) Checa gatilho de ausência de botão + próximo ataque
+      verificarGatilhoAtaque();
 
-      // B) Inicia a escuta no Firebase para o comando manual/remoto
+      // B) Inicia a escuta remota do Firebase
       iniciarEscutaFirebaseAtaque();
 
-      // C) Define o tempo de reload (2s para conta gerenciada, 1m padrão)
+      // C) Define a velocidade de reload (2s para gerenciada, 1m para conta padrão)
       var tempoReloadAtual = checarContaGerenciada() ? TEMPO_RELOAD_GERENCIADA : TEMPO_RELOAD_PADRAO;
 
       console.log('[Script Invasor] Reload agendado para daqui a ' + (tempoReloadAtual / 1000) + ' segundo(s).');
