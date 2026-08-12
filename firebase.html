@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Enviar Comando ao Firebase</title>
+  <title>Painel de Envio Firebase</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -34,6 +34,41 @@
     .erro { color: #ff4444; }
     .info { color: #ffbb00; }
     .apagado { color: #aaa; font-size: 0.9em; }
+
+    /* Estilos do formulário manual */
+    .form-container {
+      margin-top: 15px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input[type="text"] {
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #2a2a2a;
+      color: #fff;
+      font-size: 16px;
+      text-align: center;
+      outline: none;
+    }
+    input[type="text"]:focus {
+      border-color: #00ff00;
+    }
+    button {
+      padding: 10px;
+      border-radius: 4px;
+      border: none;
+      background: #00ff00;
+      color: #000;
+      font-weight: bold;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #00cc00;
+    }
   </style>
 </head>
 <body>
@@ -42,22 +77,27 @@
     <h2>Painel de Envio</h2>
     <p>Status do Envio:</p>
     <div id="status" class="status">Verificando URL...</div>
+
+    <!-- Formulário exibido caso não haja parâmetro na URL -->
+    <div id="containerManual" class="form-container" style="display: none;">
+      <input type="text" id="inputCodigo" placeholder="Digite o código aqui" maxlength="10" autocomplete="off">
+      <button id="btnEnviar" onclick="enviarCodigoManual()">Enviar ao Firebase</button>
+    </div>
   </div>
 
   <script>
     // URL da REST API do seu Firebase Realtime Database
     var FIREBASE_URL = 'https://shizuo-a07d9-default-rtdb.firebaseio.com/comando_recebido.json';
 
-    // 1. Captura o parâmetro da URL (?codigo=... ou ?c=...)
-    var params = new URLSearchParams(window.location.search);
-    var codigo = params.get('codigo') || params.get('c');
-
     var divStatus = document.getElementById('status');
+    var containerManual = document.getElementById('containerManual');
+    var inputCodigo = document.getElementById('inputCodigo');
 
-    if (codigo) {
+    // Função central para disparar o envio ao Firebase e programar a exclusão
+    function processarEnvioFirebase(codigo) {
       divStatus.innerHTML = 'Enviando código <strong>' + codigo + '</strong>...';
 
-      // 2. Envia o código via PUT para a REST API do Firebase
+      // Envia via PUT (sem recarregar a página)
       fetch(FIREBASE_URL, {
         method: 'PUT',
         headers: {
@@ -70,33 +110,68 @@
           divStatus.innerHTML = '<span class="sucesso">✓ Código "' + codigo + '" enviado!</span><br>' +
                                 '<span class="info">Aguardando 5s para apagar do banco...</span>';
 
-          // 3. Timeout de 5 segundos para apagar o dado do Firebase
+          // Oculta o formulário durante o envio bem-sucedido
+          containerManual.style.display = 'none';
+
+          // Timeout de 5 segundos para apagar
           setTimeout(function() {
-            fetch(FIREBASE_URL, {
-              method: 'DELETE'
-            })
-            .then(function(resDeletar) {
-              if (resDeletar.ok) {
-                divStatus.innerHTML += '<br><span class="apagado">🗑️ [5s concluídos] Comando apagado do Firebase com sucesso!</span>';
-              } else {
-                divStatus.innerHTML += '<br><span class="erro">✕ Erro ao apagar o comando (Status: ' + resDeletar.status + ')</span>';
-              }
-            })
-            .catch(function(erroDelete) {
-              divStatus.innerHTML += '<br><span class="erro">✕ Erro de conexão ao apagar: ' + erroDelete.message + '</span>';
-            });
+            fetch(FIREBASE_URL, { method: 'DELETE' })
+              .then(function(resDeletar) {
+                if (resDeletar.ok) {
+                  divStatus.innerHTML += '<br><span class="apagado">🗑️ [5s concluídos] Comando apagado do Firebase!</span>';
+                } else {
+                  divStatus.innerHTML += '<br><span class="erro">✕ Erro ao apagar (Status: ' + resDeletar.status + ')</span>';
+                }
+              })
+              .catch(function(erroDelete) {
+                divStatus.innerHTML += '<br><span class="erro">✕ Erro de conexão ao apagar: ' + erroDelete.message + '</span>';
+              })
+              .finally(function() {
+                // Reexibe o input para um novo envio caso queira enviar outro código
+                containerManual.style.display = 'flex';
+                inputCodigo.value = '';
+              });
           }, 5000);
 
         } else {
           divStatus.innerHTML = '<span class="erro">✕ Erro HTTP ao enviar: ' + resposta.status + '</span>';
+          containerManual.style.display = 'flex';
         }
       })
       .catch(function(erro) {
         divStatus.innerHTML = '<span class="erro">✕ Erro de conexão: ' + erro.message + '</span>';
+        containerManual.style.display = 'flex';
       });
+    }
 
+    // Função acionada ao clicar no botão "Enviar"
+    function enviarCodigoManual() {
+      var valor = inputCodigo.value.trim();
+      if (!valor) {
+        alert('Por favor, digite um código antes de enviar.');
+        return;
+      }
+      processarEnvioFirebase(valor);
+    }
+
+    // Permite enviar ao pressionar "Enter" no input
+    inputCodigo.addEventListener('keyup', function(evento) {
+      if (evento.key === 'Enter') {
+        enviarCodigoManual();
+      }
+    });
+
+    // --- INICIALIZAÇÃO DA PÁGINA ---
+    var params = new URLSearchParams(window.location.search);
+    var codigoUrl = params.get('codigo') || params.get('c');
+
+    if (codigoUrl) {
+      // Caso 1: Código veio direto na URL (?codigo=123)
+      processarEnvioFirebase(codigoUrl);
     } else {
-      divStatus.innerHTML = '<span class="erro">Nenhum código fornecido.<br>Uso: ?codigo=SEU_CODIGO</span>';
+      // Caso 2: Nenhum código na URL -> Exibe a interface manual
+      divStatus.innerHTML = '<span class="info">Nenhum código na URL.<br>Digite abaixo para enviar:</span>';
+      containerManual.style.display = 'flex';
     }
   </script>
 
