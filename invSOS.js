@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.1
-// @description  Monitor de Invasor via Firebase com busca de botão otimizada para abas em segundo plano
+// @version      3.2
+// @description  Automação do Invasor: Sinaliza ausência ao Firebase e executa combo via ordem remota
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -16,7 +16,7 @@
   var TEMPO_RELOAD_GERENCIADA = 2000; // 2 segundos
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var reloadAgendado = false;
-  var jaAtacouNestaPagina = false;
+  var jaAtacouNestaPagina = false; // Trava contra múltiplos disparos no mesmo ciclo
 
   // URL do Webhook do Discord
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
@@ -81,26 +81,26 @@
     }
   }
 
-  // --- BUSCA O BOTÃO DE ATAQUE NA TELA (MÉTODO AMPLIADO & SEGURO PARA ABAS EM SEGUNDO PLANO) ---
+  // --- BUSCA O BOTÃO DE ATAQUE NO DOM ---
   function obterBotaoAtaque() {
     var btn = null;
 
-    // 1. Tenta dentro do formulário do invasor
+    // 1. Busca dentro do formulário do invasor
     var formInvasor = document.querySelector('form[action*="invasor"]');
     if (formInvasor) {
       btn = formInvasor.querySelector('input[type="submit"]') || 
-            formInvasor.querySelector('button[type="submit"]') ||
+            formInvasor.querySelector('button[type="submit"]') || 
             formInvasor.querySelector('input[value="Atacar"]');
       if (btn) return btn;
     }
 
     // 2. Busca direta por name ou value
     btn = document.querySelector('input[name="atacar"]') || 
-          document.querySelector('input[value="Atacar"]') ||
+          document.querySelector('input[value="Atacar"]') || 
           document.querySelector('button[name="atacar"]');
     if (btn) return btn;
 
-    // 3. Varredura por texto "atacar" em qualquer input submit ou button
+    // 3. Varredura por texto "atacar" em botões ou submit inputs
     var candidatos = document.querySelectorAll('input[type="submit"], button');
     for (var i = 0; i < candidatos.length; i++) {
       var el = candidatos[i];
@@ -116,7 +116,7 @@
   // --- ENVIA COMANDO DE ATAQUE PARA O FIREBASE VIA REST ---
   function enviarComandoAtaqueFirebase() {
     var urlComando = FIREBASE_CONFIG.databaseURL + '/comando_atacar.json';
-    console.warn('[Firebase] Nem botão nem cooldown na tela. Enviando "atacar" para a rede...');
+    console.warn('[Firebase] Nem botão nem cooldown detectados na tela. Enviando comando "atacar" para a rede...');
 
     fetch(urlComando, {
       method: 'PUT',
@@ -131,15 +131,17 @@
     });
   }
 
-  // --- FUNÇÃO PARA DISPARAR 10 ATAQUES SEGUIDOS COM TENTATIVAS DE REBUSCA DO BOTÃO ---
+  // --- FUNÇÃO PARA DISPARAR COMBO DE ATAQUES (COM RETRY PARA ENCONTRAR O BOTÃO) ---
   function executarAtaqueCombo(motivo) {
     if (jaAtacouNestaPagina) {
-      console.warn('[Invasor] Ataque já foi disparado neste ciclo. Ignorando.');
+      console.warn('[Invasor] Ataque já foi disparado neste ciclo. Ignorando chamada duplicada.');
       return;
     }
 
     var tentativas = 0;
-    var maxTentativas = 15; // Tenta por 3 segundos (15 x 200ms)
+    var maxTentativas = 15; // Tenta localizar por 3 segundos (15 x 200ms)
+
+    console.log('[Invasor] Ordem de ataque recebida. Procurando botão de ataque na página...');
 
     var timerBusca = setInterval(function() {
       tentativas++;
@@ -147,9 +149,9 @@
 
       if (btnAtacar) {
         clearInterval(timerBusca);
-        jaAtacouNestaPagina = true;
+        jaAtacouNestaPagina = true; // Ativa a trava
 
-        console.log('[Invasor] Botão localizado! Executando combo (' + motivo + ')...');
+        console.log('[Invasor] Botão localizado! Disparando print e combo (' + motivo + ')...');
         capturarEEnviarPrintDiscord(motivo);
 
         var disparos = 0;
@@ -166,12 +168,12 @@
 
       } else if (tentativas >= maxTentativas) {
         clearInterval(timerBusca);
-        console.error('[Invasor] Botão de ataque não encontrado no DOM após várias tentativas.');
+        console.error('[Invasor] Erro: Botão de ataque não foi encontrado na página após ' + maxTentativas + ' tentativas.');
       }
     }, 200);
   }
 
-  // --- VERIFICAÇÃO DE ESTADO ---
+  // --- VERIFICAÇÃO DE ESTADO DA TELA ---
   function verificarGatilhoAtaque() {
     var btnAtacar = obterBotaoAtaque();
     var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
@@ -184,15 +186,15 @@
       temTimer: temTimer
     });
 
-    // REGRA: SE NÃO TEM COOLDOWN E NÃO TEM BOTÃO -> NOTIFICA O FIREBASE
+    // SE NÃO TEM COOLDOWN E NÃO TEM BOTÃO -> NOTIFICA O FIREBASE
     if (!temBotao && !temTimer) {
-      console.warn('[Invasor] Ausência de Botão e Cooldown detectada! Notificando Firebase...');
+      console.warn('[Invasor] Ausência de Botão e Cooldown detectada! Notificando o Firebase...');
       enviarComandoAtaqueFirebase();
       return;
     }
 
     if (temBotao) {
-      console.log('[Invasor] Botão de ataque está presente. Aguardando sinal via Firebase.');
+      console.log('[Invasor] Botão de ataque presente na tela. Aguardando comando remoto do Firebase.');
     } else if (temTimer) {
       console.log('[Invasor] Conta em cooldown de ataque.');
     }
@@ -238,7 +240,7 @@
               var comando = String(valor).toLowerCase().trim();
 
               if (comando === 'atacar' || comando === '1') {
-                console.log('[Firebase] Comando de ataque recebido do Firebase!');
+                console.log('[Firebase] Comando de ataque recebido via Firebase!');
                 fetch(urlDelete, { method: 'DELETE' }).finally(function() {
                   executarAtaqueCombo('Ordem Remota via Firebase');
                 });
@@ -316,7 +318,7 @@
         // A) Inicia a escuta remota do Firebase
         iniciarEscutaFirebaseAtaque();
 
-        // B) Checa estado da página (Manda pro Firebase se !botão e !timer)
+        // B) Checa estado da página (Manda pro Firebase apenas se !botão e !timer)
         verificarGatilhoAtaque();
 
         // C) Define a velocidade de reload
