@@ -39,12 +39,9 @@ function carregarBibliotecaPrint() {
   });
 }
 
-// --- CAPTURA O PRINT E ENVIA AO DISCORD DE FORMA ASSÍNCRONA ---
+// --- CAPTURA O PRINT E ENVIA AO DISCORD ---
 async function capturarEEnviarPrintDiscord(motivo) {
-  if (!DISCORD_WEBHOOK_URL) {
-    console.warn('[Discord] URL de Webhook não configurada.');
-    return;
-  }
+  if (!DISCORD_WEBHOOK_URL) return;
 
   try {
     await carregarBibliotecaPrint();
@@ -67,28 +64,63 @@ async function capturarEEnviarPrintDiscord(motivo) {
     }, 'image/png');
 
   } catch (erro) {
-    console.error('[Discord] Erro ao processar envio do print:', erro);
+    console.error('[Discord] Erro ao enviar print:', erro);
   }
+}
+
+// --- BUSCA O BOTÃO DE ATAQUE NA TELA ---
+function obterBotaoAtaque() {
+  var formInvasor = document.querySelector('form[action*="invasor"]');
+  if (formInvasor) {
+    var btn = formInvasor.querySelector('input[type="submit"]') || formInvasor.querySelector('button[type="submit"]');
+    if (btn) return btn;
+  }
+
+  var btnDireto = document.querySelector('input[name="atacar"][type="submit"]') || 
+                  document.querySelector('input[value="Atacar"]');
+  if (btnDireto) return btnDireto;
+
+  var botoes = document.querySelectorAll('input[type="submit"]');
+  for (var i = 0; i < botoes.length; i++) {
+    if (botoes[i].value && botoes[i].value.toLowerCase().indexOf('atacar') !== -1) {
+      return botoes[i];
+    }
+  }
+
+  return null;
+}
+
+// --- ENVIA COMANDO DE ATAQUE PARA O FIREBASE VIA REST ---
+function enviarComandoAtaqueFirebase() {
+  var urlComando = FIREBASE_CONFIG.databaseURL + '/comando_atacar.json';
+  console.warn('[Firebase] Enviando comando "atacar" para a rede via REST API...');
+
+  fetch(urlComando, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify('atacar')
+  })
+  .then(function() {
+    console.log('[Firebase] Comando "atacar" enviado com sucesso!');
+  })
+  .catch(function(err) {
+    console.error('[Firebase] Erro ao enviar comando "atacar":', err);
+  });
 }
 
 // --- FUNÇÃO PARA DISPARAR 10 ATAQUES SEGUIDOS (1ms) ---
 function executarAtaqueCombo(motivo) {
-  var btnAtacar = document.querySelector('form[action*="invasor"] input[type="submit"]') ||
-                  document.querySelector('form[action*="atacar"] input[type="submit"]') ||
-                  document.querySelector('input[type="submit"][value*="Atacar"]') ||
-                  document.querySelector('button[type="submit"]');
+  var btnAtacar = obterBotaoAtaque();
 
   if (!btnAtacar) {
-    console.error('[Invasor] Botão de ataque não encontrado para executar o combo.');
+    console.error('[Invasor] Botão de ataque não encontrado para disparar o combo.');
     return;
   }
 
-  console.log('[Invasor] Gatilho acionado (' + motivo + ')! Disparando print e ataques...');
+  console.log('[Invasor] Gatilho acionado (' + motivo + ')! Disparando print e combo...');
 
-  // Dispara o envio do print em segundo plano
   capturarEEnviarPrintDiscord(motivo);
 
-  // Executa os 10 ataques seguidos a cada 1ms
   var disparos = 0;
   var intervalo = setInterval(function() {
     disparos++;
@@ -102,35 +134,43 @@ function executarAtaqueCombo(motivo) {
   }, 1);
 }
 
-// --- VERIFICAÇÃO DE GATILHO NA TELA ---
+// --- VERIFICAÇÃO DIRETA: FOCO EXCLUSIVO EM BOTÃO E TIMER ---
 function verificarGatilhoAtaque() {
-  var textoPagina = document.body ? document.body.innerText : '';
+  var btnAtacar = obterBotaoAtaque();
+  var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
+  var temTimer = elementoTimer !== null;
 
-  var btnAtacar = document.querySelector('form[action*="invasor"] input[type="submit"]') ||
-                  document.querySelector('form[action*="atacar"] input[type="submit"]') ||
-                  document.querySelector('input[type="submit"][value*="Atacar"]') ||
-                  document.querySelector('button[type="submit"]');
+  console.log('[Invasor Checklist]', {
+    botaoEncontrado: !!btnAtacar,
+    temTimer: temTimer
+  });
 
-  var temProximoAtaque = textoPagina.toLowerCase().indexOf("próximo ataque") !== -1 || 
-                         textoPagina.toLowerCase().indexOf("1proximo ataque") !== -1;
-
-  // Se NÃO tem botão E NÃO tem o texto "próximo ataque" -> Dispara!
-  if (!btnAtacar && !temProximoAtaque) {
-    console.warn('[Invasor] Ausência do botão de ataque e sem tempo de próximo ataque na tela!');
-    executarAtaqueCombo('Sem Botão e Sem Próximo Ataque');
+  // REGRA 1: Se tem o botão e NÃO tem timer -> ATACA LOCALMENTE
+  if (btnAtacar && !temTimer) {
+    console.warn('[Invasor] Botão de ataque liberado e sem cooldown! Disparando combo local...');
+    executarAtaqueCombo('Botão Liberado na Tela');
     return true;
   }
 
+  // REGRA 2: Se NÃO tem o botão e NÃO tem timer -> DISPARA COMANDO NO FIREBASE
+  if (!btnAtacar && !temTimer) {
+    console.warn('[Invasor] Nem o botão nem o cooldown foram encontrados. Solicitando ataque via Firebase...');
+    enviarComandoAtaqueFirebase();
+    return false;
+  }
+
+  // REGRA 3: Se tem timer -> Está em cooldown, aguarda
+  console.log('[Invasor] Conta em cooldown de ataque. Agendando próximo ciclo.');
   return false;
 }
 
 // --- VERIFICAÇÃO DA CONTA GERENCIADA ---
 function checarContaGerenciada() {
   var linkVoltar = document.querySelector('a[href*="automacao?voltar=1"]');
-  var possuiTextoGerenciada = document.body && document.body.innerText.indexOf("Você está jogando com a conta gerenciada") !== -1;
+  var possuiTextoGerenciada = document.body && document.body.innerHTML.indexOf("Você está jogando com a conta gerenciada") !== -1;
 
   if (linkVoltar || possuiTextoGerenciada) {
-    console.log('[Invasor] Conta gerenciada detectada na página.');
+    console.log('[Invasor] Conta gerenciada detectada.');
     return true;
   }
   return false;
@@ -182,7 +222,7 @@ function iniciarEscutaFirebaseAtaque() {
       var scriptDb = document.createElement('script');
       scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
       scriptDb.onload = conectarEListen;
-      document.head.appendChild(scriptDb);
+      document.head.appendChild(scriptApp);
     };
     document.head.appendChild(scriptApp);
   }
@@ -238,13 +278,13 @@ setTimeout(function() {
     // 2. TELA DO INVASOR
     if (urlAtual.indexOf('invasor') !== -1) {
 
-      // A) Checa gatilho de ausência de botão + próximo ataque
+      // A) Checa gatilhos na tela (Botão vs Timer)
       verificarGatilhoAtaque();
 
       // B) Inicia a escuta remota do Firebase
       iniciarEscutaFirebaseAtaque();
 
-      // C) Define a velocidade de reload (2s para gerenciada, 1m para conta padrão)
+      // C) Define a velocidade de reload
       var tempoReloadAtual = checarContaGerenciada() ? TEMPO_RELOAD_GERENCIADA : TEMPO_RELOAD_PADRAO;
 
       console.log('[Script Invasor] Reload agendado para daqui a ' + (tempoReloadAtual / 1000) + ' segundo(s).');
