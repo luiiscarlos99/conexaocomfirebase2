@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.2
-// @description  Automação do Invasor: Sinaliza ausência ao Firebase e executa combo via ordem remota
+// @version      3.8
+// @description  Automação do Invasor: Validação de estado "Ainda não derrotado", disparos 10ms ao Firebase e print Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -16,7 +16,7 @@
   var TEMPO_RELOAD_GERENCIADA = 2000; // 2 segundos
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var reloadAgendado = false;
-  var jaAtacouNestaPagina = false; // Trava contra múltiplos disparos no mesmo ciclo
+  var jaAtacouNestaPagina = false;
 
   // URL do Webhook do Discord
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
@@ -39,6 +39,19 @@
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
+  // --- VERIFICA SE O INVASOR AINDA NÃO FOI DERROTADO ---
+  function checarInvasorNaoDerrotado() {
+    var linhas = document.querySelectorAll('tr');
+    for (var i = 0; i < linhas.length; i++) {
+      var textoLinha = linhas[i].innerText || linhas[i].textContent || '';
+      if (textoLinha.indexOf('Derrotado por:') !== -1) {
+        return textoLinha.indexOf('Ainda não derrotado') !== -1;
+      }
+    }
+    // Caso a tabela não seja encontrada por algum motivo, assume false por segurança
+    return false;
+  }
+
   // --- CARREGA O HTML2CANVAS DINAMICAMENTE ---
   function carregarBibliotecaPrint() {
     if (window.html2canvas) return Promise.resolve();
@@ -52,32 +65,52 @@
     });
   }
 
-  // --- CAPTURA O PRINT E ENVIA AO DISCORD ---
-  async function capturarEEnviarPrintDiscord(motivo) {
+  // --- ROLA ATÉ O FIM DA PÁGINA, CAPTURA E ENVIA PRINT PRO DISCORD ---
+  async function capturarEEnviarPrintInferiorDiscord(motivo) {
     if (!DISCORD_WEBHOOK_URL) return;
 
     try {
+      window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
+
+      await new Promise(function(r) { setTimeout(r, 300); });
       await carregarBibliotecaPrint();
 
-      var canvas = await html2canvas(document.body, { logging: false, useCORS: true });
+      var canvas = await html2canvas(document.body, { 
+        logging: false, 
+        useCORS: true,
+        allowTaint: true,
+        scrollY: -window.scrollY
+      });
 
-      canvas.toBlob(async function(blob) {
-        if (!blob) return;
+      canvas.toBlob(function(blob) {
+        if (!blob) {
+          console.error('[Discord] Falha ao gerar imagem (Blob nulo).');
+          return;
+        }
 
         var formData = new FormData();
         formData.append('file', blob, 'print-invasor.png');
-        formData.append('content', '⚔️ **Ataque disparado no Invasor!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`');
+        formData.append('content', '🚨 **Invasor Detectado / Visão Inferior!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`');
 
-        await fetch(DISCORD_WEBHOOK_URL, {
+        fetch(DISCORD_WEBHOOK_URL, {
           method: 'POST',
           body: formData
+        })
+        .then(function(resposta) {
+          if (resposta.ok) {
+            console.log('[Discord] Print com scroll enviado com sucesso!');
+          } else {
+            console.error('[Discord] Erro no Webhook:', resposta.status, resposta.statusText);
+          }
+        })
+        .catch(function(erro) {
+          console.error('[Discord] Erro de rede ao enviar print:', erro);
         });
 
-        console.log('[Discord] Print enviado com sucesso!');
       }, 'image/png');
 
     } catch (erro) {
-      console.error('[Discord] Erro ao enviar print:', erro);
+      console.error('[Discord] Erro ao capturar print:', erro);
     }
   }
 
@@ -85,7 +118,6 @@
   function obterBotaoAtaque() {
     var btn = null;
 
-    // 1. Busca dentro do formulário do invasor
     var formInvasor = document.querySelector('form[action*="invasor"]');
     if (formInvasor) {
       btn = formInvasor.querySelector('input[type="submit"]') || 
@@ -94,13 +126,11 @@
       if (btn) return btn;
     }
 
-    // 2. Busca direta por name ou value
     btn = document.querySelector('input[name="atacar"]') || 
           document.querySelector('input[value="Atacar"]') || 
           document.querySelector('button[name="atacar"]');
     if (btn) return btn;
 
-    // 3. Varredura por texto "atacar" em botões ou submit inputs
     var candidatos = document.querySelectorAll('input[type="submit"], button');
     for (var i = 0; i < candidatos.length; i++) {
       var el = candidatos[i];
@@ -113,35 +143,43 @@
     return null;
   }
 
-  // --- ENVIA COMANDO DE ATAQUE PARA O FIREBASE VIA REST ---
+  // --- ENVIA SINAL AO FIREBASE (1 IMEDIATO + 9 A CADA 10MS) E DEPOIS TIRA PRINT ---
   function enviarComandoAtaqueFirebase() {
     var urlComando = FIREBASE_CONFIG.databaseURL + '/comando_atacar.json';
-    console.warn('[Firebase] Nem botão nem cooldown detectados na tela. Enviando comando "atacar" para a rede...');
+    console.warn('[Firebase] Invasor ativo e sem botão/cooldown! Disparando o 1º aviso imediato e mais 9 a cada 10ms...');
 
-    fetch(urlComando, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify('atacar')
-    })
-    .then(function() {
-      console.log('[Firebase] Comando "atacar" enviado com sucesso!');
-    })
-    .catch(function(err) {
-      console.error('[Firebase] Erro ao enviar comando "atacar":', err);
-    });
+    var payload = JSON.stringify('atacar');
+    var headers = { 'Content-Type': 'application/json' };
+
+    // 1ª Chamada: IMEDIATA (0ms de delay)
+    fetch(urlComando, { method: 'PUT', headers: headers, body: payload });
+
+    // Próximas 9 chamadas: Espaçadas a cada 10ms
+    for (var i = 1; i <= 9; i++) {
+      (function(index) {
+        setTimeout(function() {
+          fetch(urlComando, { method: 'PUT', headers: headers, body: payload });
+        }, index * 10);
+      })(i);
+    }
+
+    console.log('[Firebase] Requisições em massa disparadas! Rolando tela e capturando print...');
+    
+    // Rola para baixo e envia o print
+    capturarEEnviarPrintInferiorDiscord('Ausência de Botão/Cooldown - Sinalização em Massa');
   }
 
-  // --- FUNÇÃO PARA DISPARAR COMBO DE ATAQUES (COM RETRY PARA ENCONTRAR O BOTÃO) ---
-  function executarAtaqueCombo(motivo) {
+  // --- EXECUTA ATÉ 15 TENTATIVAS DE LOCALIZAR E ATACAR O BOTÃO ---
+  function tentarAtacarLocalmente(motivo) {
     if (jaAtacouNestaPagina) {
-      console.warn('[Invasor] Ataque já foi disparado neste ciclo. Ignorando chamada duplicada.');
+      console.warn('[Invasor] Ataque já disparado neste ciclo. Ignorando.');
       return;
     }
 
     var tentativas = 0;
-    var maxTentativas = 15; // Tenta localizar por 3 segundos (15 x 200ms)
+    var maxTentativas = 15;
 
-    console.log('[Invasor] Ordem de ataque recebida. Procurando botão de ataque na página...');
+    console.log('[Invasor] Ordem remota recebida (' + motivo + '). Tentando encontrar o botão...');
 
     var timerBusca = setInterval(function() {
       tentativas++;
@@ -149,26 +187,17 @@
 
       if (btnAtacar) {
         clearInterval(timerBusca);
-        jaAtacouNestaPagina = true; // Ativa a trava
+        jaAtacouNestaPagina = true;
 
-        console.log('[Invasor] Botão localizado! Disparando print e combo (' + motivo + ')...');
-        capturarEEnviarPrintDiscord(motivo);
-
-        var disparos = 0;
-        var intervalo = setInterval(function() {
-          disparos++;
+        console.log('[Invasor] Botão localizado na tentativa #' + tentativas + '! Clicando...');
+        
+        for (var c = 0; c < 5; c++) {
           btnAtacar.click();
-          console.log('[Invasor] Ataque disparado #' + disparos);
-
-          if (disparos >= 10) {
-            clearInterval(intervalo);
-            console.log('[Invasor] Combo de 10 ataques finalizado!');
-          }
-        }, 1);
+        }
 
       } else if (tentativas >= maxTentativas) {
         clearInterval(timerBusca);
-        console.error('[Invasor] Erro: Botão de ataque não foi encontrado na página após ' + maxTentativas + ' tentativas.');
+        console.error('[Invasor] Botão de ataque não foi encontrado após ' + maxTentativas + ' tentativas.');
       }
     }, 200);
   }
@@ -177,30 +206,33 @@
   function verificarGatilhoAtaque() {
     var btnAtacar = obterBotaoAtaque();
     var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
-    
+    var invasorAtivo = checarInvasorNaoDerrotado();
+
     var temBotao = !!btnAtacar;
     var temTimer = elementoTimer !== null;
 
     console.log('[Invasor Checklist]', {
       temBotao: temBotao,
-      temTimer: temTimer
+      temTimer: temTimer,
+      invasorAtivo: invasorAtivo
     });
 
-    // SE NÃO TEM COOLDOWN E NÃO TEM BOTÃO -> NOTIFICA O FIREBASE
-    if (!temBotao && !temTimer) {
-      console.warn('[Invasor] Ausência de Botão e Cooldown detectada! Notificando o Firebase...');
+    // Só avisa o Firebase se NÃO tiver botão, NÃO tiver cooldown E o invasor AINDA NÃO tiver sido derrotado
+    if (!temBotao && !temTimer && invasorAtivo) {
+      console.warn('[Invasor] Invasor Ativo + Ausência de Botão/Cooldown detectada! Avisando Firebase...');
       enviarComandoAtaqueFirebase();
       return;
     }
 
-    if (temBotao) {
-      console.log('[Invasor] Botão de ataque presente na tela. Aguardando comando remoto do Firebase.');
+    if (!invasorAtivo) {
+      console.log('[Invasor] O invasor já foi derrotado. Nenhum comando enviado ao Firebase.');
+    } else if (temBotao) {
+      console.log('[Invasor] Botão de ataque presente. Aguardando sinal remoto do Firebase.');
     } else if (temTimer) {
-      console.log('[Invasor] Conta em cooldown de ataque.');
+      console.log('[Invasor] Conta em cooldown.');
     }
   }
 
-  // --- VERIFICAÇÃO DA CONTA GERENCIADA ---
   function checarContaGerenciada() {
     var linkVoltar = document.querySelector('a[href*="automacao?voltar=1"]');
     var possuiTextoGerenciada = document.body && document.body.innerHTML.indexOf("Você está jogando com a conta gerenciada") !== -1;
@@ -212,7 +244,6 @@
     return false;
   }
 
-  // --- ESCUTA NO FIREBASE ---
   function iniciarEscutaFirebaseAtaque() {
     console.log('[Firebase - Invasor] Conectando ao Realtime Database...');
 
@@ -240,9 +271,9 @@
               var comando = String(valor).toLowerCase().trim();
 
               if (comando === 'atacar' || comando === '1') {
-                console.log('[Firebase] Comando de ataque recebido via Firebase!');
+                console.log('[Firebase] Ordem de ataque recebida via Firebase!');
                 fetch(urlDelete, { method: 'DELETE' }).finally(function() {
-                  executarAtaqueCombo('Ordem Remota via Firebase');
+                  tentarAtacarLocalmente('Sinal Firebase Recebido');
                 });
               }
             }
@@ -284,7 +315,6 @@
       var urlAtual = window.location.href;
       var formLogin = document.getElementById('login');
 
-      // 1. TELA DE LOGIN
       if (formLogin) {
         var selectServer = formLogin.querySelector('select[name="server_login"]');
         var inputUsuario = formLogin.querySelector('#usuario');
@@ -312,16 +342,10 @@
         return;
       }
 
-      // 2. TELA DO INVASOR
       if (urlAtual.indexOf('invasor') !== -1) {
-
-        // A) Inicia a escuta remota do Firebase
         iniciarEscutaFirebaseAtaque();
-
-        // B) Checa estado da página (Manda pro Firebase apenas se !botão e !timer)
         verificarGatilhoAtaque();
 
-        // C) Define a velocidade de reload
         var tempoReloadAtual = checarContaGerenciada() ? TEMPO_RELOAD_GERENCIADA : TEMPO_RELOAD_PADRAO;
 
         console.log('[Script Invasor] Reload agendado para daqui a ' + (tempoReloadAtual / 1000) + ' segundo(s).');
@@ -333,7 +357,6 @@
         return;
       }
 
-      // 3. QUALQUER OUTRA PÁGINA
       redirecionarParaInvasor(urlAtual);
 
     } catch (erro) {
