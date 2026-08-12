@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Enviar Comando ao Firebase</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #1e1e1e;
+      padding: 24px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+    }
+    .status {
+      margin-top: 15px;
+      font-weight: bold;
+      word-break: break-all;
+      line-height: 1.5;
+    }
+    .sucesso { color: #00ff00; }
+    .erro { color: #ff4444; }
+    .info { color: #ffbb00; }
+    .apagado { color: #aaa; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Painel de Envio</h2>
+    <p>Status do Envio:</p>
+    <div id="status" class="status">Verificando URL...</div>
+  </div>
+
+  <script>
+    // URL da REST API do seu Firebase Realtime Database
+    var FIREBASE_URL = 'https://shizuo-a07d9-default-rtdb.firebaseio.com/comando_recebido.json';
+
+    // 1. Captura o parâmetro da URL (?codigo=... ou ?c=...)
+    var params = new URLSearchParams(window.location.search);
+    var codigo = params.get('codigo') || params.get('c');
+
+    var divStatus = document.getElementById('status');
+
+    if (codigo) {
+      divStatus.innerHTML = 'Enviando código <strong>' + codigo + '</strong>...';
+
+      // 2. Envia o código via PUT para a REST API do Firebase
+      fetch(FIREBASE_URL, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(codigo)
+      })
+      .then(function(resposta) {
+        if (resposta.ok) {
+          divStatus.innerHTML = '<span class="sucesso">✓ Código "' + codigo + '" enviado!</span><br>' +
+                                '<span class="info">Aguardando 5s para apagar do banco...</span>';
+
+          // 3. Timeout de 5 segundos para apagar o dado do Firebase
+          setTimeout(function() {
+            fetch(FIREBASE_URL, {
+              method: 'DELETE'
+            })
+            .then(function(resDeletar) {
+              if (resDeletar.ok) {
+                divStatus.innerHTML += '<br><span class="apagado">🗑️ [5s concluídos] Comando apagado do Firebase com sucesso!</span>';
+              } else {
+                divStatus.innerHTML += '<br><span class="erro">✕ Erro ao apagar o comando (Status: ' + resDeletar.status + ')</span>';
+              }
+            })
+            .catch(function(erroDelete) {
+              divStatus.innerHTML += '<br><span class="erro">✕ Erro de conexão ao apagar: ' + erroDelete.message + '</span>';
+            });
+          }, 5000);
+
+        } else {
+          divStatus.innerHTML = '<span class="erro">✕ Erro HTTP ao enviar: ' + resposta.status + '</span>';
+        }
+      })
+      .catch(function(erro) {
+        divStatus.innerHTML = '<span class="erro">✕ Erro de conexão: ' + erro.message + '</span>';
+      });
+
+    } else {
+      divStatus.innerHTML = '<span class="erro">Nenhum código fornecido.<br>Uso: ?codigo=SEU_CODIGO</span>';
+    }
+  </script>
+
+</body>
+</html>
