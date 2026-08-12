@@ -325,7 +325,7 @@
       const statusElement = document.getElementById(`status-${idLog}`);
       if (statusElement) {
         statusElement.className = 'log-status deleted';
-        statusElement.innerText = '🔴 Deletado do Firebase (5s)';
+        statusElement.innerText = '🔴 Deletado do Firebase (200ms)';
       }
     }
 
@@ -376,7 +376,7 @@
                 atualizarLogDeletado(logId);
               })
               .catch((err) => console.error('Erro na remoção automática:', err));
-          }, 5000);
+          }, 200);
         })
         .catch((err) => {
           console.error('Erro ao processar comando:', err);
