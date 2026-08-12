@@ -2,178 +2,391 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Painel de Envio Firebase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Painel de Controle - Bot Shinobi</title>
+  
   <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      background-color: #121212;
-      color: #ffffff;
+      background-color: #0f172a;
+      color: #f8fafc;
       display: flex;
-      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+      background-color: #1e293b;
+      border-radius: 20px;
+      padding: 24px 20px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      border: 1px solid #334155;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      display: flex;
       align-items: center;
       justify-content: center;
-      height: 100vh;
-      margin: 0;
+      gap: 8px;
     }
-    .card {
-      background: #1e1e1e;
-      padding: 24px;
-      border-radius: 8px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      text-align: center;
-      max-width: 400px;
-      width: 90%;
-    }
-    .status {
-      margin-top: 15px;
-      font-weight: bold;
-      word-break: break-all;
-      line-height: 1.5;
-    }
-    .sucesso { color: #00ff00; }
-    .erro { color: #ff4444; }
-    .info { color: #ffbb00; }
-    .apagado { color: #aaa; font-size: 0.9em; }
 
-    /* Estilos do formulário manual */
-    .form-container {
-      margin-top: 15px;
+    .header p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .input-group {
+      margin-bottom: 14px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 12px 14px;
+      background-color: #0f172a;
+      border: 2px solid #334155;
+      border-radius: 12px;
+      color: #38bdf8;
+      font-size: 0.95rem;
+      font-weight: bold;
+      outline: none;
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .input-field:focus {
+      border-color: #38bdf8;
+    }
+
+    /* Animação e Borda Vermelha para Erro */
+    .input-field.input-error {
+      border-color: #ef4444 !important;
+      background-color: rgba(239, 68, 68, 0.1) !important;
+      animation: shake 0.3s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    .btn-action {
+      width: 100%;
+      padding: 16px;
+      margin-top: 6px;
+      background-color: #0284c7;
+      color: white;
+      border: none;
+      border-radius: 14px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+      transition: background-color 0.15s, transform 0.1s;
+    }
+
+    .btn-action:active {
+      transform: scale(0.97);
+      background-color: #0369a1;
+    }
+
+    /* Painel de Logs */
+    .logs-container {
+      margin-top: 20px;
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      font-weight: bold;
+      color: #94a3b8;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .logs-list {
+      max-height: 160px;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
     }
-    input[type="text"] {
-      padding: 10px;
-      border-radius: 4px;
-      border: 1px solid #333;
-      background: #2a2a2a;
-      color: #fff;
-      font-size: 16px;
-      text-align: center;
-      outline: none;
+
+    .log-item {
+      background-color: #1e293b;
+      border-left: 4px solid #38bdf8;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
-    input[type="text"]:focus {
-      border-color: #00ff00;
-    }
-    button {
-      padding: 10px;
-      border-radius: 4px;
-      border: none;
-      background: #00ff00;
-      color: #000;
+
+    .log-title {
       font-weight: bold;
-      font-size: 16px;
-      cursor: pointer;
-      transition: background 0.2s;
+      color: #f1f5f9;
+      display: flex;
+      justify-content: space-between;
     }
-    button:hover {
-      background: #00cc00;
+
+    .log-time {
+      font-weight: normal;
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+
+    .log-status {
+      font-size: 0.75rem;
+      color: #eab308; /* Amarelo enviando */
+    }
+
+    .log-status.deleted {
+      color: #ef4444; /* Vermelho deletado */
+    }
+
+    /* Toast Dynamic Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background-color: #10b981;
+      color: #ffffff;
+      padding: 14px 24px;
+      border-radius: 30px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+      opacity: 0;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s, background-color 0.2s;
+      pointer-events: none;
+      z-index: 999;
+      text-align: center;
+      max-width: 90%;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .toast.toast-error {
+      background-color: #ef4444;
     }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2>Painel de Envio</h2>
-    <p>Status do Envio:</p>
-    <div id="status" class="status">Verificando URL...</div>
+  <div class="container">
+    <div class="header">
+      <h1>🥷 Painel Invasor</h1>
+      <p>Disparo Remoto de Comandos (Firebase)</p>
+    </div>
 
-    <!-- Formulário exibido caso não haja parâmetro na URL -->
-    <div id="containerManual" class="form-container" style="display: none;">
-      <input type="text" id="inputCodigo" placeholder="Digite o código aqui" maxlength="10" autocomplete="off">
-      <button id="btnEnviar" onclick="enviarCodigoManual()">Enviar ao Firebase</button>
+    <!-- Campo 1: Nome do Comando -->
+    <div class="input-group">
+      <label for="nomeComandoInput">Nome do Comando (Chave Firebase)</label>
+      <input type="text" id="nomeComandoInput" class="input-field" value="comando_recebido" placeholder="Ex: comando_recebido">
+    </div>
+
+    <!-- Campo 2: Valor do Comando -->
+    <div class="input-group">
+      <label for="valorComandoInput">Valor do Comando</label>
+      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Digite a instrução (ex: captcha)">
+    </div>
+
+    <!-- Botão de Disparo -->
+    <button id="btnEnviar" class="btn-action" onclick="enviarComando()">
+      ⚡ ENVIAR COMANDO
+    </button>
+
+    <!-- Histórico de Logs -->
+    <div class="logs-container">
+      <div class="logs-header">
+        <span>📜 Historico de Comandos</span>
+      </div>
+      <div id="logsList" class="logs-list">
+        <div id="emptyLog" style="color: #64748b; font-size: 0.8rem; text-align: center; padding: 10px;">
+          Nenhum comando enviado nesta sessão.
+        </div>
+      </div>
     </div>
   </div>
 
+  <div id="toast" class="toast">🚀 Comando enviado com sucesso!</div>
+
+  <!-- Firebase JavaScript SDK v8 -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
   <script>
-    // URL da REST API do seu Firebase Realtime Database
-    var FIREBASE_URL = 'https://shizuo-a07d9-default-rtdb.firebaseio.com/comando_recebido.json';
+    const firebaseConfig = {
+      apiKey: "AIzaSyCn92W9swCRMJfomc30lSn4GckgA2Esjm0",
+      authDomain: "shizuo-a07d9.firebaseapp.com",
+      databaseURL: "https://shizuo-a07d9-default-rtdb.firebaseio.com",
+      projectId: "shizuo-a07d9",
+      storageBucket: "shizuo-a07d9.firebasestorage.app",
+      messagingSenderId: "558853797700",
+      appId: "1:558853797700:web:71e454196334d2a5be8911"
+    };
 
-    var divStatus = document.getElementById('status');
-    var containerManual = document.getElementById('containerManual');
-    var inputCodigo = document.getElementById('inputCodigo');
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const database = firebase.database();
 
-    // Função central para disparar o envio ao Firebase e programar a exclusão
-    function processarEnvioFirebase(codigo) {
-      divStatus.innerHTML = 'Enviando código <strong>' + codigo + '</strong>...';
+    function exibirNotificacao(mensagem, ehErro = false) {
+      const toast = document.getElementById('toast');
+      toast.innerText = mensagem;
+      
+      if (ehErro) {
+        toast.classList.add('toast-error');
+      } else {
+        toast.classList.remove('toast-error');
+      }
 
-      // Envia via PUT (sem recarregar a página)
-      fetch(FIREBASE_URL, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(codigo)
-      })
-      .then(function(resposta) {
-        if (resposta.ok) {
-          divStatus.innerHTML = '<span class="sucesso">✓ Código "' + codigo + '" enviado!</span><br>' +
-                                '<span class="info">Aguardando 5s para apagar do banco...</span>';
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
 
-          // Oculta o formulário durante o envio bem-sucedido
-          containerManual.style.display = 'none';
+    function destacarErroCampo(element) {
+      element.classList.add('input-error');
+      element.focus();
 
-          // Timeout de 5 segundos para apagar
-          setTimeout(function() {
-            fetch(FIREBASE_URL, { method: 'DELETE' })
-              .then(function(resDeletar) {
-                if (resDeletar.ok) {
-                  divStatus.innerHTML += '<br><span class="apagado">🗑️ [5s concluídos] Comando apagado do Firebase!</span>';
-                } else {
-                  divStatus.innerHTML += '<br><span class="erro">✕ Erro ao apagar (Status: ' + resDeletar.status + ')</span>';
-                }
-              })
-              .catch(function(erroDelete) {
-                divStatus.innerHTML += '<br><span class="erro">✕ Erro de conexão ao apagar: ' + erroDelete.message + '</span>';
-              })
-              .finally(function() {
-                // Reexibe o input para um novo envio caso queira enviar outro código
-                containerManual.style.display = 'flex';
-                inputCodigo.value = '';
-              });
-          }, 5000);
-
-        } else {
-          divStatus.innerHTML = '<span class="erro">✕ Erro HTTP ao enviar: ' + resposta.status + '</span>';
-          containerManual.style.display = 'flex';
-        }
-      })
-      .catch(function(erro) {
-        divStatus.innerHTML = '<span class="erro">✕ Erro de conexão: ' + erro.message + '</span>';
-        containerManual.style.display = 'flex';
+      element.addEventListener('input', function removerErro() {
+        element.classList.remove('input-error');
+        element.removeEventListener('input', removerErro);
       });
     }
 
-    // Função acionada ao clicar no botão "Enviar"
-    function enviarCodigoManual() {
-      var valor = inputCodigo.value.trim();
-      if (!valor) {
-        alert('Por favor, digite um código antes de enviar.');
+    function adicionarLog(idLog, nome, valor, hora) {
+      const emptyLog = document.getElementById('emptyLog');
+      if (emptyLog) emptyLog.remove();
+
+      const logsList = document.getElementById('logsList');
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      item.id = `log-${idLog}`;
+
+      item.innerHTML = `
+        <div class="log-title">
+          <span>${nome} = "${valor}"</span>
+          <span class="log-time">${hora}</span>
+        </div>
+        <div class="log-status" id="status-${idLog}">🟡 Enviado (aguardando 5s)</div>
+      `;
+
+      logsList.prepend(item);
+    }
+
+    function atualizarLogDeletado(idLog) {
+      const statusElement = document.getElementById(`status-${idLog}`);
+      if (statusElement) {
+        statusElement.className = 'log-status deleted';
+        statusElement.innerText = '🔴 Deletado do Firebase (5s)';
+      }
+    }
+
+    function enviarComando() {
+      const nomeInput = document.getElementById('nomeComandoInput');
+      const valorInput = document.getElementById('valorComandoInput');
+
+      nomeInput.classList.remove('input-error');
+      valorInput.classList.remove('input-error');
+
+      const nomeComando = nomeInput.value.trim();
+      const valorComando = valorInput.value.trim();
+
+      if (!nomeComando || nomeComando.length < 1) {
+        destacarErroCampo(nomeInput);
+        exibirNotificacao('⚠️ Informe o Nome do Comando!', true);
         return;
       }
-      processarEnvioFirebase(valor);
-    }
 
-    // Permite enviar ao pressionar "Enter" no input
-    inputCodigo.addEventListener('keyup', function(evento) {
-      if (evento.key === 'Enter') {
-        enviarCodigoManual();
+      if (!valorComando || valorComando.length < 1) {
+        destacarErroCampo(valorInput);
+        exibirNotificacao('⚠️ Digite pelo menos 1 caractere!', true);
+        return;
       }
-    });
 
-    // --- INICIALIZAÇÃO DA PÁGINA ---
-    var params = new URLSearchParams(window.location.search);
-    var codigoUrl = params.get('codigo') || params.get('c');
+      const btn = document.getElementById('btnEnviar');
+      btn.disabled = true;
+      btn.style.opacity = '0.7';
 
-    if (codigoUrl) {
-      // Caso 1: Código veio direto na URL (?codigo=123)
-      processarEnvioFirebase(codigoUrl);
-    } else {
-      // Caso 2: Nenhum código na URL -> Exibe a interface manual
-      divStatus.innerHTML = '<span class="info">Nenhum código na URL.<br>Digite abaixo para enviar:</span>';
-      containerManual.style.display = 'flex';
+      const refComando = database.ref(nomeComando);
+      const logId = Date.now();
+      const horaAtual = new Date().toLocaleTimeString();
+
+      // 1. Apaga antes de gravar
+      refComando.remove()
+        .then(() => {
+          // 2. Grava o novo comando
+          return refComando.set(valorComando);
+        })
+        .then(() => {
+          adicionarLog(logId, nomeComando, valorComando, horaAtual);
+          exibirNotificacao(`🚀 Enviado! Apagando em 5s...`, false);
+
+          // 3. Apaga após 5 segundos e atualiza o log
+          setTimeout(() => {
+            refComando.remove()
+              .then(() => {
+                atualizarLogDeletado(logId);
+              })
+              .catch((err) => console.error('Erro na remoção automática:', err));
+          }, 5000);
+        })
+        .catch((err) => {
+          console.error('Erro ao processar comando:', err);
+          exibirNotificacao('❌ Erro ao enviar para o Firebase!', true);
+        })
+        .finally(() => {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        });
     }
   </script>
-
 </body>
 </html>
