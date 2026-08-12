@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.2
-// @description  Automação do Caçadas/Atacar com tratamento de Captcha, Firebase, recuperação de erros HTTP 500 e nível dinâmico via localStorage.
+// @version      2.4
+// @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório (30s-3min), timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -13,6 +13,7 @@
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_ESPERA_INVASOR = 120000; // 2 minutos
+  var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_GIT = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase?codigo=';
@@ -39,6 +40,36 @@
   // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
   var NIVEL_CACADAS_DEFAULT = '1';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+
+  // --- FUNÇÃO PARA SIMULAR DIGITAÇÃO HUMANA ---
+  function digitarTexto(elementoInput, texto, callbackConcluido) {
+    elementoInput.focus();
+    elementoInput.value = '';
+
+    var i = 0;
+    function proximoCaractere() {
+      if (i < texto.length) {
+        elementoInput.value += texto.charAt(i);
+
+        // Dispara eventos normais de teclado para simular ação do usuário
+        elementoInput.dispatchEvent(new Event('keydown', { bubbles: true }));
+        elementoInput.dispatchEvent(new Event('keypress', { bubbles: true }));
+        elementoInput.dispatchEvent(new Event('input', { bubbles: true }));
+        elementoInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+
+        i++;
+        // Intervalo humano aleatório entre 80ms e 200ms por caractere
+        var atrasoHumano = Math.floor(Math.random() * (200 - 80 + 1)) + 80;
+        setTimeout(proximoCaractere, atrasoHumano);
+      } else {
+        elementoInput.dispatchEvent(new Event('change', { bubbles: true }));
+        elementoInput.blur();
+        if (callbackConcluido) callbackConcluido();
+      }
+    }
+
+    proximoCaractere();
+  }
 
   // --- DETECÇÃO DE ERROS DE SERVIDOR (HTTP 500, 502, 503, 504, etc.) ---
   function checarErroServidor() {
@@ -84,37 +115,46 @@
         var valor = snapshot.val();
 
         if (valor !== null && valor !== undefined && valor !== '') {
-          console.log('%c[Firebase] CÓDIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', valor);
+          var codigoCaptcha = String(valor).trim();
+          console.log('%c[Firebase] CÓDIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
 
           var inputCaptcha = document.querySelector('input[name="resposta"]') || 
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
 
           if (inputCaptcha) {
-            inputCaptcha.value = valor;
-            inputCaptcha.dispatchEvent(new Event('input', { bubbles: true }));
-            inputCaptcha.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[Captcha] Iniciando simulação de digitação manual...');
 
-            var urlDelete = FIREBASE_CONFIG.databaseURL + '/comando_recebido.json';
+            // Simula a digitação caractere por caractere
+            digitarTexto(inputCaptcha, codigoCaptcha, function() {
+              console.log('[Captcha] Digitação concluída! Limpando o comando no Firebase...');
 
-            fetch(urlDelete, { method: 'DELETE' })
-              .then(function() {
-                console.log('[Firebase] Comando apagado do banco com sucesso!');
-              })
-              .catch(function(err) {
-                console.warn('[Firebase] Erro ao apagar comando do banco:', err);
-              })
-              .finally(function() {
-                var formCaptcha = inputCaptcha.closest('form');
-                var btnConfirmar = formCaptcha ? formCaptcha.querySelector('input[type="submit"]') : null;
+              var urlDelete = FIREBASE_CONFIG.databaseURL + '/comando_recebido.json';
 
-                if (btnConfirmar) {
-                  console.log('[Script] Clicando no botão Confirmar...');
-                  btnConfirmar.click();
-                } else if (formCaptcha) {
-                  console.log('[Script] Submetendo formulário do Captcha...');
-                  formCaptcha.submit();
-                }
-              });
+              fetch(urlDelete, { method: 'DELETE' })
+                .then(function() {
+                  console.log('[Firebase] Comando apagado do banco com sucesso!');
+                })
+                .catch(function(err) {
+                  console.warn('[Firebase] Erro ao apagar comando do banco:', err);
+                })
+                .finally(function() {
+                  // Aguarda um pequeno delay de reflexo humano (300ms a 700ms) antes de clicar
+                  var delayClique = Math.floor(Math.random() * (700 - 300 + 1)) + 300;
+                  
+                  setTimeout(function() {
+                    var formCaptcha = inputCaptcha.closest('form');
+                    var btnConfirmar = formCaptcha ? formCaptcha.querySelector('input[type="submit"]') : null;
+
+                    if (btnConfirmar) {
+                      console.log('[Script] Clicando no botão Confirmar...');
+                      btnConfirmar.click();
+                    } else if (formCaptcha) {
+                      console.log('[Script] Submetendo formulário do Captcha...');
+                      formCaptcha.submit();
+                    }
+                  }, delayClique);
+                });
+            });
 
           } else {
             console.error('[Script] Campo de input do Captcha não encontrado na página.');
@@ -281,6 +321,14 @@
             );
 
             iniciarEscutaFirebaseCaptcha();
+
+            // Timeout de 10 minutos para redirecionar para Caçadas caso o captcha não seja resolvido
+            console.log('[Captcha] Timer de 10 minutos iniciado para redirecionar caso não seja resolvido...');
+            setTimeout(function() {
+              console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando para Caçadas...');
+              window.location.href = URL_CACADAS;
+            }, TEMPO_TIMEOUT_CAPTCHA);
+
             return true; 
           }
         },
@@ -350,7 +398,17 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  btnSubmit.click();
+                  // Tempo aleatório entre 30s (30000ms) e 3 minutos (180000ms)
+                  var tempoAleatorio = Math.floor(Math.random() * (180000 - 30000 + 1)) + 30000;
+                  var segundos = Math.round(tempoAleatorio / 1000);
+
+                  console.log('[Caçadas] Nível selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos + 's para submeter caçada...');
+
+                  setTimeout(function() {
+                    console.log('[Caçadas] Tempo concluído. Clicando no botão para iniciar caçada...');
+                    btnSubmit.click();
+                  }, tempoAleatorio);
+
                   return true;
                 }
               }
