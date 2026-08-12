@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Automação do Invasor/Combate com tratamento de Captcha, Firebase, Discord e rotinas de tempo.
+// @version      1.2
+// @description  Automação do Invasor/Combate com leitura da vida do boss, captcha Firebase, Discord e refresh de 1 min.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -12,9 +12,9 @@
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
-  var TEMPO_ESPERA_INVASOR_SEM_ATK = 120000; // 2 minutos para atualizar se não houver botão de ataque
-  var TEMPO_ESPERA_POS_COMBATE = 420000;     // 7 minutos para voltar para o invasor após combate
-  var TEMPO_TIMEOUT_CAPTCHA = 600000;         // 10 minutos
+  var TEMPO_ESPERA_INVASOR_SEM_ATK = 60000;  // Ajustado para 1 minuto se não houver botão
+  var TEMPO_ESPERA_POS_COMBATE = 60000;      // Ajustado para 1 minuto pós-combate
+  var TEMPO_TIMEOUT_CAPTCHA = 600000;        // 10 minutos
   
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
@@ -67,7 +67,43 @@
     proximoCaractere();
   }
 
-  // --- DETECÇÃO DE ERROS DE SERVIDOR (HTTP 500, 502, 503, 504, etc.) ---
+  // --- EXTRAÇÃO DE DADOS DA BATALHA ---
+  function extrairDadosBatalha() {
+    var textoCorpo = document.body ? document.body.innerText || document.body.textContent || '' : '';
+    
+    var hpRestante = 'Desconhecido';
+    var danoCausado = 'N/A';
+    var nomeInvasor = 'Invasor';
+
+    // Extrai HP do Invasor
+    var matchHp = textoCorpo.match(/HP restante do invasor:\s*([\d,]+%?)/i);
+    if (matchHp) {
+      hpRestante = matchHp[1];
+    } else {
+      var matchHpAlt = textoCorpo.match(/Energia Vital:\s*\|\s*([\d,]+%?)/i);
+      if (matchHpAlt) hpRestante = matchHpAlt[1];
+    }
+
+    // Extrai Dano Causado
+    var matchDano = textoCorpo.match(/causou\s*([\d.]+)\s*de dano/i);
+    if (matchDano) {
+      danoCausado = matchDano[1];
+    }
+
+    // Extrai Nome do Invasor
+    var matchNome = textoCorpo.match(/O invasor\s+([A-Za-z0-9_\s]+)\s+AINDA NÃO/i);
+    if (matchNome) {
+      nomeInvasor = matchNome[1].trim();
+    }
+
+    return {
+      hpRestante: hpRestante,
+      danoCausado: danoCausado,
+      nomeInvasor: nomeInvasor
+    };
+  }
+
+  // --- DETECÇÃO DE ERROS DE SERVIDOR ---
   function checarErroServidor() {
     var elErro = document.querySelector('.error-code');
     if (elErro) {
@@ -288,7 +324,7 @@
 
   setTimeout(function() {
     try {
-      // 1. VERIFICAÇÃO ANTECIPADA DE ERRO NO SERVIDOR (HTTP 500)
+      // 1. VERIFICAÇÃO DE ERRO NO SERVIDOR (HTTP 500)
       var erroServidor = checarErroServidor();
       if (erroServidor) {
         agendarReloadFalha(erroServidor);
@@ -305,19 +341,19 @@
             return urlAtual.indexOf('captcha_seguranca') !== -1 || document.querySelector('form[action="captcha_seguranca"]') !== null; 
           },
           executar: function() {
-            console.warn('[Script] Captcha detectado na tela de Invasor!');
+            console.warn('[Script] Captcha detectado!');
             tocarAlertaSonoro();
 
             enviarNotificacaoDiscordComPrint(
               '⚠️ CAPTCHA DETECTADO! (Invasor)',
-              'Verificação de segurança ativa na página.\n\n**URL:** ' + urlAtual + '\n**Painel:** ' + URL_PAINEL_GIT,
+              'Verificação de segurança ativa.\n\n**URL:** ' + urlAtual + '\n**Painel:** ' + URL_PAINEL_GIT,
               '#FF0000'
             );
 
             iniciarEscutaFirebaseCaptcha();
 
             setTimeout(function() {
-              console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando para Invasor...');
+              console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando...');
               window.location.href = URL_INVASOR;
             }, TEMPO_TIMEOUT_CAPTCHA);
 
@@ -369,19 +405,18 @@
           executar: function() {
             console.log('[Invasor] Verificando se há ataque disponível...');
 
-            // Tenta encontrar o botão ou formulário de ataque ao invasor
             var btnAtacarInvasor = document.querySelector('form[action="invasor-combate"] input[type="submit"]') ||
                                    document.querySelector('form[action="invasor"] input[type="submit"]') ||
                                    document.querySelector('a[href*="invasor-combate"]');
 
             if (btnAtacarInvasor) {
-              console.log('[Invasor] Botão de ataque encontrado! Atacando o boss...');
+              console.log('[Invasor] Botão de ataque encontrado! Atacando...');
               btnAtacarInvasor.click();
               return true;
             } else {
-              console.log('[Invasor] Nenhum ataque disponível no momento. Aguardando 2 minutos para atualizar a página...');
+              console.log('[Invasor] Nenhum ataque disponível. Aguardando 1 minuto...');
               setTimeout(function() {
-                console.log('[Invasor] 2 minutos passados. Atualizando a página...');
+                console.log('[Invasor] 1 minuto passado. Atualizando a página...');
                 location.reload();
               }, TEMPO_ESPERA_INVASOR_SEM_ATK);
               return true;
@@ -392,18 +427,24 @@
           id: 'invasor_combate',
           checar: function() { return urlAtual.indexOf('invasor-combate') !== -1; },
           executar: function() {
-            console.log('[Invasor Combate] Ataque ao Boss realizado com sucesso!');
+            console.log('[Invasor Combate] Processando relatório do combate...');
 
-            // Notifica o Discord com o resultado do ataque
+            var dados = extrairDadosBatalha();
+
+            var mensagemDiscord = '⚔️ **Relatório do Ataque ao Boss (' + dados.nomeInvasor + ')**\n\n' +
+                                  '❤️ **HP Restante do Invasor:** ' + dados.hpRestante + '\n' +
+                                  '💥 **Dano Causado:** ' + dados.danoCausado + ' pts\n\n' +
+                                  '⏳ *Aguardando 1 minuto para retornar e tentar novo ataque...*';
+
             enviarNotificacaoDiscordComPrint(
-              '⚔️ ATAQUE AO BOSS REALIZADO!',
-              'O ataque contra o Invasor foi executado.\n\n**Aguardando 7 minutos para tentar novo ataque...**',
+              '⚔️ ATAQUE AO BOSS EXECUTADO!',
+              mensagemDiscord,
               '#00FF00'
             );
 
-            console.log('[Invasor Combate] Aguardando 7 minutos para redirecionar para a página do Invasor...');
+            console.log('[Invasor Combate] Aguardando 1 minuto para redirecionar...');
             setTimeout(function() {
-              console.log('[Invasor Combate] 7 minutos concluídos! Voltando para a tela do Invasor...');
+              console.log('[Invasor Combate] 1 minuto concluído! Voltando para o Invasor...');
               window.location.href = URL_INVASOR;
             }, TEMPO_ESPERA_POS_COMBATE);
 
