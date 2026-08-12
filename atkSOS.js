@@ -69,7 +69,7 @@ function iniciarEscutaFirebaseCaptcha() {
             })
             .finally(function() {
               // 2. Notifica via alerta na tela
-              alert('CÓDIGO RECEBIDO E LIMPO DO BANCO:\n\n' + valor);
+              //alert('CÓDIGO RECEBIDO E LIMPO DO BANCO:\n\n' + valor);
 
               // 3. Submete o formulário
               var formCaptcha = inputCaptcha.closest('form');
