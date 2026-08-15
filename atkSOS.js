@@ -398,8 +398,7 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  // Tempo aleatório entre 3 minutos (180000ms) e 9 minutos (540000ms)
-                  var tempoAleatorio = Math.floor(Math.random() * (540000 - 180000 + 1)) + 180000;
+                  var tempoAleatorio = Math.floor(Math.random() * (800000 - 400000 + 1)) + 400000;
                   var segundos = Math.round(tempoAleatorio / 1000);
 
                   console.log('[Caçadas] Nível selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos + 's para submeter caçada...');
