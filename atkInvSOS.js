@@ -11,7 +11,7 @@
   'use strict';
 
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
-  var LIMITE_PLAYERS_DERROTADOS = 4000;      // Altere aqui o limite desejado!
+  var LIMITE_PLAYERS_DERROTADOS = 10000;      // Altere aqui o limite desejado!
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_RELOAD_PADRAO = 60000;          // 1 minuto
