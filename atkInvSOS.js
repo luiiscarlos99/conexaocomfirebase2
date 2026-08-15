@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.9
-// @description  Automação do Invasor: Limite configurável de derrotas, escuta/disparo Firebase, Captcha e Discord.
+// @version      4.0
+// @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase, Captcha e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -43,6 +43,30 @@
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
+
+  // --- CHECA SESSÃO EXPIRADA OU REQUISICÃO INVÁLIDA ---
+  function checarSessaoExpirada() {
+    var textoCorpo = (document.body ? document.body.innerText || document.body.textContent || '' : '').toLowerCase();
+    var linkVoltar = document.querySelector('a[href*="history.back()"]');
+
+    if (textoCorpo.indexOf('sessão expirada ou requisição inválida') !== -1 || linkVoltar) {
+      console.warn('[Script Invasor] Sessão expirada detectada! Retornando à página anterior...');
+      
+      if (linkVoltar) {
+        linkVoltar.click();
+      } else {
+        window.history.back();
+      }
+
+      // Fallback caso o history.back() falhe ou não navegue a tempo
+      setTimeout(function() {
+        window.location.href = URL_INVASOR;
+      }, 1000);
+
+      return true;
+    }
+    return false;
+  }
 
   // --- CHECA SE O INVASOR AINDA NÃO FOI DERROTADO ---
   function checarInvasorNaoDerrotado() {
@@ -274,7 +298,6 @@
               if (comando === 'atacar' || comando === '1') {
                 console.log('%c[Firebase] Ordem de ataque REMOTA recebida!', 'color: #ffff00; font-weight: bold;');
                 fetch(urlDelete, { method: 'DELETE' }).finally(function() {
-                  // Permite ataque pois a ordem veio expressamente do Firebase
                   tentarAtacarLocalmente('Sinal Firebase Recebido');
                 });
               }
@@ -438,10 +461,15 @@
     window.location.href = URL_INVASOR;
   }
 
-  console.log('[Script Invasor v3.9] Iniciado. Usuário: ' + USUARIO_FINAL);
+  console.log('[Script Invasor v4.0] Iniciado. Usuário: ' + USUARIO_FINAL);
 
   setTimeout(function() {
     try {
+      // 0. VERIFICA TELA DE SESSÃO EXPIRADA (PRIORIDADE MÁXIMA)
+      if (checarSessaoExpirada()) {
+        return;
+      }
+
       if (checarErroServidor()) {
         agendarReloadFalha('Erro de Servidor 500/502/503/504 detectado.');
         return;

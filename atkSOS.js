@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.4
-// @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório (30s-3min), timeout de Captcha (10min) e Firebase.
+// @version      2.5
+// @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -40,6 +40,18 @@
   // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
   var NIVEL_CACADAS_DEFAULT = '1';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+
+  // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---
+  function obterCodigoServidor() {
+    var codigo = localStorage.getItem('BOT_CODIGO_SERVIDOR');
+    if (!codigo) {
+      codigo = 'SRV_' + Math.random().toString(36).substring(2, 9).toUpperCase();
+      localStorage.setItem('BOT_CODIGO_SERVIDOR', codigo);
+    }
+    return codigo;
+  }
+
+  var CODIGO_SERVIDOR = obterCodigoServidor();
 
   // --- FUNÇÃO PARA SIMULAR DIGITAÇÃO HUMANA ---
   function digitarTexto(elementoInput, texto, callbackConcluido) {
@@ -105,6 +117,16 @@
       }
 
       var database = firebase.database();
+      
+      // Atualiza o código do servidor no Firebase para sincronia com o Painel Web
+      database.ref('codigo_servidor').set(CODIGO_SERVIDOR)
+        .then(function() {
+          console.log('[Firebase] Código do Servidor atualizado:', CODIGO_SERVIDOR);
+        })
+        .catch(function(err) {
+          console.warn('[Firebase] Erro ao atualizar código do servidor:', err);
+        });
+
       var campoComando = database.ref('comando_recebido');
 
       console.log('%c[Firebase] CONECTADO COM SUCESSO! AGUARDANDO CAPTCHA...', 'color: #00ff00; font-weight: bold;');
@@ -216,7 +238,7 @@
                 url: 'attachment://captura.png'
               },
               footer: {
-                text: 'Usuário: ' + USUARIO_FINAL
+                text: 'Usuário: ' + USUARIO_FINAL + ' | Servidor: ' + CODIGO_SERVIDOR
               }
             }
           ]
@@ -290,7 +312,7 @@
     window.location.href = URL_CACADAS;
   }
 
-  console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL + ' | Nível Caçada: ' + NIVEL_CACADAS_FINAL);
+  console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL + ' | Nível Caçada: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
     try {
@@ -314,9 +336,11 @@
             console.warn('[Script] Captcha detectado! Enviando print ao Discord e aguardando código...');
             tocarAlertaSonoro();
 
+            var linkPainelComCodigo = URL_PAINEL_GIT + CODIGO_SERVIDOR;
+
             enviarNotificacaoDiscordComPrint(
               '⚠️ CAPTCHA DETECTADO!',
-              'Verificação de segurança ativa na página.\n\n**URL do Jogo:** ' + urlAtual + '\n**Link do Painel Captcha:** ' + URL_PAINEL_GIT,
+              'Verificação de segurança ativa na página.\n\n**URL do Jogo:** ' + urlAtual + '\n**Link do Painel Captcha:** ' + linkPainelComCodigo,
               '#FF0000'
             );
 
@@ -336,7 +360,7 @@
           id: 'invasor',
           checar: function() { return urlAtual.indexOf('invasor') !== -1; },
           executar: function() {
-            console.warn('[Script] Página do Invasor acessada. Envio de imagem desativado temporariamente.');
+            console.warn('[Script] Página do Invasor acessada.');
             console.log('[Script] Aguardando 2 minutos para redirecionar para Caçadas...');
 
             setTimeout(function() {
@@ -398,7 +422,8 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  var tempoAleatorio = Math.floor(Math.random() * (800000 - 400000 + 1)) + 400000;
+                  // Atraso aleatório entre 30s e 3min (30.000ms a 180.000ms)
+                  var tempoAleatorio = Math.floor(Math.random() * (180000 - 30000 + 1)) + 30000;
                   var segundos = Math.round(tempoAleatorio / 1000);
 
                   console.log('[Caçadas] Nível selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos + 's para submeter caçada...');
