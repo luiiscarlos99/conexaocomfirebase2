@@ -403,6 +403,17 @@
     window.location.href = URL_CACADAS;
   }
 
+  function aguardandoAutenticacao() {
+    if (document.getElementById('login')) return true;
+
+    var texto = (document.body ? document.body.innerText || document.body.textContent || '' : '').toLowerCase();
+    if (texto.indexOf('sessão expirada ou requisição inválida') !== -1) return true;
+    if (texto.indexOf('sessao expirada ou requisicao invalida') !== -1) return true;
+    if (document.querySelector('a[href*="history.back()"]')) return true;
+
+    return false;
+  }
+
   console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL + ' | Nível Caçada: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
@@ -468,6 +479,11 @@
         }
         console.log('[Script Caçadas] Status — redirecionando para caçadas...');
         window.location.href = URL_CACADAS;
+        return;
+      }
+
+      if (aguardandoAutenticacao()) {
+        console.log('[Script Caçadas] Aguardando login — sem acao.');
         return;
       }
 

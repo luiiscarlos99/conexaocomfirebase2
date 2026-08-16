@@ -40,8 +40,8 @@
     }
   } catch (e) {}
 
-  // Presença detectável pelo atkSOS.js na mesma aba (Inject Code dual-script)
-  window.__BOT_INVASOR_ATIVO__ = true;
+  // Presença detectável pelo atkSOS.js — definido só ao entrar no escopo do invasor
+  window.__BOT_INVASOR_ATIVO__ = false;
 
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
   var LIMITE_PLAYERS_DERROTADOS = 99999999;      // Altere aqui o limite desejado!
@@ -130,19 +130,16 @@
     var textoCorpo = (document.body ? document.body.innerText || document.body.textContent || '' : '').toLowerCase();
     var linkVoltar = document.querySelector('a[href*="history.back()"]');
 
-    if (textoCorpo.indexOf('sessão expirada ou requisição inválida') !== -1 || linkVoltar) {
-      console.warn('[Script Invasor] Sessão expirada detectada! Retornando à página anterior...');
-      
+    if (textoCorpo.indexOf('sessão expirada ou requisição inválida') !== -1 ||
+        textoCorpo.indexOf('sessao expirada ou requisicao invalida') !== -1 ||
+        linkVoltar) {
+      console.warn('[Script Invasor] Sessão expirada detectada! Voltando...');
+
       if (linkVoltar) {
         linkVoltar.click();
       } else {
         window.history.back();
       }
-
-      // Fallback caso o history.back() falhe ou não navegue a tempo
-      setTimeout(function() {
-        window.location.href = URL_INVASOR;
-      }, 1000);
 
       return true;
     }
@@ -572,13 +569,8 @@
     try {
       sincronizarUsuarioLocalStorage();
 
-      // 0. VERIFICA TELA DE SESSÃO EXPIRADA (PRIORIDADE MÁXIMA)
-      if (checarSessaoExpirada()) {
-        return;
-      }
-
-      if (checarErroServidor()) {
-        agendarReloadFalha('Erro de Servidor 500/502/503/504 detectado.');
+      if (document.getElementById('login')) {
+        console.log('[Script Invasor] Tela de login — sem acao.');
         return;
       }
 
@@ -587,6 +579,17 @@
 
       if (!pagina.noEscopo) {
         console.log('[Script Invasor] Pagina fora do escopo — sem acao.');
+        return;
+      }
+
+      window.__BOT_INVASOR_ATIVO__ = true;
+
+      if (checarSessaoExpirada()) {
+        return;
+      }
+
+      if (checarErroServidor()) {
+        agendarReloadFalha('Erro de Servidor 500/502/503/504 detectado.');
         return;
       }
 

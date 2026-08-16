@@ -10,6 +10,9 @@ $NivelCacadas = '2'
 # Intervalo entre abrir cada navegador (segundos)
 $IntervaloEntreContas = 3
 
+# Espera apos abrir a aba de login antes de abrir cacadas/invasor (segundos)
+$IntervaloAposSetup = 15
+
 # Aviso Discord ao abrir contas (usa discord-pc-ligado.config.ps1 se omitir URL)
 $AvisarDiscordStart = $true
 # $DiscordWebhookUrl = "https://discord.com/api/webhooks/..."

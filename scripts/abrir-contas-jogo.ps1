@@ -172,15 +172,7 @@ function Start-ContaJogo {
     }
 
     $setup = Get-SetupUrl -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel
-    $urls = @()
-
-    if ($setup) {
-        $urls += $setup
-    } elseif ($Conta.Anonimo) {
-        Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
-    }
-
-    $urls += @(
+    $urlsJogo = @(
         '{0}/cacadas' -f $Base.TrimEnd('/')
         '{0}/invasor' -f $Base.TrimEnd('/')
     )
@@ -193,12 +185,27 @@ function Start-ContaJogo {
             $args += '--private'
         }
     }
-    $args += $urls
 
     Write-Host "Abrindo: $($Conta.Rotulo)" -ForegroundColor Cyan
-    Write-Host "  URLs: $($urls -join ' | ')"
 
-    Start-Process -FilePath $exe -ArgumentList $args | Out-Null
+    if ($setup) {
+        Write-Host "  Fase 1: setup/login -> $setup"
+        Start-Process -FilePath $exe -ArgumentList ($args + $setup) | Out-Null
+
+        $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 15 }
+        Write-Host "  Aguardando ${esperaLogin}s para login..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds $esperaLogin
+
+        Write-Host "  Fase 2: $($urlsJogo -join ' | ')"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlsJogo) | Out-Null
+    } else {
+        if ($Conta.Anonimo) {
+            Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
+        }
+        Write-Host "  URLs: $($urlsJogo -join ' | ')"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlsJogo) | Out-Null
+    }
+
     return $true
 }
 
