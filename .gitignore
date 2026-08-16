@@ -11,3 +11,6 @@ README-contexto-gemini.md
 
 # Config local do aviso Discord "PC ligou" (contém webhook)
 scripts/discord-pc-ligado.config.ps1
+
+# Config local das contas do jogo (senhas)
+scripts/contas-jogo.config.ps1

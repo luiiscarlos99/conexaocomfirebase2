@@ -10,6 +10,36 @@
 (function() {
   'use strict';
 
+  var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
+
+  if (!window.__BOT_CONTROLE__) {
+    window.__BOT_CONTROLE__ = {
+      parar: function() {
+        try { sessionStorage.setItem(BOT_KILL_KEY, '1'); } catch (e) {}
+        console.warn('[Bot] Desativado nesta aba.');
+        location.reload();
+      },
+      ligar: function() {
+        try { sessionStorage.removeItem(BOT_KILL_KEY); } catch (e) {}
+        console.log('[Bot] Reativado nesta aba.');
+        location.reload();
+      },
+      status: function() {
+        try { return sessionStorage.getItem(BOT_KILL_KEY) === '1' ? 'off' : 'on'; } catch (e) { return 'on'; }
+      }
+    };
+    window.botParar = window.__BOT_CONTROLE__.parar;
+    window.botLigar = window.__BOT_CONTROLE__.ligar;
+    window.botStatus = window.__BOT_CONTROLE__.status;
+  }
+
+  try {
+    if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
+      console.log('[Bot] Pausado nesta aba — botLigar() para reativar.');
+      return;
+    }
+  } catch (e) {}
+
   // Presença detectável pelo atkSOS.js na mesma aba (Inject Code dual-script)
   window.__BOT_INVASOR_ATIVO__ = true;
 
@@ -520,6 +550,22 @@
     window.location.href = URL_INVASOR;
   }
 
+  // --- Só age nestas páginas (evita redirect indevido se Inject Code rodar em /*) ---
+  function classificarPaginaInvasor(url) {
+    var ehCombate = url.indexOf('invasor-combate') !== -1;
+    var ehInvasor = url.indexOf('invasor') !== -1 && !ehCombate;
+    var ehStatus = url.indexOf('/status') !== -1;
+    var ehCaptcha = url.indexOf('captcha_seguranca') !== -1;
+
+    return {
+      ehCombate: ehCombate,
+      ehInvasor: ehInvasor,
+      ehStatus: ehStatus,
+      ehCaptcha: ehCaptcha,
+      noEscopo: ehCombate || ehInvasor || ehStatus || ehCaptcha
+    };
+  }
+
   console.log('[Script Invasor v4.0] Iniciado. Usuário: ' + USUARIO_FINAL);
 
   setTimeout(function() {
@@ -537,9 +583,15 @@
       }
 
       var urlAtual = window.location.href;
+      var pagina = classificarPaginaInvasor(urlAtual);
+
+      if (!pagina.noEscopo) {
+        console.log('[Script Invasor] Pagina fora do escopo — sem acao.');
+        return;
+      }
 
       // 1. TELA DE CAPTCHA
-      if (urlAtual.indexOf('captcha_seguranca') !== -1 || document.querySelector('form[action="captcha_seguranca"]')) {
+      if (pagina.ehCaptcha || document.querySelector('form[action="captcha_seguranca"]')) {
         console.warn('[Script] Captcha detectado!');
         tocarAlertaSonoro();
 
@@ -553,7 +605,7 @@
       // Login fica a cargo do atkSOS.js (home não está no filtro desta extensão)
 
       // 2. TELA DO INVASOR (PRINCIPAL)
-      if (urlAtual.indexOf('invasor') !== -1 && urlAtual.indexOf('invasor-combate') === -1) {
+      if (pagina.ehInvasor) {
         iniciarEscutaFirebaseAtaque();
         verificarGatilhoAtaque();
 
@@ -579,7 +631,7 @@
       }
 
       // 3. TELA PÓS-COMBATE
-      if (urlAtual.indexOf('invasor-combate') !== -1) {
+      if (pagina.ehCombate) {
         console.log('[Invasor Combate] Batalha concluída. Aguardando 1 min para retornar...');
         capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído', DISCORD_COMBATE_SILENCIOSO);
 
@@ -589,7 +641,11 @@
         return;
       }
 
-      redirecionarParaInvasor(urlAtual);
+      // 4. STATUS → redireciona para invasor
+      if (pagina.ehStatus) {
+        redirecionarParaInvasor('status');
+        return;
+      }
 
     } catch (erro) {
       agendarReloadFalha('Erro inesperado: ' + erro.message);

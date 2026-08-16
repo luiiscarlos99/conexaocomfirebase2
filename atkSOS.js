@@ -10,6 +10,51 @@
 (function() {
   'use strict';
 
+  var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
+
+  if (!window.__BOT_CONTROLE__) {
+    window.__BOT_CONTROLE__ = {
+      parar: function() {
+        try { sessionStorage.setItem(BOT_KILL_KEY, '1'); } catch (e) {}
+        console.warn('[Bot] Desativado nesta aba.');
+        location.reload();
+      },
+      ligar: function() {
+        try { sessionStorage.removeItem(BOT_KILL_KEY); } catch (e) {}
+        console.log('[Bot] Reativado nesta aba.');
+        location.reload();
+      },
+      status: function() {
+        try { return sessionStorage.getItem(BOT_KILL_KEY) === '1' ? 'off' : 'on'; }
+        catch (e) { return 'on'; }
+      }
+    };
+    window.botParar = window.__BOT_CONTROLE__.parar;
+    window.botLigar = window.__BOT_CONTROLE__.ligar;
+    window.botStatus = window.__BOT_CONTROLE__.status;
+  }
+
+  try {
+    if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
+      console.log('[Bot] Pausado nesta aba — botLigar() para reativar.');
+      return;
+    }
+  } catch (e) {}
+
+  // Credenciais via URL (?bot_user=&bot_pass=&bot_nivel=) — launcher / modo anônimo
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var u = params.get('bot_user');
+    var p = params.get('bot_pass');
+    var n = params.get('bot_nivel');
+    if (u) localStorage.setItem('BOT_USUARIO', u);
+    if (p) localStorage.setItem('BOT_SENHA', p);
+    if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+    if ((u || p || n) && window.history && window.history.replaceState) {
+      history.replaceState(null, document.title, location.pathname + location.hash);
+    }
+  } catch (e) {}
+
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
