@@ -83,8 +83,8 @@
     USUARIO_FINAL = nomeLogado;
   }
 
-  // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
-  var NIVEL_CACADAS_DEFAULT = '1';
+  // Nível da Caçada (Lê do localStorage ou usa '2' como padrão)
+  var NIVEL_CACADAS_DEFAULT = '2';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---

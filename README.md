@@ -130,7 +130,7 @@ Valores padrão ficam no topo de cada script. Credenciais e preferências també
 ```javascript
 localStorage.setItem('BOT_USUARIO', 'SeuUsuario');
 localStorage.setItem('BOT_SENHA', 'SuaSenha');
-localStorage.setItem('BOT_NIVEL_CACADAS', '1'); // apenas atkSOS.js
+localStorage.setItem('BOT_NIVEL_CACADAS', '2'); // apenas atkSOS.js
 ```
 
 ### Sincronização automática do usuário
