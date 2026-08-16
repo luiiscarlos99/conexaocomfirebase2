@@ -10,6 +10,9 @@
 (function() {
   'use strict';
 
+  // Presença detectável pelo atkSOS.js na mesma aba (Inject Code dual-script)
+  window.__BOT_INVASOR_ATIVO__ = true;
+
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
   var LIMITE_PLAYERS_DERROTADOS = 99999999;      // Altere aqui o limite desejado!
   var TEMPO_ESPERA = 2000;
@@ -43,6 +46,53 @@
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
+
+  // --- DETECTA USUÁRIO LOGADO NA SIDEBAR E SINCRONIZA localStorage ---
+  function extrairNomeUsuarioLogado() {
+    if (document.getElementById('login')) return null;
+
+    var colEsquerda = document.getElementById('col_esquerda');
+    if (!colEsquerda) return null;
+
+    var tabelas = colEsquerda.querySelectorAll('table');
+    for (var i = 0; i < tabelas.length; i++) {
+      var tabela = tabelas[i];
+      var info = tabela.querySelector('td.box_preto_cor_central');
+      if (!info) continue;
+
+      var textoInfo = info.innerText || info.textContent || '';
+      if (textoInfo.indexOf('Vila:') === -1 || textoInfo.indexOf('HP:') === -1) continue;
+
+      var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
+      if (!tdNome) {
+        var logo = tabela.querySelector('img[src*="logo_simples"]');
+        if (logo && logo.parentElement) {
+          tdNome = logo.parentElement.nextElementSibling;
+        }
+      }
+      if (!tdNome) continue;
+
+      var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
+      if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
+        return nome;
+      }
+    }
+
+    return null;
+  }
+
+  function sincronizarUsuarioLocalStorage() {
+    var nomeLogado = extrairNomeUsuarioLogado();
+    if (!nomeLogado) return;
+
+    var nomeSalvo = localStorage.getItem('BOT_USUARIO');
+    if (nomeSalvo !== nomeLogado) {
+      localStorage.setItem('BOT_USUARIO', nomeLogado);
+      console.log('[Script Invasor] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
+    }
+
+    USUARIO_FINAL = nomeLogado;
+  }
 
   // --- CHECA SESSÃO EXPIRADA OU REQUISICÃO INVÁLIDA ---
   function checarSessaoExpirada() {
@@ -465,6 +515,8 @@
 
   setTimeout(function() {
     try {
+      sincronizarUsuarioLocalStorage();
+
       // 0. VERIFICA TELA DE SESSÃO EXPIRADA (PRIORIDADE MÁXIMA)
       if (checarSessaoExpirada()) {
         return;
@@ -476,7 +528,6 @@
       }
 
       var urlAtual = window.location.href;
-      var formLogin = document.getElementById('login');
 
       // 1. TELA DE CAPTCHA
       if (urlAtual.indexOf('captcha_seguranca') !== -1 || document.querySelector('form[action="captcha_seguranca"]')) {
@@ -490,35 +541,9 @@
         return;
       }
 
-      // 2. TELA DE LOGIN
-      if (formLogin) {
-        var selectServer = formLogin.querySelector('select[name="server_login"]');
-        var inputUsuario = formLogin.querySelector('#usuario');
-        var inputSenha = formLogin.querySelector('#senha');
+      // Login fica a cargo do atkSOS.js (home não está no filtro desta extensão)
 
-        if (selectServer) {
-          selectServer.value = '0';
-          selectServer.dispatchEvent(new Event('change', { bubbles: true }));
-
-          if (inputUsuario) {
-            inputUsuario.value = USUARIO_FINAL;
-            inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          if (inputSenha) {
-            inputSenha.value = SENHA_FINAL;
-            inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-
-          setTimeout(function() {
-            var btnLogin = formLogin.querySelector('input[type="submit"]');
-            if (btnLogin) btnLogin.click();
-            else agendarReloadFalha('Botão de login não encontrado.');
-          }, 2000);
-        }
-        return;
-      }
-
-      // 3. TELA DO INVASOR (PRINCIPAL)
+      // 2. TELA DO INVASOR (PRINCIPAL)
       if (urlAtual.indexOf('invasor') !== -1 && urlAtual.indexOf('invasor-combate') === -1) {
         iniciarEscutaFirebaseAtaque();
         verificarGatilhoAtaque();
@@ -544,7 +569,7 @@
         return;
       }
 
-      // 4. TELA PÓS-COMBATE
+      // 3. TELA PÓS-COMBATE
       if (urlAtual.indexOf('invasor-combate') !== -1) {
         console.log('[Invasor Combate] Batalha concluída. Aguardando 1 min para retornar...');
         capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído');

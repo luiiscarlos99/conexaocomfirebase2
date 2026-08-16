@@ -12,7 +12,6 @@
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
-  var TEMPO_ESPERA_INVASOR = 180000; // 2 minutos
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
@@ -36,6 +35,53 @@
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
+
+  // --- DETECTA USUÁRIO LOGADO NA SIDEBAR E SINCRONIZA localStorage ---
+  function extrairNomeUsuarioLogado() {
+    if (document.getElementById('login')) return null;
+
+    var colEsquerda = document.getElementById('col_esquerda');
+    if (!colEsquerda) return null;
+
+    var tabelas = colEsquerda.querySelectorAll('table');
+    for (var i = 0; i < tabelas.length; i++) {
+      var tabela = tabelas[i];
+      var info = tabela.querySelector('td.box_preto_cor_central');
+      if (!info) continue;
+
+      var textoInfo = info.innerText || info.textContent || '';
+      if (textoInfo.indexOf('Vila:') === -1 || textoInfo.indexOf('HP:') === -1) continue;
+
+      var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
+      if (!tdNome) {
+        var logo = tabela.querySelector('img[src*="logo_simples"]');
+        if (logo && logo.parentElement) {
+          tdNome = logo.parentElement.nextElementSibling;
+        }
+      }
+      if (!tdNome) continue;
+
+      var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
+      if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
+        return nome;
+      }
+    }
+
+    return null;
+  }
+
+  function sincronizarUsuarioLocalStorage() {
+    var nomeLogado = extrairNomeUsuarioLogado();
+    if (!nomeLogado) return;
+
+    var nomeSalvo = localStorage.getItem('BOT_USUARIO');
+    if (nomeSalvo !== nomeLogado) {
+      localStorage.setItem('BOT_USUARIO', nomeLogado);
+      console.log('[Script] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
+    }
+
+    USUARIO_FINAL = nomeLogado;
+  }
 
   // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
   var NIVEL_CACADAS_DEFAULT = '1';
@@ -316,6 +362,8 @@
 
   setTimeout(function() {
     try {
+      sincronizarUsuarioLocalStorage();
+
       // 1. VERIFICAÇÃO ANTECIPADA DE ERRO NO SERVIDOR (HTTP 500)
       var erroServidor = checarErroServidor();
       if (erroServidor) {
@@ -325,6 +373,58 @@
 
       var urlAtual = window.location.href;
       var formLogin = document.getElementById('login');
+
+      // Login sempre é responsabilidade deste script (home não está no filtro do invasor)
+      if (formLogin) {
+        console.log('[Script Caçadas] Tela de login — preenchendo credenciais...');
+        var selectServer = formLogin.querySelector('select[name="server_login"]');
+        var inputUsuario = formLogin.querySelector('#usuario');
+        var inputSenha = formLogin.querySelector('#senha');
+
+        if (selectServer) {
+          selectServer.value = '0';
+          selectServer.dispatchEvent(new Event('change', { bubbles: true }));
+
+          if (inputUsuario) {
+            inputUsuario.value = USUARIO_FINAL;
+            inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
+            inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          if (inputSenha) {
+            inputSenha.value = SENHA_FINAL;
+            inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
+            inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          setTimeout(function() {
+            var btnLogin = formLogin.querySelector('input[type="submit"]');
+            if (btnLogin) {
+              btnLogin.click();
+            } else {
+              agendarReloadFalha('Botão de login não encontrado.');
+            }
+          }, 2000);
+        }
+        return;
+      }
+
+      // Páginas do invasor ficam a cargo do atkInvSOS.js (Inject Code com filtro separado)
+      if (urlAtual.indexOf('invasor') !== -1) {
+        console.log('[Script Caçadas] Página do invasor — sem ação (delegado ao bot invasor).');
+        return;
+      }
+
+      // /status: se o bot invasor foi injetado nesta aba, não compete — senão vai para caçadas
+      if (urlAtual.indexOf('status') !== -1) {
+        if (window.__BOT_INVASOR_ATIVO__) {
+          console.log('[Script Caçadas] Status — sem ação (bot invasor presente nesta aba).');
+          return;
+        }
+        console.log('[Script Caçadas] Status — redirecionando para caçadas...');
+        window.location.href = URL_CACADAS;
+        return;
+      }
 
       var paginasConhecidas = [
         {
@@ -357,58 +457,6 @@
           }
         },
         {
-          id: 'invasor',
-          checar: function() { return urlAtual.indexOf('invasor') !== -1; },
-          executar: function() {
-            console.warn('[Script] Página do Invasor acessada.');
-            console.log('[Script] Aguardando 2 minutos para redirecionar para Caçadas...');
-
-            setTimeout(function() {
-              console.log('[Script] Tempo de espera do Invasor concluído. Redirecionando para Caçadas...');
-              window.location.href = URL_CACADAS;
-            }, TEMPO_ESPERA_INVASOR);
-
-            return true;
-          }
-        },
-        {
-          id: 'login',
-          checar: function() { return !!formLogin; },
-          executar: function() {
-            var selectServer = formLogin.querySelector('select[name="server_login"]');
-            var inputUsuario = formLogin.querySelector('#usuario');
-            var inputSenha = formLogin.querySelector('#senha');
-
-            if (selectServer) {
-              selectServer.value = '0';
-              selectServer.dispatchEvent(new Event('change', { bubbles: true }));
-
-              if (inputUsuario) {
-                inputUsuario.value = USUARIO_FINAL;
-                inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
-                inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-
-              if (inputSenha) {
-                inputSenha.value = SENHA_FINAL;
-                inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
-                inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
-              }
-
-              setTimeout(function() {
-                var btnLogin = formLogin.querySelector('input[type="submit"]');
-                if (btnLogin) {
-                  btnLogin.click();
-                } else {
-                  agendarReloadFalha('Botão de login não encontrado.');
-                }
-              }, 2000);
-              return true;
-            }
-            return false;
-          }
-        },
-        {
           id: 'cacadas',
           checar: function() { return urlAtual.indexOf('cacadas') !== -1; },
           executar: function() {
@@ -422,8 +470,8 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  // Atraso aleatório entre 30s e 3min (30.000ms a 180.000ms)
-                  var tempoAleatorio = Math.floor(Math.random() * (180000 - 30000 + 1)) + 30000;
+                  // Atraso aleatório entre 5min e 12min (300.000ms a 720.000ms)
+                  var tempoAleatorio = Math.floor(Math.random() * (720000 - 300000 + 1)) + 300000;
                   var segundos = Math.round(tempoAleatorio / 1000);
 
                   console.log('[Caçadas] Nível selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos + 's para submeter caçada...');
@@ -464,7 +512,7 @@
           paginaEncontrada = true;
           var sucessoAcao = pagina.executar();
 
-          if (!sucessoAcao && pagina.id !== 'login' && pagina.id !== 'captcha_seguranca' && pagina.id !== 'invasor') { 
+          if (!sucessoAcao && pagina.id !== 'captcha_seguranca') { 
             agendarReloadFalha('Falha de ação na página ' + pagina.id);
           }
           break;

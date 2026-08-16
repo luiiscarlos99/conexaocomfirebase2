@@ -1,0 +1,10 @@
+# Referências locais (HTMLs baixados do jogo)
+paginas/
+
+# Scripts e notas antigas / de rascunho
+invSOS.js
+login e atk
+sof.js
+
+# Documentação antiga exportada do Gemini (contexto completo com código)
+README-contexto-gemini.md
