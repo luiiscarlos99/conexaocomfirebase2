@@ -12,10 +12,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptDir 'discord-webhook.ps1')
+
 $configPath = Join-Path $scriptDir 'contas-jogo.config.ps1'
 
 if (-not (Test-Path $configPath)) {
@@ -64,7 +63,7 @@ function Send-DiscordStartAviso {
 
     $webhook = Get-DiscordWebhookStart
     if ([string]::IsNullOrWhiteSpace($webhook)) {
-        Write-Warning 'Discord: webhook nao configurado — aviso de start ignorado.'
+        Write-Warning 'Discord: webhook nao configurado - aviso de start ignorado.'
         return
     }
 
@@ -76,6 +75,11 @@ function Send-DiscordStartAviso {
     } else {
         'Atalho manual'
     }
+
+    $txtIntro = U8 0x4E,0x61,0x76,0x65,0x67,0x61,0x64,0x6F,0x72,0x65,0x73,0x20,0x61,0x62,0x65,0x72,0x74,0x6F,0x73,0x20,0x63,0x6F,0x6D,0x20,0x63,0x61,0xC3,0xA7,0x61,0x64,0x61,0x73,0x20,0x2B,0x20,0x69,0x6E,0x76,0x61,0x73,0x6F,0x72,0x2E
+    $lblNivel = U8 0x4E,0xC3,0xAD,0x76,0x65,0x6C,0x20,0x63,0x61,0xC3,0xA7,0x61,0x64,0x61,0x73
+    $lblUsuario = U8 0x55,0x73,0x75,0xC3,0xA1,0x72,0x69,0x6F
+    $lblHorario = U8 0x48,0x6F,0x72,0xC3,0xA1,0x72,0x69,0x6F
 
     $linhasContas = foreach ($nome in $ContasAbertas) {
         "- $nome"
@@ -89,16 +93,16 @@ function Send-DiscordStartAviso {
     }
 
     $descricao = @(
-        'Navegadores abertos com caçadas + invasor.'
+        $txtIntro
         ''
         "**Origem:** $origemTexto"
         "**Contas:**"
         ($linhasContas -join [Environment]::NewLine)
         ''
-        "**Nivel caçadas:** $NivelCacadas"
+        "**${lblNivel}:** $NivelCacadas"
         "**Computador:** ``$computador``"
-        "**Usuario:** ``$usuario``"
-        "**Horario:** $agora"
+        "**${lblUsuario}:** ``$usuario``"
+        "**${lblHorario}:** $agora"
     ) -join [Environment]::NewLine
 
     $payload = @{
@@ -118,9 +122,7 @@ function Send-DiscordStartAviso {
     }
 
     try {
-        $json = $payload | ConvertTo-Json -Depth 6 -Compress
-        $bytes = $Utf8NoBom.GetBytes($json)
-        Invoke-WebRequest -Uri $webhook -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing | Out-Null
+        Send-DiscordWebhookUtf8 -Url $webhook -Payload $payload
         Write-Host 'Aviso enviado ao Discord.' -ForegroundColor Green
     } catch {
         Write-Warning "Falha ao enviar aviso Discord: $_"

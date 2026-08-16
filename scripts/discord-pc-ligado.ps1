@@ -1,23 +1,23 @@
-# Envia aviso no Discord quando o PC liga / usuário faz logon.
+# Envia aviso no Discord quando o PC liga / usuario faz logon.
 # Uso: agende no Task Scheduler (ver instalar-tarefa-startup.ps1)
 
 $ErrorActionPreference = 'Stop'
 
-$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $scriptDir 'discord-webhook.ps1')
+
 $configPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
 
 if (-not (Test-Path $configPath)) {
-    Write-Error "Arquivo de config não encontrado: $configPath`nCopie discord-pc-ligado.config.example.ps1 para discord-pc-ligado.config.ps1"
+    $msg = U8 0x41,0x72,0x71,0x75,0x69,0x76,0x6F,0x20,0x64,0x65,0x20,0x63,0x6F,0x6E,0x66,0x69,0x67,0x20,0x6E,0xC3,0xA3,0x6F,0x20,0x65,0x6E,0x63,0x6F,0x6E,0x74,0x72,0x61,0x64,0x6F
+    Write-Error "$msg`: $configPath`nCopie discord-pc-ligado.config.example.ps1 para discord-pc-ligado.config.ps1"
     exit 1
 }
 
 . $configPath
 
 if ([string]::IsNullOrWhiteSpace($DiscordWebhookUrl)) {
-    Write-Error 'DiscordWebhookUrl não configurado em discord-pc-ligado.config.ps1'
+    Write-Error 'DiscordWebhookUrl nao configurado em discord-pc-ligado.config.ps1'
     exit 1
 }
 
@@ -27,17 +27,6 @@ function Test-InternetReady {
     } catch {
         return $false
     }
-}
-
-function Send-DiscordWebhookUtf8 {
-    param(
-        [Parameter(Mandatory = $true)][string]$Url,
-        [Parameter(Mandatory = $true)][hashtable]$Payload
-    )
-
-    $json = $Payload | ConvertTo-Json -Depth 6 -Compress
-    $bytes = $Utf8NoBom.GetBytes($json)
-    Invoke-WebRequest -Uri $Url -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing | Out-Null
 }
 
 $redeOk = $false
@@ -50,7 +39,7 @@ for ($t = 0; $t -lt 24; $t++) {
 }
 
 if (-not $redeOk) {
-    Write-Warning 'Rede indisponível — aviso Discord não enviado.'
+    Write-Warning (U8 0x52,0x65,0x64,0x65,0x20,0x69,0x6E,0x64,0x69,0x73,0x70,0x6F,0x6E,0xC3,0xAD,0x76,0x65,0x6C,0x20,0x2D,0x20,0x61,0x76,0x69,0x73,0x6F,0x20,0x44,0x69,0x73,0x63,0x6F,0x72,0x64,0x20,0x6E,0xC3,0xA3,0x6F,0x20,0x65,0x6E,0x76,0x69,0x61,0x64,0x6F,0x2E)
     exit 2
 }
 
@@ -67,21 +56,28 @@ try {
     $uptimeTexto = 'n/d'
 }
 
+$lblComputador = U8 0x43,0x6F,0x6D,0x70,0x75,0x74,0x61,0x64,0x6F,0x72
+$lblUsuario = U8 0x55,0x73,0x75,0xC3,0xA1,0x72,0x69,0x6F
+$lblHorario = U8 0x48,0x6F,0x72,0xC3,0xA1,0x72,0x69,0x6F
+$lblBoot = U8 0x54,0x65,0x6D,0x70,0x6F,0x20,0x64,0x65,0x73,0x64,0x65,0x20,0x6F,0x20,0x62,0x6F,0x6F,0x74
+$txtIntro = U8 0x50,0x6F,0x73,0x73,0xC3,0xAD,0x76,0x65,0x6C,0x20,0x72,0x65,0x74,0x6F,0x72,0x6E,0x6F,0x20,0x61,0x70,0xC3,0xB3,0x73,0x20,0x71,0x75,0x65,0x64,0x61,0x20,0x64,0x65,0x20,0x65,0x6E,0x65,0x72,0x67,0x69,0x61,0x20,0x6F,0x75,0x20,0x72,0x65,0x69,0x6E,0xC3,0xAD,0x63,0x69,0x6F,0x2E
+$txtTitulo = (U8 0xF0,0x9F,0x9F,0xA2) + ' PC ligado / logon detectado'
+
 $descricao = @(
-    'Possível retorno após queda de energia ou reinício.'
+    $txtIntro
     ''
-    "**Computador:** ``$computador``"
-    "**Usuário:** ``$usuario``"
+    "**${lblComputador}:** ``$computador``"
+    "**${lblUsuario}:** ``$usuario``"
     "**Sistema:** $so"
-    "**Horário:** $agora"
-    "**Tempo desde o boot:** $uptimeTexto"
+    "**${lblHorario}:** $agora"
+    "**${lblBoot}:** $uptimeTexto"
 ) -join [Environment]::NewLine
 
 $payload = @{
     username = 'Monitor PC'
     embeds = @(
         @{
-            title = '🟢 PC ligado / logon detectado'
+            title = $txtTitulo
             description = $descricao
             color = 5763719
             timestamp = (Get-Date).ToUniversalTime().ToString('o')
