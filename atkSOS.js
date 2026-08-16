@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,6 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
+  var SCRIPT_VERSAO = '2.6';
+  var SCRIPT_ATUALIZADO = '16/08/2026 19:31';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -33,6 +35,12 @@
     window.botLigar = window.__BOT_CONTROLE__.ligar;
     window.botStatus = window.__BOT_CONTROLE__.status;
   }
+
+  window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
+  console.log(
+    '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
+    'color:#2ecc71;font-weight:bold'
+  );
 
   try {
     if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
@@ -414,7 +422,7 @@
     return false;
   }
 
-  console.log('[Script] Iniciado. Usuário ativo: ' + USUARIO_FINAL + ' | Nível Caçada: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
+  console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
     try {

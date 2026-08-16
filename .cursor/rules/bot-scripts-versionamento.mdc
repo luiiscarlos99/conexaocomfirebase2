@@ -1,0 +1,47 @@
+---
+description: Versionamento e timestamp de build nos bots atkSOS.js e atkInvSOS.js
+globs: atkSOS.js,atkInvSOS.js
+alwaysApply: false
+---
+
+# Versionamento dos scripts bot (Inject Code)
+
+Ao alterar `atkSOS.js` ou `atkInvSOS.js`, **sempre** atualizar versão e data antes de commit/push.
+
+## Campos obrigatórios (início do IIFE, após `'use strict'`)
+
+```javascript
+var SCRIPT_VERSAO = '2.6';
+var SCRIPT_ATUALIZADO = '16/08/2026 19:30';
+```
+
+E o header UserScript deve coincidir:
+
+```javascript
+// @version      2.6
+```
+
+## Regras de bump
+
+| Tipo de mudança | Exemplo |
+|---|---|
+| Bugfix / ajuste pequeno | `2.6` → `2.7` ou `4.1` → `4.2` |
+| Feature nova relevante | minor: `2.6` → `2.7` (ou `3.0` se grande) |
+| Arquivos independentes | cada script tem sua própria versão |
+
+## Formato de `SCRIPT_ATUALIZADO`
+
+- `DD/MM/YYYY HH:mm` (horário local Brasil, UTC-3)
+- Usar a data/hora **do momento da alteração**, não copiar valor antigo
+
+## Log no console (já implementado — manter)
+
+- Caçadas: `[Bot Caçadas] vX | atualizado: ...` + `window.__BOT_BUILD_CACADAS__`
+- Invasor: `[Bot Invasor] vX | atualizado: ...` + `window.__BOT_BUILD_INVASOR__`
+- Log deve rodar **antes** do kill switch (`botParar`), para detectar cache
+
+## Checklist antes de push
+
+1. `SCRIPT_VERSAO` === `// @version`
+2. `SCRIPT_ATUALIZADO` reflete a alteração de hoje
+3. Ambos os `.js` alterados foram atualizados (se aplicável)
