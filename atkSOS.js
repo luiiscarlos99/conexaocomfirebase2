@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.7
+// @version      2.8
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.7';
-  var SCRIPT_ATUALIZADO = '16/08/2026 20:35';
+  var SCRIPT_VERSAO = '2.8';
+  var SCRIPT_ATUALIZADO = '16/08/2026 20:40';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -233,7 +233,7 @@
     return null;
   }
 
-  function preprocessarCaptchaCanvas(img) {
+  function preprocessarCaptchaCanvas(img, inverter) {
     var scale = 3;
     var w = (img.naturalWidth || img.width || 200) * scale;
     var h = (img.naturalHeight || img.height || 60) * scale;
@@ -249,7 +249,7 @@
       var g = d[i + 1];
       var b = d[i + 2];
       var ehDigito = (r > 130 && g > 110 && b < 110) || (r + g > 280 && b < 120);
-      var v = ehDigito ? 0 : 255;
+      var v = ehDigito ? (inverter ? 255 : 0) : (inverter ? 0 : 255);
       d[i] = v;
       d[i + 1] = v;
       d[i + 2] = v;
@@ -257,6 +257,25 @@
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
+  }
+
+  function extrairDigitosOCR(result) {
+    var raw = (result.data && result.data.text) ? result.data.text : '';
+    return raw.replace(/\D/g, '');
+  }
+
+  function escolherMelhorOCR(candidatos) {
+    var comCinco = null;
+    var melhor = null;
+    for (var i = 0; i < candidatos.length; i++) {
+      var d = candidatos[i];
+      if (!d) continue;
+      if (d.length === 5) comCinco = d;
+      if (!melhor || d.length > melhor.length) melhor = d;
+    }
+    if (comCinco) return comCinco;
+    if (melhor && melhor.length >= 4) return melhor.substring(0, 5);
+    return melhor || null;
   }
 
   function carregarScriptExterno(url) {
@@ -278,21 +297,22 @@
     }
 
     function executarOCR() {
-      var canvas = preprocessarCaptchaCanvas(img);
-      Tesseract.recognize(canvas, 'eng', {
+      var canvasA = preprocessarCaptchaCanvas(img, false);
+      var canvasB = preprocessarCaptchaCanvas(img, true);
+      var opts = {
         tessedit_char_whitelist: '0123456789',
         tessedit_pageseg_mode: '7'
-      }).then(function(result) {
-        var raw = (result.data && result.data.text) ? result.data.text : '';
-        var digits = raw.replace(/\D/g, '');
-        console.log('[Captcha OCR] Raw:', raw, '| Digitos:', digits);
-        if (digits.length >= 5) {
-          callback(digits.substring(0, 5));
-        } else if (digits.length > 0) {
-          callback(digits);
-        } else {
-          callback(null);
-        }
+      };
+
+      Promise.all([
+        Tesseract.recognize(canvasA, 'eng', opts),
+        Tesseract.recognize(canvasB, 'eng', opts)
+      ]).then(function(results) {
+        var d1 = extrairDigitosOCR(results[0]);
+        var d2 = extrairDigitosOCR(results[1]);
+        var escolhido = escolherMelhorOCR([d1, d2]);
+        console.log('[Captcha OCR] Tentativa A:', d1, '| B:', d2, '| Escolhido:', escolhido);
+        callback(escolhido);
       }).catch(function(err) {
         console.warn('[Captcha OCR] Falha:', err);
         callback(null);
@@ -439,20 +459,20 @@
   }
 
   // --- CAPTURA DE TELA E ENVIO DISCORD ---
-  function enviarNotificacaoDiscordComPrint(titulo, descricao, corHex, callback) {
+  function enviarNotificacaoDiscordComPrint(titulo, descricao, corHex, callback, linkUrl) {
     if (typeof html2canvas === 'undefined') {
       var script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
       script.onload = function() {
-        processarEnvioDiscord(titulo, descricao, corHex, callback);
+        processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl);
       };
       document.head.appendChild(script);
     } else {
-      processarEnvioDiscord(titulo, descricao, corHex, callback);
+      processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl);
     }
   }
 
-  function processarEnvioDiscord(titulo, descricao, corHex, callback) {
+  function processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl) {
     html2canvas(document.body).then(function(canvas) {
       canvas.toBlob(function(blob) {
         if (!blob) {
@@ -461,23 +481,25 @@
         }
 
         var corDecimal = parseInt((corHex || '#7289DA').replace('#', ''), 16);
-        
+        var embed = {
+          title: titulo,
+          description: descricao,
+          color: corDecimal,
+          timestamp: new Date().toISOString(),
+          image: {
+            url: 'attachment://captura.png'
+          },
+          footer: {
+            text: 'Usuario: ' + USUARIO_FINAL + ' | ' + CODIGO_SERVIDOR
+          }
+        };
+        if (linkUrl) {
+          embed.url = linkUrl;
+        }
+
         var payloadData = {
           username: 'Bot Shadow of Shinobi',
-          embeds: [
-            {
-              title: titulo,
-              description: descricao,
-              color: corDecimal,
-              timestamp: new Date().toISOString(),
-              image: {
-                url: 'attachment://captura.png'
-              },
-              footer: {
-                text: 'Usuário: ' + USUARIO_FINAL + ' | Servidor: ' + CODIGO_SERVIDOR
-              }
-            }
-          ]
+          embeds: [embed]
         };
 
         var formData = new FormData();
@@ -644,10 +666,16 @@
             iniciarEscutaFirebaseCaptcha();
 
             resolverCaptchaOCR(function(respostaOCR) {
+              var linkConfirmar = (respostaOCR && respostaOCR.length >= 4)
+                ? montarLinkPainelCaptcha(respostaOCR, true)
+                : montarLinkPainelCaptcha('', false);
+
               enviarNotificacaoDiscordComPrint(
-                'CAPTCHA DETECTADO',
+                'CAPTCHA — clique no titulo para confirmar',
                 montarDescricaoDiscordCaptcha(respostaOCR),
-                '#FF0000'
+                '#FF0000',
+                null,
+                linkConfirmar
               );
             });
 

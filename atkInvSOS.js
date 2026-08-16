@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.2
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase, Captcha e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '4.1';
-  var SCRIPT_ATUALIZADO = '16/08/2026 19:31';
+  var SCRIPT_VERSAO = '4.2';
+  var SCRIPT_ATUALIZADO = '16/08/2026 20:40';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -601,15 +601,9 @@
         return;
       }
 
-      // 1. TELA DE CAPTCHA
+      // 1. CAPTCHA — delegado ao atkSOS.js (evita Discord/Firebase duplicado)
       if (pagina.ehCaptcha || document.querySelector('form[action="captcha_seguranca"]')) {
-        console.warn('[Script] Captcha detectado!');
-        tocarAlertaSonoro();
-
-        capturarEEnviarPrintInferiorDiscord('⚠️ CAPTCHA DETECTADO! Painel: ' + URL_PAINEL_GIT);
-        iniciarEscutaFirebaseCaptcha();
-
-        setTimeout(function() { window.location.href = URL_INVASOR; }, TEMPO_TIMEOUT_CAPTCHA);
+        console.log('[Script Invasor] Captcha — sem acao (delegado ao atkSOS).');
         return;
       }
 

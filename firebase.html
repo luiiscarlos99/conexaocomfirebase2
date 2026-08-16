@@ -236,8 +236,8 @@
       <p id="badgeConta" class="badge-conta" style="display:none;"></p>
     </div>
 
-    <!-- Campo 1: Nome do Comando -->
-    <div class="input-group">
+    <!-- Campo 1: Nome do Comando (modo manual) -->
+    <div class="input-group" id="grupoChaveFirebase">
       <label for="nomeComandoInput">Nome do Comando (Chave Firebase)</label>
       <input type="text" id="nomeComandoInput" class="input-field" value="comando_recebido" placeholder="Ex: comando_recebido">
     </div>
@@ -307,10 +307,12 @@
       const valorInput = document.getElementById('valorComandoInput');
       const badge = document.getElementById('badgeConta');
       const subtitulo = document.getElementById('headerSubtitulo');
+      const grupoChave = document.getElementById('grupoChaveFirebase');
 
       if (codigo) {
         nomeInput.value = 'comandos/' + codigo.trim() + '/resposta';
         nomeInput.readOnly = true;
+        if (grupoChave) grupoChave.style.display = 'none';
         badge.style.display = 'inline-block';
         badge.textContent = 'Conta: ' + codigo.trim();
         subtitulo.textContent = 'Confirme o codigo e envie ao bot';
