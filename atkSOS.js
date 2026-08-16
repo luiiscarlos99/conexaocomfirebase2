@@ -12,7 +12,7 @@
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
-  var TEMPO_ESPERA_INVASOR = 120000; // 2 minutos
+  var TEMPO_ESPERA_INVASOR = 180000; // 2 minutos
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
