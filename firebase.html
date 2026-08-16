@@ -55,6 +55,18 @@
       margin-top: 4px;
     }
 
+    .badge-conta {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      font-weight: bold;
+    }
+
     .input-group {
       margin-bottom: 14px;
     }
@@ -219,8 +231,9 @@
 
   <div class="container">
     <div class="header">
-      <h1>🥷 Painel Invasor</h1>
-      <p>Disparo Remoto de Comandos (Firebase)</p>
+      <h1>🥷 Painel Captcha</h1>
+      <p id="headerSubtitulo">Disparo remoto via Firebase</p>
+      <p id="badgeConta" class="badge-conta" style="display:none;"></p>
     </div>
 
     <!-- Campo 1: Nome do Comando -->
@@ -231,8 +244,8 @@
 
     <!-- Campo 2: Valor do Comando -->
     <div class="input-group">
-      <label for="valorComandoInput">Valor do Comando</label>
-      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Digite a instrução (ex: captcha)">
+      <label for="valorComandoInput">Codigo do captcha (5 numeros)</label>
+      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840" inputmode="numeric" maxlength="8">
     </div>
 
     <!-- Botão de Disparo -->
@@ -274,6 +287,52 @@
       firebase.initializeApp(firebaseConfig);
     }
     const database = firebase.database();
+
+    function obterChaveFirebase() {
+      const params = new URLSearchParams(window.location.search);
+      const codigo = params.get('codigo');
+      if (codigo && codigo.trim()) {
+        return 'comandos/' + codigo.trim() + '/resposta';
+      }
+      return document.getElementById('nomeComandoInput').value.trim() || 'comando_recebido';
+    }
+
+    function aplicarParametrosUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const codigo = params.get('codigo');
+      const resposta = params.get('resposta');
+      const auto = params.get('auto') === '1';
+
+      const nomeInput = document.getElementById('nomeComandoInput');
+      const valorInput = document.getElementById('valorComandoInput');
+      const badge = document.getElementById('badgeConta');
+      const subtitulo = document.getElementById('headerSubtitulo');
+
+      if (codigo) {
+        nomeInput.value = 'comandos/' + codigo.trim() + '/resposta';
+        nomeInput.readOnly = true;
+        badge.style.display = 'inline-block';
+        badge.textContent = 'Conta: ' + codigo.trim();
+        subtitulo.textContent = 'Confirme o codigo e envie ao bot';
+      }
+
+      if (resposta) {
+        valorInput.value = resposta.trim();
+      }
+
+      if (auto && resposta) {
+        subtitulo.textContent = 'Enviando automaticamente...';
+        setTimeout(function() {
+          enviarComando();
+        }, 700);
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', aplicarParametrosUrl);
+    } else {
+      aplicarParametrosUrl();
+    }
 
     function exibirNotificacao(mensagem, ehErro = false) {
       const toast = document.getElementById('toast');
@@ -336,8 +395,8 @@
       nomeInput.classList.remove('input-error');
       valorInput.classList.remove('input-error');
 
-      const nomeComando = nomeInput.value.trim();
-      const valorComando = valorInput.value.trim();
+      const nomeComando = obterChaveFirebase();
+      const valorComando = valorInput.value.trim().replace(/\D/g, '');
 
       if (!nomeComando || nomeComando.length < 1) {
         destacarErroCampo(nomeInput);
@@ -347,9 +406,12 @@
 
       if (!valorComando || valorComando.length < 1) {
         destacarErroCampo(valorInput);
-        exibirNotificacao('⚠️ Digite pelo menos 1 caractere!', true);
+        exibirNotificacao('⚠️ Digite o codigo do captcha!', true);
         return;
       }
+
+      valorInput.value = valorComando;
+      nomeInput.value = nomeComando;
 
       const btn = document.getElementById('btnEnviar');
       btn.disabled = true;

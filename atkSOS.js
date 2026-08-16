@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.6';
-  var SCRIPT_ATUALIZADO = '16/08/2026 19:31';
+  var SCRIPT_VERSAO = '2.7';
+  var SCRIPT_ATUALIZADO = '16/08/2026 20:35';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -68,7 +68,7 @@
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
-  var URL_PAINEL_GIT = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase?codigo=';
+  var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var reloadAgendado = false;
 
   // Configurações do Firebase Realtime Database
@@ -206,6 +206,142 @@
     return null;
   }
 
+  // --- CAPTCHA: OCR + link painel pre-preenchido ---
+  function obterRefFirebaseCaptcha() {
+    return 'comandos/' + CODIGO_SERVIDOR + '/resposta';
+  }
+
+  function montarLinkPainelCaptcha(resposta, autoEnviar) {
+    var q = new URLSearchParams();
+    q.set('codigo', CODIGO_SERVIDOR);
+    if (resposta) q.set('resposta', String(resposta));
+    if (autoEnviar) q.set('auto', '1');
+    return URL_PAINEL_BASE + '?' + q.toString();
+  }
+
+  function obterImagemCaptcha() {
+    var form = document.querySelector('form[action*="captcha_seguranca"]');
+    if (form) {
+      var imgForm = form.querySelector('img');
+      if (imgForm) return imgForm;
+    }
+    var input = document.querySelector('input[name="resposta"]');
+    if (input && input.form) {
+      var imgInput = input.form.querySelector('img');
+      if (imgInput) return imgInput;
+    }
+    return null;
+  }
+
+  function preprocessarCaptchaCanvas(img) {
+    var scale = 3;
+    var w = (img.naturalWidth || img.width || 200) * scale;
+    var h = (img.naturalHeight || img.height || 60) * scale;
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    var imgData = ctx.getImageData(0, 0, w, h);
+    var d = imgData.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var r = d[i];
+      var g = d[i + 1];
+      var b = d[i + 2];
+      var ehDigito = (r > 130 && g > 110 && b < 110) || (r + g > 280 && b < 120);
+      var v = ehDigito ? 0 : 255;
+      d[i] = v;
+      d[i + 1] = v;
+      d[i + 2] = v;
+      d[i + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
+  function carregarScriptExterno(url) {
+    return new Promise(function(resolve, reject) {
+      var s = document.createElement('script');
+      s.src = url;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  function resolverCaptchaOCR(callback) {
+    var img = obterImagemCaptcha();
+    if (!img) {
+      console.warn('[Captcha OCR] Imagem nao encontrada no DOM.');
+      callback(null);
+      return;
+    }
+
+    function executarOCR() {
+      var canvas = preprocessarCaptchaCanvas(img);
+      Tesseract.recognize(canvas, 'eng', {
+        tessedit_char_whitelist: '0123456789',
+        tessedit_pageseg_mode: '7'
+      }).then(function(result) {
+        var raw = (result.data && result.data.text) ? result.data.text : '';
+        var digits = raw.replace(/\D/g, '');
+        console.log('[Captcha OCR] Raw:', raw, '| Digitos:', digits);
+        if (digits.length >= 5) {
+          callback(digits.substring(0, 5));
+        } else if (digits.length > 0) {
+          callback(digits);
+        } else {
+          callback(null);
+        }
+      }).catch(function(err) {
+        console.warn('[Captcha OCR] Falha:', err);
+        callback(null);
+      });
+    }
+
+    function aguardarImagem(cb) {
+      if (img.complete && img.naturalWidth > 0) {
+        cb();
+      } else {
+        img.onload = cb;
+        img.onerror = function() { callback(null); };
+      }
+    }
+
+    if (window.Tesseract) {
+      aguardarImagem(executarOCR);
+      return;
+    }
+
+    carregarScriptExterno('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js')
+      .then(function() { aguardarImagem(executarOCR); })
+      .catch(function() { callback(null); });
+  }
+
+  function montarDescricaoDiscordCaptcha(respostaOCR) {
+    var linhas = [
+      'Verificacao de seguranca ativa.',
+      '',
+      '**Conta:** ' + USUARIO_FINAL,
+      '**Codigo:** `' + CODIGO_SERVIDOR + '`',
+      ''
+    ];
+
+    if (respostaOCR && respostaOCR.length >= 4) {
+      linhas.push('**OCR sugerido:** `' + respostaOCR + '` *(confira no print)*');
+      linhas.push('');
+      linhas.push('[**Confirmar captcha (1 clique)**](' + montarLinkPainelCaptcha(respostaOCR, true) + ')');
+      linhas.push('');
+      linhas.push('[Abrir painel para editar](' + montarLinkPainelCaptcha(respostaOCR, false) + ')');
+    } else {
+      linhas.push('OCR nao confiou na leitura — digite manualmente no painel.');
+      linhas.push('');
+      linhas.push('[**Abrir painel captcha**](' + montarLinkPainelCaptcha('', false) + ')');
+    }
+
+    return linhas.join('\n');
+  }
+
   // --- ESCUTA DO FIREBASE PARA O CAPTCHA ---
   function iniciarEscutaFirebaseCaptcha() {
     console.log('[Firebase] Conectando ao Realtime Database...');
@@ -226,9 +362,10 @@
           console.warn('[Firebase] Erro ao atualizar código do servidor:', err);
         });
 
-      var campoComando = database.ref('comando_recebido');
+      var refPath = obterRefFirebaseCaptcha();
+      var campoComando = database.ref(refPath);
 
-      console.log('%c[Firebase] CONECTADO COM SUCESSO! AGUARDANDO CAPTCHA...', 'color: #00ff00; font-weight: bold;');
+      console.log('%c[Firebase] CONECTADO! Aguardando captcha em: ' + refPath, 'color: #00ff00; font-weight: bold;');
 
       campoComando.off();
 
@@ -249,7 +386,7 @@
             digitarTexto(inputCaptcha, codigoCaptcha, function() {
               console.log('[Captcha] Digitação concluída! Limpando o comando no Firebase...');
 
-              var urlDelete = FIREBASE_CONFIG.databaseURL + '/comando_recebido.json';
+              var urlDelete = FIREBASE_CONFIG.databaseURL + '/' + refPath + '.json';
 
               fetch(urlDelete, { method: 'DELETE' })
                 .then(function() {
@@ -502,21 +639,19 @@
             return urlAtual.indexOf('captcha_seguranca') !== -1 || document.querySelector('form[action="captcha_seguranca"]') !== null; 
           },
           executar: function() {
-            console.warn('[Script] Captcha detectado! Enviando print ao Discord e aguardando código...');
+            console.warn('[Script] Captcha detectado! OCR + Discord + Firebase...');
             tocarAlertaSonoro();
-
-            var linkPainelComCodigo = URL_PAINEL_GIT + CODIGO_SERVIDOR;
-
-            enviarNotificacaoDiscordComPrint(
-              '⚠️ CAPTCHA DETECTADO!',
-              'Verificação de segurança ativa na página.\n\n**URL do Jogo:** ' + urlAtual + '\n**Link do Painel Captcha:** ' + linkPainelComCodigo,
-              '#FF0000'
-            );
-
             iniciarEscutaFirebaseCaptcha();
 
-            // Timeout de 10 minutos para redirecionar para Caçadas caso o captcha não seja resolvido
-            console.log('[Captcha] Timer de 10 minutos iniciado para redirecionar caso não seja resolvido...');
+            resolverCaptchaOCR(function(respostaOCR) {
+              enviarNotificacaoDiscordComPrint(
+                'CAPTCHA DETECTADO',
+                montarDescricaoDiscordCaptcha(respostaOCR),
+                '#FF0000'
+              );
+            });
+
+            console.log('[Captcha] Timer de 10 minutos iniciado para redirecionar caso nao seja resolvido...');
             setTimeout(function() {
               console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando para Caçadas...');
               window.location.href = URL_CACADAS;
