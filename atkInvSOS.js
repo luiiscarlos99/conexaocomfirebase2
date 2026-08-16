@@ -24,6 +24,7 @@
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
+  var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
   var URL_PAINEL_GIT = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase?codigo=';
 
   var reloadAgendado = false;
@@ -185,7 +186,7 @@
   }
 
   // --- ROLA A TELA E ENVIA PRINT PRO DISCORD ---
-  async function capturarEEnviarPrintInferiorDiscord(motivo) {
+  async function capturarEEnviarPrintInferiorDiscord(motivo, silencioso) {
     if (!DISCORD_WEBHOOK_URL) return;
 
     try {
@@ -207,9 +208,17 @@
           return;
         }
 
+        var payload = {
+          content: '🚨 **Invasor Detectado / Visão Inferior!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`'
+        };
+
+        if (silencioso) {
+          payload.flags = 4096; // SUPPRESS_NOTIFICATIONS — posta no canal sem notificar
+        }
+
         var formData = new FormData();
+        formData.append('payload_json', JSON.stringify(payload));
         formData.append('file', blob, 'print-invasor.png');
-        formData.append('content', '🚨 **Invasor Detectado / Visão Inferior!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`');
 
         fetch(DISCORD_WEBHOOK_URL, {
           method: 'POST',
@@ -217,7 +226,7 @@
         })
         .then(function(resposta) {
           if (resposta.ok) {
-            console.log('[Discord] Print enviado com sucesso!');
+            console.log('[Discord] Print enviado com sucesso!' + (silencioso ? ' (silencioso)' : ''));
           } else {
             console.error('[Discord] Erro no Webhook:', resposta.status, resposta.statusText);
           }
@@ -572,7 +581,7 @@
       // 3. TELA PÓS-COMBATE
       if (urlAtual.indexOf('invasor-combate') !== -1) {
         console.log('[Invasor Combate] Batalha concluída. Aguardando 1 min para retornar...');
-        capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído');
+        capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído', DISCORD_COMBATE_SILENCIOSO);
 
         setTimeout(function() {
           window.location.href = URL_INVASOR;
