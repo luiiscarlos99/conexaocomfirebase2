@@ -11,7 +11,7 @@ $NivelCacadas = '2'
 $IntervaloEntreContas = 3
 
 # Espera apos abrir a aba de login antes de abrir cacadas/invasor (segundos)
-$IntervaloAposSetup = 15
+$IntervaloAposSetup = 60
 
 # Aviso Discord ao abrir contas (usa discord-pc-ligado.config.ps1 se omitir URL)
 $AvisarDiscordStart = $true

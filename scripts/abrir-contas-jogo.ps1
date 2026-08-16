@@ -192,7 +192,7 @@ function Start-ContaJogo {
         Write-Host "  Fase 1: setup/login -> $setup"
         Start-Process -FilePath $exe -ArgumentList ($args + $setup) | Out-Null
 
-        $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 15 }
+        $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
         Write-Host "  Aguardando ${esperaLogin}s para login..." -ForegroundColor DarkGray
         Start-Sleep -Seconds $esperaLogin
 
