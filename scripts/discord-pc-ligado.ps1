@@ -3,6 +3,9 @@
 
 $ErrorActionPreference = 'Stop'
 
+$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $configPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
 
@@ -26,7 +29,17 @@ function Test-InternetReady {
     }
 }
 
-# Aguarda rede ficar disponível após boot (até ~2 min)
+function Send-DiscordWebhookUtf8 {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][hashtable]$Payload
+    )
+
+    $json = $Payload | ConvertTo-Json -Depth 6 -Compress
+    $bytes = $Utf8NoBom.GetBytes($json)
+    Invoke-WebRequest -Uri $Url -Method Post -Body $bytes -ContentType 'application/json; charset=utf-8' -UseBasicParsing | Out-Null
+}
+
 $redeOk = $false
 for ($t = 0; $t -lt 24; $t++) {
     if (Test-InternetReady) {
@@ -54,20 +67,22 @@ try {
     $uptimeTexto = 'n/d'
 }
 
+$descricao = @(
+    'Possível retorno após queda de energia ou reinício.'
+    ''
+    "**Computador:** ``$computador``"
+    "**Usuário:** ``$usuario``"
+    "**Sistema:** $so"
+    "**Horário:** $agora"
+    "**Tempo desde o boot:** $uptimeTexto"
+) -join [Environment]::NewLine
+
 $payload = @{
     username = 'Monitor PC'
     embeds = @(
         @{
             title = '🟢 PC ligado / logon detectado'
-            description = @(
-                'Possível retorno após queda de energia ou reinício.'
-                ''
-                "**Computador:** ``$computador``"
-                "**Usuário:** ``$usuario``"
-                "**Sistema:** $so"
-                "**Horário:** $agora"
-                "**Tempo desde o boot:** $uptimeTexto"
-            ) -join "`n"
+            description = $descricao
             color = 5763719
             timestamp = (Get-Date).ToUniversalTime().ToString('o')
         }
@@ -78,10 +93,8 @@ if ($EnviarSilencioso) {
     $payload.flags = 4096
 }
 
-$json = $payload | ConvertTo-Json -Depth 6 -Compress
-
 try {
-    Invoke-RestMethod -Uri $DiscordWebhookUrl -Method Post -Body $json -ContentType 'application/json; charset=utf-8'
+    Send-DiscordWebhookUtf8 -Url $DiscordWebhookUrl -Payload $payload
     Write-Host "Aviso enviado ao Discord ($computador @ $agora)"
     exit 0
 } catch {
