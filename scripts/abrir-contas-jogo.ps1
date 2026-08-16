@@ -172,10 +172,8 @@ function Start-ContaJogo {
     }
 
     $setup = Get-SetupUrl -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel
-    $urlsJogo = @(
-        '{0}/cacadas' -f $Base.TrimEnd('/')
-        '{0}/invasor' -f $Base.TrimEnd('/')
-    )
+    $urlCacadas = '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
+    $urlInvasor = '{0}/invasor?bot_modo=invasor' -f $Base.TrimEnd('/')
 
     $args = @()
     if ($Conta.Anonimo) {
@@ -196,14 +194,18 @@ function Start-ContaJogo {
         Write-Host "  Aguardando ${esperaLogin}s para login..." -ForegroundColor DarkGray
         Start-Sleep -Seconds $esperaLogin
 
-        Write-Host "  Fase 2: $($urlsJogo -join ' | ')"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlsJogo) | Out-Null
+        Write-Host "  Fase 2: cacadas + invasor (abas separadas)"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlCacadas) | Out-Null
+        Start-Sleep -Seconds 1
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlInvasor) | Out-Null
     } else {
         if ($Conta.Anonimo) {
             Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
         }
-        Write-Host "  URLs: $($urlsJogo -join ' | ')"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlsJogo) | Out-Null
+        Write-Host "  URLs: $urlCacadas | $urlInvasor"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlCacadas) | Out-Null
+        Start-Sleep -Seconds 1
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlInvasor) | Out-Null
     }
 
     return $true

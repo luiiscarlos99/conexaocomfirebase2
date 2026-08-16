@@ -68,6 +68,15 @@ if ($AutoStartup) {
 }
 
 if ($instalarStartup) {
+    $configPath = Join-Path $scriptDir 'contas-jogo.config.ps1'
+    if (-not (Test-Path $configPath)) {
+        Write-Warning "Arquivo de config nao encontrado: $configPath"
+        Write-Warning 'Copie contas-jogo.config.example.ps1 para contas-jogo.config.ps1 antes de usar o auto-start.'
+        $instalarStartup = $false
+    }
+}
+
+if ($instalarStartup) {
     $action = New-ScheduledTaskAction `
         -Execute 'powershell.exe' `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcherPs1`" -Origem auto"

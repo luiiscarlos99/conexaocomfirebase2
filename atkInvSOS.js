@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      4.2
-// @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase, Captcha e Discord.
+// @version      4.5
+// @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '4.2';
-  var SCRIPT_ATUALIZADO = '16/08/2026 20:40';
+  var SCRIPT_VERSAO = '4.5';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:10';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -35,12 +35,6 @@
     window.botStatus = window.__BOT_CONTROLE__.status;
   }
 
-  window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
-  console.log(
-    '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
-    'color:#3498db;font-weight:bold'
-  );
-
   try {
     if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
       console.log('[Bot] Pausado nesta aba — botLigar() para reativar.');
@@ -48,8 +42,75 @@
     }
   } catch (e) {}
 
-  // Presença detectável pelo atkSOS.js — definido só ao entrar no escopo do invasor
+  function sincronizarModoAba() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var modo = params.get('bot_modo');
+      if (modo === 'invasor' || modo === 'cacadas') {
+        sessionStorage.setItem('BOT_MODO_ABA', modo);
+      }
+    } catch (e) {}
+  }
+
+  function obterModoAba() {
+    try {
+      return sessionStorage.getItem('BOT_MODO_ABA') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function classificarPaginaInvasor(url) {
+    var ehCombate = url.indexOf('invasor-combate') !== -1;
+    var ehInvasor = url.indexOf('invasor') !== -1 && !ehCombate;
+    var ehStatus = url.indexOf('/status') !== -1;
+    var ehCaptcha = url.indexOf('captcha_seguranca') !== -1;
+
+    return {
+      ehCombate: ehCombate,
+      ehInvasor: ehInvasor,
+      ehStatus: ehStatus,
+      ehCaptcha: ehCaptcha,
+      noEscopo: ehCombate || ehInvasor || ehStatus || ehCaptcha
+    };
+  }
+
+  function ehAbaInvasor(url) {
+    var modo = obterModoAba();
+    if (modo === 'cacadas') return false;
+    if (modo === 'invasor') return true;
+    // Sem bot_modo: so age em URLs de invasor (nao redireciona /status sozinho)
+    return url.indexOf('invasor') !== -1;
+  }
+
+  sincronizarModoAba();
+  var urlInicial = window.location.href;
+
+  // Caçadas/login: invasor nao injeta nada (mesmo com filtro /* na extensao)
+  if (obterModoAba() === 'cacadas' ||
+      urlInicial.indexOf('cacadas') !== -1 ||
+      urlInicial.indexOf('atacar') !== -1) {
+    console.log('[Script Invasor] Aba de cacadas — sem acao.');
+    return;
+  }
+
+  var paginaInicial = classificarPaginaInvasor(urlInicial);
+  if (!ehAbaInvasor(urlInicial) && !paginaInicial.noEscopo) {
+    console.log('[Script Invasor] Home/login — sem acao.');
+    return;
+  }
+
+  // Presenca detectavel pelo atkSOS.js — so nesta aba invasor
   window.__BOT_INVASOR_ATIVO__ = false;
+  if (ehAbaInvasor(urlInicial) && classificarPaginaInvasor(urlInicial).noEscopo) {
+    window.__BOT_INVASOR_ATIVO__ = true;
+  }
+
+  window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
+  console.log(
+    '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
+    'color:#3498db;font-weight:bold'
+  );
 
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
   var LIMITE_PLAYERS_DERROTADOS = 99999999;      // Altere aqui o limite desejado!
@@ -58,12 +119,10 @@
   var TEMPO_RELOAD_PADRAO = 60000;          // 1 minuto
   var TEMPO_RELOAD_GERENCIADA = 2000;        // 2 segundos
   var TEMPO_ESPERA_POS_COMBATE = 60000;      // 1 minuto
-  var TEMPO_TIMEOUT_CAPTCHA = 600000;        // 10 minutos
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
-  var URL_PAINEL_GIT = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase?codigo=';
 
   var reloadAgendado = false;
   var jaAtacouNestaPagina = false;
@@ -335,6 +394,7 @@
       console.warn('[Invasor] Ataque já disparado neste ciclo. Ignorando.');
       return;
     }
+    jaAtacouNestaPagina = true;
 
     var tentativas = 0;
     var maxTentativas = 15;
@@ -347,7 +407,6 @@
 
       if (btnAtacar) {
         clearInterval(timerBusca);
-        jaAtacouNestaPagina = true;
 
         console.log('[Invasor] Botão localizado na tentativa #' + tentativas + '! Clicando...');
         
@@ -390,6 +449,7 @@
               var comando = String(valor).toLowerCase().trim();
 
               if (comando === 'atacar' || comando === '1') {
+                campoAtaque.off();
                 console.log('%c[Firebase] Ordem de ataque REMOTA recebida!', 'color: #ffff00; font-weight: bold;');
                 fetch(urlDelete, { method: 'DELETE' }).finally(function() {
                   tentarAtacarLocalmente('Sinal Firebase Recebido');
@@ -398,90 +458,6 @@
             }
           });
         });
-    }
-
-    if (window.firebase && window.firebase.database) {
-      conectarEListen();
-    } else {
-      var scriptApp = document.createElement('script');
-      scriptApp.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
-      scriptApp.onload = function() {
-        var scriptDb = document.createElement('script');
-        scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
-        scriptDb.onload = conectarEListen;
-        document.head.appendChild(scriptDb);
-      };
-      document.head.appendChild(scriptApp);
-    }
-  }
-
-  // --- DIGITAÇÃO HUMANA PARA CAPTCHA ---
-  function digitarTexto(elementoInput, texto, callbackConcluido) {
-    elementoInput.focus();
-    elementoInput.value = '';
-
-    var i = 0;
-    function proximoCaractere() {
-      if (i < texto.length) {
-        elementoInput.value += texto.charAt(i);
-
-        elementoInput.dispatchEvent(new Event('keydown', { bubbles: true }));
-        elementoInput.dispatchEvent(new Event('keypress', { bubbles: true }));
-        elementoInput.dispatchEvent(new Event('input', { bubbles: true }));
-        elementoInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-
-        i++;
-        var atrasoHumano = Math.floor(Math.random() * (200 - 80 + 1)) + 80;
-        setTimeout(proximoCaractere, atrasoHumano);
-      } else {
-        elementoInput.dispatchEvent(new Event('change', { bubbles: true }));
-        elementoInput.blur();
-        if (callbackConcluido) callbackConcluido();
-      }
-    }
-
-    proximoCaractere();
-  }
-
-  // --- ESCUTA CAPTCHA NO FIREBASE ---
-  function iniciarEscutaFirebaseCaptcha() {
-    function conectarEListen() {
-      if (!window.firebase || !firebase.apps.length) {
-        firebase.initializeApp(FIREBASE_CONFIG);
-      }
-
-      var database = firebase.database();
-      var campoComando = database.ref('comando_recebido');
-
-      campoComando.off();
-      campoComando.on('value', function(snapshot) {
-        var valor = snapshot.val();
-
-        if (valor !== null && valor !== undefined && valor !== '') {
-          var codigoCaptcha = String(valor).trim();
-          var inputCaptcha = document.querySelector('input[name="resposta"]') || 
-                             document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
-
-          if (inputCaptcha) {
-            digitarTexto(inputCaptcha, codigoCaptcha, function() {
-              var urlDelete = FIREBASE_CONFIG.databaseURL + '/comando_recebido.json';
-
-              fetch(urlDelete, { method: 'DELETE' }).finally(function() {
-                setTimeout(function() {
-                  var formCaptcha = inputCaptcha.closest('form');
-                  var btnConfirmar = formCaptcha ? formCaptcha.querySelector('input[type="submit"]') : null;
-
-                  if (btnConfirmar) {
-                    btnConfirmar.click();
-                  } else if (formCaptcha) {
-                    formCaptcha.submit();
-                  }
-                }, Math.floor(Math.random() * (700 - 300 + 1)) + 300);
-              });
-            });
-          }
-        }
-      });
     }
 
     if (window.firebase && window.firebase.database) {
@@ -518,6 +494,7 @@
       textoCorpo.indexOf('HTTP ERROR 500') !== -1 ||
       textoCorpo.indexOf('500 INTERNAL SERVER ERROR') !== -1 ||
       textoCorpo.indexOf('502 BAD GATEWAY') !== -1 ||
+      textoCorpo.indexOf('503 SERVICE UNAVAILABLE') !== -1 ||
       textoCorpo.indexOf('503 SERVICE UNVAILABLE') !== -1 ||
       textoCorpo.indexOf('504 GATEWAY TIMEOUT') !== -1
     );
@@ -552,29 +529,14 @@
 
   function redirecionarParaInvasor(motivo) {
     console.warn('[Script Invasor] Redirecionando para Invasor (' + motivo + ')...');
-    window.location.href = URL_INVASOR;
-  }
-
-  // --- Só age nestas páginas (evita redirect indevido se Inject Code rodar em /*) ---
-  function classificarPaginaInvasor(url) {
-    var ehCombate = url.indexOf('invasor-combate') !== -1;
-    var ehInvasor = url.indexOf('invasor') !== -1 && !ehCombate;
-    var ehStatus = url.indexOf('/status') !== -1;
-    var ehCaptcha = url.indexOf('captcha_seguranca') !== -1;
-
-    return {
-      ehCombate: ehCombate,
-      ehInvasor: ehInvasor,
-      ehStatus: ehStatus,
-      ehCaptcha: ehCaptcha,
-      noEscopo: ehCombate || ehInvasor || ehStatus || ehCaptcha
-    };
+    window.location.href = URL_INVASOR + '?bot_modo=invasor';
   }
 
   console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL);
 
   setTimeout(function() {
     try {
+      sincronizarModoAba();
       sincronizarUsuarioLocalStorage();
 
       if (document.getElementById('login')) {
@@ -583,6 +545,19 @@
       }
 
       var urlAtual = window.location.href;
+
+      if (obterModoAba() === 'cacadas' ||
+          urlAtual.indexOf('cacadas') !== -1 ||
+          urlAtual.indexOf('atacar') !== -1) {
+        console.log('[Script Invasor] Aba de cacadas — sem acao.');
+        return;
+      }
+
+      if (!ehAbaInvasor(urlAtual)) {
+        console.log('[Script Invasor] Aba nao e invasor (bot_modo) — sem acao.');
+        return;
+      }
+
       var pagina = classificarPaginaInvasor(urlAtual);
 
       if (!pagina.noEscopo) {
@@ -641,7 +616,7 @@
         capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído', DISCORD_COMBATE_SILENCIOSO);
 
         setTimeout(function() {
-          window.location.href = URL_INVASOR;
+          window.location.href = URL_INVASOR + '?bot_modo=invasor';
         }, TEMPO_ESPERA_POS_COMBATE);
         return;
       }

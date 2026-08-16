@@ -296,7 +296,7 @@
     <!-- Campo 2: resposta -->
     <div class="input-group">
       <label for="valorComandoInput">Codigo do captcha (5 numeros)</label>
-      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840" inputmode="numeric" maxlength="8">
+      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840" inputmode="numeric" maxlength="5">
     </div>
 
     <button type="button" id="btnOcr" class="btn-secondary" style="display:none;" onclick="executarOCR()">
@@ -433,21 +433,19 @@
 
       status.textContent = 'Carregando imagem do Firebase...';
 
-      database.ref(refImg).once('value').then(function(snap) {
+      database.ref(refImg).on('value', function(snap) {
         const val = snap.val();
         if (!val) {
           status.textContent = 'Imagem ainda nao chegou — aguarde ou abra pelo Discord';
           return;
         }
+        if (captchaDataUrlAtual === val) return;
         captchaDataUrlAtual = val;
         imgEl.src = val;
         preview.style.display = 'block';
         btnOcr.style.display = 'block';
         status.textContent = 'Imagem carregada — rodando OCR...';
         executarOCR();
-      }).catch(function(err) {
-        console.error(err);
-        status.textContent = 'Erro ao buscar imagem no Firebase';
       });
     }
 
@@ -518,7 +516,7 @@
           <span>${nome} = "${valor}"</span>
           <span class="log-time">${hora}</span>
         </div>
-        <div class="log-status" id="status-${idLog}">🟡 Enviado (aguardando 5s)</div>
+        <div class="log-status" id="status-${idLog}">🟡 Enviado (aguardando limpeza)</div>
       `;
 
       logsList.prepend(item);
@@ -548,9 +546,9 @@
         return;
       }
 
-      if (!valorComando || valorComando.length < 1) {
+      if (!valorComando || valorComando.length !== 5) {
         destacarErroCampo(valorInput);
-        exibirNotificacao('⚠️ Digite o codigo do captcha!', true);
+        exibirNotificacao('⚠️ O captcha deve ter exatamente 5 numeros!', true);
         return;
       }
 
@@ -573,9 +571,9 @@
         })
         .then(() => {
           adicionarLog(logId, nomeComando, valorComando, horaAtual);
-          exibirNotificacao(`🚀 Enviado! Apagando em 5s...`, false);
+          exibirNotificacao(`🚀 Enviado! Apagando em breve...`, false);
 
-          // 3. Apaga após 5 segundos e atualiza o log
+          // 3. Apaga após 200ms e atualiza o log
           setTimeout(() => {
             refComando.remove()
               .then(() => {

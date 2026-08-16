@@ -1,6 +1,6 @@
 # Bot Shadow of Shinobi
 
-Automação para o jogo [Shadow of Shinobi](https://shadowofshinobi.com/) via extensão de injeção de código (**Inject Code** / similar) ou **Tampermonkey**, com painel web no **Firebase Realtime Database** para comandos remotos (captcha e ataque no invasor).
+Automação para o jogo [Shadow of Shinobi](https://shadowofshinobi.com/) via extensão de injeção de código (**Inject Code** / similar) ou **Tampermonkey**, com painel web no **Firebase Realtime Database** para resolver captcha remotamente e disparar ataque no invasor.
 
 ---
 
@@ -8,56 +8,60 @@ Automação para o jogo [Shadow of Shinobi](https://shadowofshinobi.com/) via ex
 
 | Arquivo | Descrição |
 |---|---|
-| `atkSOS.js` | Bot de **Caçadas** — login, caçadas, atacar jogador por classe |
+| `atkSOS.js` | Bot de **Caçadas** — login, caçadas, captcha, atacar jogador |
 | `atkInvSOS.js` | Bot do **Invasor** — ataque automático/remoto no boss |
-| `firebase.html` | Painel web para enviar comandos ao Firebase |
+| `firebase.html` | Painel captcha (OCR + envio ao bot) |
+| `scripts/abrir-contas-jogo.ps1` | Abre 3 contas (login → espera → caçadas/invasor) |
+| `scripts/instalar-atalho-contas.ps1` | Atalho na área de trabalho + tarefa agendada no logon |
+| `scripts/discord-pc-ligado.ps1` | Aviso no Discord quando o PC liga |
 
-Arquivos locais ignorados pelo Git (rascunhos, HTMLs de referência, documentação antiga):
+Arquivos locais ignorados pelo Git:
 
 - `paginas/` — HTMLs salvos do jogo para consulta
-- `invSOS.js`, `login e atk`, `sof.js` — versões/notas antigas
-- `README-contexto-gemini.md` — documentação completa gerada no Gemini
+- `scripts/contas-jogo.config.ps1` — credenciais das contas (copie do `.example`)
+- `scripts/discord-pc-ligado.config.ps1` — webhook Discord local
 
 ---
 
 ## Instalação (Inject Code — Chrome / Opera)
 
-### Regra 1 — Caçadas (sempre ativa)
+### Auto-run nos dois (sem filtro de URL)
 
-| Campo | Valor |
+Na **Inject Code**, o auto-run injeta em **todas** as páginas do jogo — **não há filtro por URL**. Por isso você cria **duas regras**, ambas com auto-run ligado:
+
+| Regra | Auto-run | Code Source |
+|---|---|---|
+| Bot Caçadas | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkSOS.js` |
+| Bot Invasor | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkInvSOS.js` |
+
+Os dois scripts carregam em **toda** aba. Quem decide o que fazer é o **`bot_modo` por aba** (via URL + `sessionStorage`):
+
+| Abrir a aba com | Comportamento |
 |---|---|
-| **Auto-run** | Ligado |
-| **URL / filtro** | `https://shadowofshinobi.com/*` |
-| **Código** | conteúdo de `atkSOS.js` |
+| `.../cacadas?bot_modo=cacadas` | Só caçadas age |
+| `.../invasor?bot_modo=invasor` | Só invasor age |
+| Login (`/?bot_user=...`) | Só caçadas age (login) |
 
-### Regra 2 — Invasor (ativar ao farmar boss)
+O launcher (`abrir-contas-jogo.ps1`) já abre com os parâmetros certos.
 
-| Campo | Valor |
-|---|---|
-| **Auto-run** | Ligado |
-| **URL / filtro** | `https://shadowofshinobi.com/status\|https://shadowofshinobi.com/invasor\|https://shadowofshinobi.com/invasor-combate` |
-| **Código** | conteúdo de `atkInvSOS.js` |
+> **Importante:** não adianta “filtrar” só o invasor na extensão se ela não suporta filtro. O controle está no código + no `bot_modo` de cada aba.
 
-> **Por que incluir `/status`?** Após o login, o jogo costuma cair em `/status`. Sem essa URL no filtro do invasor, o script nem injeta e a aba não volta sozinha para `/invasor`.
+### Painel Firebase (captcha)
 
-### Painel Firebase
+**Online:** [luiiscarlos99.github.io/conexaocomfirebase2/firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html)
 
-Publique `firebase.html` no GitHub Pages ou abra localmente.
-
-**Painel online:** [luiiscarlos99.github.io/conexaocomfirebase2/firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html)
+O bot envia no Discord um link `firebase.html?codigo=SRV_XXX` — abra esse link para ver a **mesma imagem** que foi salva no Firebase.
 
 ---
 
 ## Dois scripts ao mesmo tempo
-
-Os dois podem ficar **ativos em paralelo**. Cada um cuida das suas páginas:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  atkSOS.js (todas as páginas)                               │
 │  → login na home (sempre, antes de qualquer skip)           │
 │  → captcha, caçadas, atacar                                 │
-│  → ignora /invasor* e /status (se bot invasor injetado)     │
+│  → ignora /invasor* e /status se invasor presente           │
 │  → demais páginas desconhecidas → /cacadas                  │
 └─────────────────────────────────────────────────────────────┘
 
@@ -66,66 +70,64 @@ Os dois podem ficar **ativos em paralelo**. Cada um cuida das suas páginas:
 │  → /status → redireciona para /invasor                      │
 │  → /invasor → ataca, reload, Firebase                       │
 │  → /invasor-combate → espera 1min → /invasor                │
-│  → qualquer outra URL no filtro → /invasor                  │
+│  → captcha → delegado ao atkSOS.js                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Sem conflito entre os dois scripts
+### Sem conflito (dois scripts em /*)
 
-O `atkInvSOS.js` define `window.__BOT_INVASOR_ATIVO__ = true` ao carregar. O `atkSOS.js` verifica isso **só em `/status`**:
+Cada aba guarda `BOT_MODO_ABA` no `sessionStorage`:
 
-- **Regra invasor ligada** → os dois injetam em `/status` → caçadas cede → invasor redireciona para `/invasor`
-- **Regra invasor desligada** → só caçadas injeta → `/status` vai para `/cacadas`
+- **`bot_modo=cacadas`** → invasor **sai imediatamente**; caçadas cuida de login, caçadas, captcha, atacar
+- **`bot_modo=invasor`** → caçadas **não age** em invasor/status; invasor cuida de status → invasor → combate
 
-Nada de marcar modo no `localStorage`. Basta ligar/desligar a regra do invasor na extensão.
+Após login, `/status` vai para **caçadas** ou **invasor** conforme o `bot_modo` da aba — não conforme “qual script existe no navegador”.
 
-### Login
+### Kill switch por aba
 
-O login fica **sempre** com o `atkSOS.js` (página home / formulário `#login`). O filtro do invasor **não inclui a home**, então só o script de caçadas injeta lá. No código, o login é tratado **antes** de qualquer skip de invasor ou status — nunca é ignorado.
+No console (F12):
 
-### Captcha
-
-Captcha **não aparece** na tela do invasor. Quando ocorre, cai em URL própria (`captcha_seguranca`) — só o `atkSOS.js` trata (alerta Discord + Firebase). O filtro do invasor não precisa incluir captcha.
+```javascript
+botParar()   // pausa o bot nesta aba
+botLigar()   // reativa
+botStatus()  // 'on' ou 'off'
+```
 
 ---
 
 ## Scripts ativos
 
-### `atkSOS.js` — Caçadas (v2.5)
+### `atkSOS.js` — Caçadas (v2.9)
 
 Fluxo: **Login → Caçadas → Atacar**
 
-- **Login na home** — tratado primeiro, antes de qualquer skip (só este script injeta na home)
-- Caçadas com atraso aleatório entre **5min e 12min** (ritmo humano)
+- Login na home (tratado primeiro)
+- Caçadas com atraso aleatório entre **5min e 12min**
 - Clique automático em **Atacar**
-- Captcha: alerta sonoro, print no Discord, escuta Firebase
-- Ignora páginas do invasor (`/invasor*`)
-- `/status` → `/cacadas` (exceto se bot invasor estiver ativo)
-- Demais páginas desconhecidas → `/cacadas`
+- **Captcha:** recorta só a `<img>`, salva em Firebase, envia a **mesma imagem** ao Discord, escuta resposta em Firebase, digita no jogo
+- OCR roda no **painel** (`firebase.html`), não no jogo
+- Timeout captcha: **10 min** → redireciona para `/cacadas`
+- `/status` → `/cacadas` (exceto se invasor presente)
 
-### `atkInvSOS.js` — Invasor (v4.0)
-
-Fluxo focado em **status + invasor + pós-combate**
+### `atkInvSOS.js` — Invasor (v4.3)
 
 | Página | Ação |
 |---|---|
 | `/status` | Redireciona para `/invasor` |
-| `/invasor` | Ataca, escuta Firebase, reload 60s (2s se conta gerenciada) |
+| `/invasor` | Ataca (local + Firebase), reload 60s (2s se conta gerenciada) |
 | `/invasor-combate` | Aguarda 1min, print Discord, volta para `/invasor` |
+| Captcha | Sem ação — delegado ao `atkSOS.js` |
 | Login (home) | Não injeta — login fica com `atkSOS.js` |
-| Sessão expirada | Volta / vai para invasor |
-| Qualquer outra (no filtro) | Redireciona para `/invasor` |
 
-- Ataque local automático (limite configurável de derrotas)
-- Escuta e dispara `comando_atacar` no Firebase
-- Sinalização em massa quando invasor ativo sem botão/cooldown
+- Ataque local com limite configurável de derrotas
+- Escuta `comando_atacar` no Firebase (com debounce anti-burst)
 - Trata sessão expirada, conta gerenciada e erros HTTP 500+
 
 ---
 
 ## Configuração
 
-Valores padrão ficam no topo de cada script. Credenciais e preferências também podem ser definidas via `localStorage` no console (F12):
+Valores padrão ficam no topo de cada script. Credenciais via `localStorage` ou URL do launcher:
 
 ```javascript
 localStorage.setItem('BOT_USUARIO', 'SeuUsuario');
@@ -133,9 +135,7 @@ localStorage.setItem('BOT_SENHA', 'SuaSenha');
 localStorage.setItem('BOT_NIVEL_CACADAS', '2'); // apenas atkSOS.js
 ```
 
-### Sincronização automática do usuário
-
-Quando logado, ambos os scripts leem o nome na **sidebar esquerda** (box com Vila/HP) e atualizam `BOT_USUARIO` automaticamente.
+O código do servidor Firebase é **por usuário**: `BOT_CODIGO_SRV_<usuario>` (evita colisão entre contas no mesmo perfil).
 
 ### Parâmetros principais (`atkInvSOS.js`)
 
@@ -145,7 +145,6 @@ Quando logado, ambos os scripts leem o nome na **sidebar esquerda** (box com Vil
 | `TEMPO_RELOAD_PADRAO` | 60s | Intervalo de refresh na página do invasor |
 | `TEMPO_RELOAD_GERENCIADA` | 2s | Refresh em conta gerenciada |
 | `TEMPO_ESPERA_POS_COMBATE` | 60s | Espera após combate antes de voltar ao invasor |
-| `TEMPO_TIMEOUT_CAPTCHA` | 10min | Timeout do captcha (redireciona para invasor) |
 
 ---
 
@@ -153,36 +152,55 @@ Quando logado, ambos os scripts leem o nome na **sidebar esquerda** (box com Vil
 
 | Chave | Direção | Usado por |
 |---|---|---|
-| `comando_recebido` | Painel → Bot | Captcha (`atkSOS.js`) |
+| `comandos/{CODIGO}/imagem` | Bot → Painel | PNG do captcha (`atkSOS.js`) |
+| `comandos/{CODIGO}/resposta` | Painel → Bot | 5 dígitos do captcha |
 | `comando_atacar` | Painel/Bot → Bot | Ataque remoto invasor (`atkInvSOS.js`) |
-| `codigo_servidor` | Bot → Firebase | ID da sessão (`atkSOS.js`) |
+
+`CODIGO` = `SRV_<slug>_<rand>` gerado por conta (ex.: `SRV_SHIROE_A3F2`).
 
 ### Resolver captcha
 
-1. Bot detecta captcha e envia alerta no Discord
-2. Abra `firebase.html`
-3. Chave: `comando_recebido` — Valor: código do captcha
-4. **ENVIAR COMANDO**
+1. Bot detecta captcha → Discord recebe **a imagem recortada** + link do painel
+2. Abra `firebase.html?codigo=SRV_XXX` (link do Discord)
+3. Painel carrega imagem do Firebase, roda OCR, **confira os 5 números**
+4. Clique **ENVIAR AO BOT** — bot digita e confirma no jogo
 
 ### Atacar invasor remotamente
 
-1. Abra `firebase.html`
-2. Chave: `comando_atacar` — Valor: `atacar`
+1. No Firebase, chave `comando_atacar`, valor `atacar`
+
+---
+
+## Launcher (Windows)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\abrir-contas-jogo.ps1
+```
+
+Fase 1: abre 3 navegadores com login. Espera **60s**. Fase 2: abre caçadas (Shiroe) e invasor (Shizuo, Sora).
+
+Instalar atalho + auto-start no logon:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\instalar-atalho-contas.ps1
+```
+
+Requer `scripts/contas-jogo.config.ps1` (copie do `.example`).
 
 ---
 
 ## Fluxo resumido
 
 ```
-Jogo (Inject Code)  ←——→  Firebase Realtime DB  ←——→  firebase.html
+Jogo (Inject Code)  ←——→  Firebase Realtime DB  ←——→  firebase.html (OCR)
         ↓
-   Discord Webhook (alertas + prints)
+   Discord Webhook (captcha + prints invasor)
 ```
 
 ---
 
 ## Desenvolvimento
 
-Salve HTMLs de referência em `paginas/` (ignorado pelo Git).
+A cada alteração nos `.js`, atualize `SCRIPT_VERSAO` e `SCRIPT_ATUALIZADO` no topo do arquivo (regra em `.cursor/rules/bot-scripts-versionamento.mdc`).
 
-Documentação antiga com código completo: `README-contexto-gemini.md` (local, não versionado).
+Salve HTMLs de referência em `paginas/` (ignorado pelo Git).

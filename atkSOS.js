@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.11
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.8';
-  var SCRIPT_ATUALIZADO = '16/08/2026 20:43';
+  var SCRIPT_VERSAO = '2.11';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:10';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -58,10 +58,30 @@
     if (u) localStorage.setItem('BOT_USUARIO', u);
     if (p) localStorage.setItem('BOT_SENHA', p);
     if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+    var modo = params.get('bot_modo');
+    if (modo === 'invasor' || modo === 'cacadas') {
+      sessionStorage.setItem('BOT_MODO_ABA', modo);
+    }
     if ((u || p || n) && window.history && window.history.replaceState) {
       history.replaceState(null, document.title, location.pathname + location.hash);
     }
   } catch (e) {}
+
+  function obterModoAba() {
+    try {
+      return sessionStorage.getItem('BOT_MODO_ABA') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function ehAbaCacadas(url) {
+    var modo = obterModoAba();
+    if (modo === 'invasor') return false;
+    if (modo === 'cacadas') return true;
+    if (url.indexOf('invasor') !== -1) return false;
+    return true;
+  }
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
@@ -70,6 +90,9 @@
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var reloadAgendado = false;
+  var captchaJaNotificado = false;
+  var timerCaptchaTimeout = null;
+  var captchaRespostaProcessando = false;
 
   // Configurações do Firebase Realtime Database
   var FIREBASE_CONFIG = {
@@ -142,10 +165,13 @@
 
   // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---
   function obterCodigoServidor() {
-    var codigo = localStorage.getItem('BOT_CODIGO_SERVIDOR');
+    var usuario = (localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT).trim();
+    var chave = 'BOT_CODIGO_SRV_' + usuario;
+    var codigo = localStorage.getItem(chave);
     if (!codigo) {
-      codigo = 'SRV_' + Math.random().toString(36).substring(2, 9).toUpperCase();
-      localStorage.setItem('BOT_CODIGO_SERVIDOR', codigo);
+      var slug = usuario.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase() || 'BOT';
+      codigo = 'SRV_' + slug + '_' + Math.random().toString(36).substring(2, 6).toUpperCase();
+      localStorage.setItem(chave, codigo);
     }
     return codigo;
   }
@@ -197,6 +223,7 @@
       textoCorpo.indexOf('HTTP ERROR 500') !== -1 ||
       textoCorpo.indexOf('500 INTERNAL SERVER ERROR') !== -1 ||
       textoCorpo.indexOf('502 BAD GATEWAY') !== -1 ||
+      textoCorpo.indexOf('503 SERVICE UNAVAILABLE') !== -1 ||
       textoCorpo.indexOf('503 SERVICE UNVAILABLE') !== -1 ||
       textoCorpo.indexOf('504 GATEWAY TIMEOUT') !== -1
     ) {
@@ -209,10 +236,6 @@
   // --- CAPTCHA: imagem -> Firebase + Discord (OCR no painel) ---
   function obterRefFirebaseCaptcha() {
     return 'comandos/' + CODIGO_SERVIDOR + '/resposta';
-  }
-
-  function obterRefFirebaseCaptchaImagem() {
-    return 'comandos/' + CODIGO_SERVIDOR + '/imagem';
   }
 
   function montarLinkPainelCaptcha() {
@@ -331,6 +354,11 @@
   }
 
   function processarCaptchaDetectado() {
+    if (captchaJaNotificado) {
+      console.log('[Captcha] Ja notificado nesta pagina — ignorando.');
+      return;
+    }
+    captchaJaNotificado = true;
     tocarAlertaSonoro();
 
     capturarBlobCaptcha(function(blob) {
@@ -378,8 +406,17 @@
         var valor = snapshot.val();
 
         if (valor !== null && valor !== undefined && valor !== '') {
+          if (captchaRespostaProcessando) return;
+          captchaRespostaProcessando = true;
+          campoComando.off();
+
           var codigoCaptcha = String(valor).trim();
           console.log('%c[Firebase] CODIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
+
+          if (timerCaptchaTimeout) {
+            clearTimeout(timerCaptchaTimeout);
+            timerCaptchaTimeout = null;
+          }
 
           var inputCaptcha = document.querySelector('input[name="resposta"]') ||
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
@@ -418,6 +455,7 @@
 
           } else {
             console.error('[Script] Input do captcha nao encontrado na pagina.');
+            captchaRespostaProcessando = false;
           }
         }
       });
@@ -429,73 +467,6 @@
     }
 
     garantirFirebase(conectarEListen);
-  }
-
-  // --- CAPTURA DE TELA E ENVIO DISCORD ---
-  function enviarNotificacaoDiscordComPrint(titulo, descricao, corHex, callback) {
-    if (typeof html2canvas === 'undefined') {
-      var script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-      script.onload = function() {
-        processarEnvioDiscord(titulo, descricao, corHex, callback);
-      };
-      document.head.appendChild(script);
-    } else {
-      processarEnvioDiscord(titulo, descricao, corHex, callback);
-    }
-  }
-
-  function processarEnvioDiscord(titulo, descricao, corHex, callback) {
-    html2canvas(document.body).then(function(canvas) {
-      canvas.toBlob(function(blob) {
-        if (!blob) {
-          if (callback) callback();
-          return;
-        }
-
-        var corDecimal = parseInt((corHex || '#7289DA').replace('#', ''), 16);
-        
-        var payloadData = {
-          username: 'Bot Shadow of Shinobi',
-          embeds: [
-            {
-              title: titulo,
-              description: descricao,
-              color: corDecimal,
-              timestamp: new Date().toISOString(),
-              image: {
-                url: 'attachment://captura.png'
-              },
-              footer: {
-                text: 'Usuário: ' + USUARIO_FINAL + ' | Servidor: ' + CODIGO_SERVIDOR
-              }
-            }
-          ]
-        };
-
-        var formData = new FormData();
-        formData.append('payload_json', JSON.stringify(payloadData));
-        formData.append('file', blob, 'captura.png');
-
-        fetch(DISCORD_WEBHOOK_URL, {
-          method: 'POST',
-          body: formData
-        })
-        .then(function(resposta) {
-          if (resposta.ok) {
-            console.log('[Discord] Print e notificação enviados!');
-          }
-          if (callback) callback();
-        })
-        .catch(function(erro) {
-          console.error('[Discord] Erro ao enviar Webhook:', erro);
-          if (callback) callback();
-        });
-      }, 'image/png');
-    }).catch(function(err) {
-      console.warn('[Script] Erro no html2canvas:', err);
-      if (callback) callback();
-    });
   }
 
   // --- ALERTA SONORO ---
@@ -557,18 +528,12 @@
   setTimeout(function() {
     try {
       sincronizarUsuarioLocalStorage();
-
-      // 1. VERIFICAÇÃO ANTECIPADA DE ERRO NO SERVIDOR (HTTP 500)
-      var erroServidor = checarErroServidor();
-      if (erroServidor) {
-        agendarReloadFalha(erroServidor);
-        return;
-      }
+      CODIGO_SERVIDOR = obterCodigoServidor();
 
       var urlAtual = window.location.href;
       var formLogin = document.getElementById('login');
 
-      // Login sempre é responsabilidade deste script (home não está no filtro do invasor)
+      // Login antes de checar erro 500 — evita reload na tela de login
       if (formLogin) {
         console.log('[Script Caçadas] Tela de login — preenchendo credenciais...');
         var selectServer = formLogin.querySelector('select[name="server_login"]');
@@ -578,45 +543,62 @@
         if (selectServer) {
           selectServer.value = '0';
           selectServer.dispatchEvent(new Event('change', { bubbles: true }));
-
-          if (inputUsuario) {
-            inputUsuario.value = USUARIO_FINAL;
-            inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
-            inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-
-          if (inputSenha) {
-            inputSenha.value = SENHA_FINAL;
-            inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
-            inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-
-          setTimeout(function() {
-            var btnLogin = formLogin.querySelector('input[type="submit"]');
-            if (btnLogin) {
-              btnLogin.click();
-            } else {
-              agendarReloadFalha('Botão de login não encontrado.');
-            }
-          }, 2000);
         }
+
+        if (inputUsuario) {
+          inputUsuario.value = USUARIO_FINAL;
+          inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
+          inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (inputSenha) {
+          inputSenha.value = SENHA_FINAL;
+          inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
+          inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (!inputUsuario || !inputSenha) {
+          agendarReloadFalha('Campos de login (#usuario / #senha) nao encontrados.');
+          return;
+        }
+
+        setTimeout(function() {
+          var btnLogin = formLogin.querySelector('input[type="submit"]');
+          if (btnLogin) {
+            btnLogin.click();
+          } else {
+            agendarReloadFalha('Botao de login nao encontrado.');
+          }
+        }, 2000);
         return;
       }
 
-      // Páginas do invasor ficam a cargo do atkInvSOS.js (Inject Code com filtro separado)
+      // 1. VERIFICAÇÃO DE ERRO NO SERVIDOR (HTTP 500)
+      var erroServidor = checarErroServidor();
+      if (erroServidor) {
+        agendarReloadFalha(erroServidor);
+        return;
+      }
+
+      // Páginas do invasor — caçadas não interfere (Inject Code: ambos rodam em /*)
       if (urlAtual.indexOf('invasor') !== -1) {
-        console.log('[Script Caçadas] Página do invasor — sem ação (delegado ao bot invasor).');
+        console.log('[Script Caçadas] Página do invasor — sem ação (aba invasor).');
         return;
       }
 
-      // /status: se o bot invasor foi injetado nesta aba, não compete — senão vai para caçadas
+      // /status: aba invasor vai pro invasor; aba caçadas vai pras caçadas
       if (urlAtual.indexOf('status') !== -1) {
-        if (window.__BOT_INVASOR_ATIVO__) {
-          console.log('[Script Caçadas] Status — sem ação (bot invasor presente nesta aba).');
+        if (obterModoAba() === 'invasor' || window.__BOT_INVASOR_ATIVO__) {
+          console.log('[Script Caçadas] Status — sem acao (aba invasor).');
           return;
         }
         console.log('[Script Caçadas] Status — redirecionando para caçadas...');
-        window.location.href = URL_CACADAS;
+        window.location.href = URL_CACADAS + '?bot_modo=cacadas';
+        return;
+      }
+
+      if (!ehAbaCacadas(urlAtual)) {
+        console.log('[Script Caçadas] Aba invasor — sem acao nesta pagina.');
         return;
       }
 
@@ -636,8 +618,9 @@
             processarCaptchaDetectado();
 
             console.log('[Captcha] Timer de 10 minutos iniciado...');
-            setTimeout(function() {
-              console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando para Caçadas...');
+            if (timerCaptchaTimeout) clearTimeout(timerCaptchaTimeout);
+            timerCaptchaTimeout = setTimeout(function() {
+              console.warn('[Captcha] Tempo limite esgotado! Redirecionando para Caçadas...');
               window.location.href = URL_CACADAS;
             }, TEMPO_TIMEOUT_CAPTCHA);
 
