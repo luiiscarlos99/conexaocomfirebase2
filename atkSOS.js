@@ -12,7 +12,7 @@
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
   var SCRIPT_VERSAO = '2.8';
-  var SCRIPT_ATUALIZADO = '16/08/2026 20:40';
+  var SCRIPT_ATUALIZADO = '16/08/2026 20:43';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -206,17 +206,17 @@
     return null;
   }
 
-  // --- CAPTCHA: OCR + link painel pre-preenchido ---
+  // --- CAPTCHA: imagem -> Firebase + Discord (OCR no painel) ---
   function obterRefFirebaseCaptcha() {
     return 'comandos/' + CODIGO_SERVIDOR + '/resposta';
   }
 
-  function montarLinkPainelCaptcha(resposta, autoEnviar) {
-    var q = new URLSearchParams();
-    q.set('codigo', CODIGO_SERVIDOR);
-    if (resposta) q.set('resposta', String(resposta));
-    if (autoEnviar) q.set('auto', '1');
-    return URL_PAINEL_BASE + '?' + q.toString();
+  function obterRefFirebaseCaptchaImagem() {
+    return 'comandos/' + CODIGO_SERVIDOR + '/imagem';
+  }
+
+  function montarLinkPainelCaptcha() {
+    return URL_PAINEL_BASE + '?codigo=' + encodeURIComponent(CODIGO_SERVIDOR);
   }
 
   function obterImagemCaptcha() {
@@ -233,159 +233,144 @@
     return null;
   }
 
-  function preprocessarCaptchaCanvas(img, inverter) {
-    var scale = 3;
-    var w = (img.naturalWidth || img.width || 200) * scale;
-    var h = (img.naturalHeight || img.height || 60) * scale;
-    var canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    var ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, w, h);
-    var imgData = ctx.getImageData(0, 0, w, h);
-    var d = imgData.data;
-    for (var i = 0; i < d.length; i += 4) {
-      var r = d[i];
-      var g = d[i + 1];
-      var b = d[i + 2];
-      var ehDigito = (r > 130 && g > 110 && b < 110) || (r + g > 280 && b < 120);
-      var v = ehDigito ? (inverter ? 255 : 0) : (inverter ? 0 : 255);
-      d[i] = v;
-      d[i + 1] = v;
-      d[i + 2] = v;
-      d[i + 3] = 255;
-    }
-    ctx.putImageData(imgData, 0, 0);
-    return canvas;
-  }
-
-  function extrairDigitosOCR(result) {
-    var raw = (result.data && result.data.text) ? result.data.text : '';
-    return raw.replace(/\D/g, '');
-  }
-
-  function escolherMelhorOCR(candidatos) {
-    var comCinco = null;
-    var melhor = null;
-    for (var i = 0; i < candidatos.length; i++) {
-      var d = candidatos[i];
-      if (!d) continue;
-      if (d.length === 5) comCinco = d;
-      if (!melhor || d.length > melhor.length) melhor = d;
-    }
-    if (comCinco) return comCinco;
-    if (melhor && melhor.length >= 4) return melhor.substring(0, 5);
-    return melhor || null;
-  }
-
-  function carregarScriptExterno(url) {
-    return new Promise(function(resolve, reject) {
-      var s = document.createElement('script');
-      s.src = url;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
-
-  function resolverCaptchaOCR(callback) {
+  function capturarBlobCaptcha(callback) {
     var img = obterImagemCaptcha();
     if (!img) {
-      console.warn('[Captcha OCR] Imagem nao encontrada no DOM.');
+      console.warn('[Captcha] Imagem nao encontrada no DOM.');
       callback(null);
       return;
     }
 
-    function executarOCR() {
-      var canvasA = preprocessarCaptchaCanvas(img, false);
-      var canvasB = preprocessarCaptchaCanvas(img, true);
-      var opts = {
-        tessedit_char_whitelist: '0123456789',
-        tessedit_pageseg_mode: '7'
-      };
-
-      Promise.all([
-        Tesseract.recognize(canvasA, 'eng', opts),
-        Tesseract.recognize(canvasB, 'eng', opts)
-      ]).then(function(results) {
-        var d1 = extrairDigitosOCR(results[0]);
-        var d2 = extrairDigitosOCR(results[1]);
-        var escolhido = escolherMelhorOCR([d1, d2]);
-        console.log('[Captcha OCR] Tentativa A:', d1, '| B:', d2, '| Escolhido:', escolhido);
-        callback(escolhido);
-      }).catch(function(err) {
-        console.warn('[Captcha OCR] Falha:', err);
+    function desenhar() {
+      var w = img.naturalWidth || img.width;
+      var h = img.naturalHeight || img.height;
+      if (!w || !h) {
         callback(null);
-      });
-    }
-
-    function aguardarImagem(cb) {
-      if (img.complete && img.naturalWidth > 0) {
-        cb();
-      } else {
-        img.onload = cb;
-        img.onerror = function() { callback(null); };
+        return;
       }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function(blob) {
+        callback(blob);
+      }, 'image/png');
     }
 
-    if (window.Tesseract) {
-      aguardarImagem(executarOCR);
+    if (img.complete && img.naturalWidth > 0) {
+      desenhar();
+    } else {
+      img.onload = desenhar;
+      img.onerror = function() { callback(null); };
+    }
+  }
+
+  function garantirFirebase(callback) {
+    function conectar() {
+      if (!window.firebase.apps.length) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+      }
+      callback(firebase.database());
+    }
+
+    if (window.firebase && window.firebase.database) {
+      conectar();
       return;
     }
 
-    carregarScriptExterno('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js')
-      .then(function() { aguardarImagem(executarOCR); })
-      .catch(function() { callback(null); });
+    var scriptApp = document.createElement('script');
+    scriptApp.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
+    scriptApp.onload = function() {
+      var scriptDb = document.createElement('script');
+      scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
+      scriptDb.onload = conectar;
+      document.head.appendChild(scriptDb);
+    };
+    document.head.appendChild(scriptApp);
   }
 
-  function montarDescricaoDiscordCaptcha(respostaOCR) {
-    var linhas = [
-      'Verificacao de seguranca ativa.',
+  function montarDescricaoDiscordCaptcha() {
+    return [
+      'Verificacao de seguranca — **a imagem abaixo e a valida** (salva no Firebase).',
+      'O navegador pode mostrar numeros diferentes; resolva pela imagem desta mensagem.',
       '',
       '**Conta:** ' + USUARIO_FINAL,
       '**Codigo:** `' + CODIGO_SERVIDOR + '`',
-      ''
-    ];
+      '',
+      '[**Abrir painel (OCR + confirmar)**](' + montarLinkPainelCaptcha() + ')'
+    ].join('\n');
+  }
 
-    if (respostaOCR && respostaOCR.length >= 4) {
-      linhas.push('**OCR sugerido:** `' + respostaOCR + '` *(confira no print)*');
-      linhas.push('');
-      linhas.push('[**Confirmar captcha (1 clique)**](' + montarLinkPainelCaptcha(respostaOCR, true) + ')');
-      linhas.push('');
-      linhas.push('[Abrir painel para editar](' + montarLinkPainelCaptcha(respostaOCR, false) + ')');
-    } else {
-      linhas.push('OCR nao confiou na leitura — digite manualmente no painel.');
-      linhas.push('');
-      linhas.push('[**Abrir painel captcha**](' + montarLinkPainelCaptcha('', false) + ')');
-    }
+  function enviarDiscordCaptchaBlob(blob, descricao, callback) {
+    var corDecimal = parseInt('FF0000'.replace('#', ''), 16);
+    var payloadData = {
+      username: 'Bot Shadow of Shinobi',
+      embeds: [{
+        title: 'CAPTCHA DETECTADO',
+        description: descricao,
+        color: corDecimal,
+        timestamp: new Date().toISOString(),
+        image: { url: 'attachment://captcha.png' },
+        footer: { text: 'Usuario: ' + USUARIO_FINAL + ' | ' + CODIGO_SERVIDOR }
+      }]
+    };
 
-    return linhas.join('\n');
+    var formData = new FormData();
+    formData.append('payload_json', JSON.stringify(payloadData));
+    formData.append('file', blob, 'captcha.png');
+
+    fetch(DISCORD_WEBHOOK_URL, { method: 'POST', body: formData })
+      .then(function(r) {
+        if (r.ok) console.log('[Discord] Captcha enviado (recorte, sem html2canvas).');
+        if (callback) callback();
+      })
+      .catch(function(e) {
+        console.error('[Discord] Erro:', e);
+        if (callback) callback();
+      });
+  }
+
+  function processarCaptchaDetectado() {
+    tocarAlertaSonoro();
+
+    capturarBlobCaptcha(function(blob) {
+      if (!blob) {
+        console.error('[Captcha] Falha ao capturar imagem.');
+        return;
+      }
+
+      garantirFirebase(function(database) {
+        var reader = new FileReader();
+        reader.onload = function() {
+          var dataUrl = reader.result;
+          var refBase = 'comandos/' + CODIGO_SERVIDOR;
+
+          database.ref(refBase + '/imagem').set(dataUrl)
+            .then(function() {
+              console.log('[Captcha] Imagem salva: ' + refBase + '/imagem');
+              return database.ref(refBase + '/resposta').remove();
+            })
+            .then(function() {
+              database.ref('codigo_servidor').set(CODIGO_SERVIDOR).catch(function() {});
+              iniciarEscutaFirebaseCaptcha(database);
+              enviarDiscordCaptchaBlob(blob, montarDescricaoDiscordCaptcha());
+            })
+            .catch(function(err) {
+              console.error('[Captcha] Erro ao salvar Firebase:', err);
+            });
+        };
+        reader.readAsDataURL(blob);
+      });
+    });
   }
 
   // --- ESCUTA DO FIREBASE PARA O CAPTCHA ---
-  function iniciarEscutaFirebaseCaptcha() {
-    console.log('[Firebase] Conectando ao Realtime Database...');
-
-    function conectarEListen() {
-      if (!window.firebase || !firebase.apps.length) {
-        firebase.initializeApp(FIREBASE_CONFIG);
-      }
-
-      var database = firebase.database();
-      
-      // Atualiza o código do servidor no Firebase para sincronia com o Painel Web
-      database.ref('codigo_servidor').set(CODIGO_SERVIDOR)
-        .then(function() {
-          console.log('[Firebase] Código do Servidor atualizado:', CODIGO_SERVIDOR);
-        })
-        .catch(function(err) {
-          console.warn('[Firebase] Erro ao atualizar código do servidor:', err);
-        });
-
+  function iniciarEscutaFirebaseCaptcha(databaseExistente) {
+    function conectarEListen(database) {
       var refPath = obterRefFirebaseCaptcha();
       var campoComando = database.ref(refPath);
 
-      console.log('%c[Firebase] CONECTADO! Aguardando captcha em: ' + refPath, 'color: #00ff00; font-weight: bold;');
+      console.log('%c[Firebase] Aguardando captcha em: ' + refPath, 'color: #00ff00; font-weight: bold;');
 
       campoComando.off();
 
@@ -394,40 +379,37 @@
 
         if (valor !== null && valor !== undefined && valor !== '') {
           var codigoCaptcha = String(valor).trim();
-          console.log('%c[Firebase] CÓDIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
+          console.log('%c[Firebase] CODIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
 
-          var inputCaptcha = document.querySelector('input[name="resposta"]') || 
+          var inputCaptcha = document.querySelector('input[name="resposta"]') ||
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
 
           if (inputCaptcha) {
-            console.log('[Captcha] Iniciando simulação de digitação manual...');
+            console.log('[Captcha] Iniciando simulacao de digitacao...');
 
-            // Simula a digitação caractere por caractere
             digitarTexto(inputCaptcha, codigoCaptcha, function() {
-              console.log('[Captcha] Digitação concluída! Limpando o comando no Firebase...');
+              console.log('[Captcha] Digitacao concluida! Limpando Firebase...');
 
               var urlDelete = FIREBASE_CONFIG.databaseURL + '/' + refPath + '.json';
 
               fetch(urlDelete, { method: 'DELETE' })
                 .then(function() {
-                  console.log('[Firebase] Comando apagado do banco com sucesso!');
+                  console.log('[Firebase] Resposta apagada do banco.');
                 })
                 .catch(function(err) {
-                  console.warn('[Firebase] Erro ao apagar comando do banco:', err);
+                  console.warn('[Firebase] Erro ao apagar:', err);
                 })
                 .finally(function() {
-                  // Aguarda um pequeno delay de reflexo humano (300ms a 700ms) antes de clicar
                   var delayClique = Math.floor(Math.random() * (700 - 300 + 1)) + 300;
-                  
+
                   setTimeout(function() {
                     var formCaptcha = inputCaptcha.closest('form');
                     var btnConfirmar = formCaptcha ? formCaptcha.querySelector('input[type="submit"]') : null;
 
                     if (btnConfirmar) {
-                      console.log('[Script] Clicando no botão Confirmar...');
+                      console.log('[Script] Clicando Confirmar...');
                       btnConfirmar.click();
                     } else if (formCaptcha) {
-                      console.log('[Script] Submetendo formulário do Captcha...');
                       formCaptcha.submit();
                     }
                   }, delayClique);
@@ -435,44 +417,35 @@
             });
 
           } else {
-            console.error('[Script] Campo de input do Captcha não encontrado na página.');
+            console.error('[Script] Input do captcha nao encontrado na pagina.');
           }
         }
       });
     }
 
-    if (window.firebase && window.firebase.database) {
-      conectarEListen();
-    } else {
-      var scriptApp = document.createElement('script');
-      scriptApp.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
-
-      scriptApp.onload = function() {
-        var scriptDb = document.createElement('script');
-        scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
-        scriptDb.onload = conectarEListen;
-        document.head.appendChild(scriptDb);
-      };
-
-      document.head.appendChild(scriptApp);
+    if (databaseExistente) {
+      conectarEListen(databaseExistente);
+      return;
     }
+
+    garantirFirebase(conectarEListen);
   }
 
   // --- CAPTURA DE TELA E ENVIO DISCORD ---
-  function enviarNotificacaoDiscordComPrint(titulo, descricao, corHex, callback, linkUrl) {
+  function enviarNotificacaoDiscordComPrint(titulo, descricao, corHex, callback) {
     if (typeof html2canvas === 'undefined') {
       var script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
       script.onload = function() {
-        processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl);
+        processarEnvioDiscord(titulo, descricao, corHex, callback);
       };
       document.head.appendChild(script);
     } else {
-      processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl);
+      processarEnvioDiscord(titulo, descricao, corHex, callback);
     }
   }
 
-  function processarEnvioDiscord(titulo, descricao, corHex, callback, linkUrl) {
+  function processarEnvioDiscord(titulo, descricao, corHex, callback) {
     html2canvas(document.body).then(function(canvas) {
       canvas.toBlob(function(blob) {
         if (!blob) {
@@ -481,25 +454,23 @@
         }
 
         var corDecimal = parseInt((corHex || '#7289DA').replace('#', ''), 16);
-        var embed = {
-          title: titulo,
-          description: descricao,
-          color: corDecimal,
-          timestamp: new Date().toISOString(),
-          image: {
-            url: 'attachment://captura.png'
-          },
-          footer: {
-            text: 'Usuario: ' + USUARIO_FINAL + ' | ' + CODIGO_SERVIDOR
-          }
-        };
-        if (linkUrl) {
-          embed.url = linkUrl;
-        }
-
+        
         var payloadData = {
           username: 'Bot Shadow of Shinobi',
-          embeds: [embed]
+          embeds: [
+            {
+              title: titulo,
+              description: descricao,
+              color: corDecimal,
+              timestamp: new Date().toISOString(),
+              image: {
+                url: 'attachment://captura.png'
+              },
+              footer: {
+                text: 'Usuário: ' + USUARIO_FINAL + ' | Servidor: ' + CODIGO_SERVIDOR
+              }
+            }
+          ]
         };
 
         var formData = new FormData();
@@ -661,25 +632,10 @@
             return urlAtual.indexOf('captcha_seguranca') !== -1 || document.querySelector('form[action="captcha_seguranca"]') !== null; 
           },
           executar: function() {
-            console.warn('[Script] Captcha detectado! OCR + Discord + Firebase...');
-            tocarAlertaSonoro();
-            iniciarEscutaFirebaseCaptcha();
+            console.warn('[Script] Captcha detectado! Imagem -> Firebase + Discord...');
+            processarCaptchaDetectado();
 
-            resolverCaptchaOCR(function(respostaOCR) {
-              var linkConfirmar = (respostaOCR && respostaOCR.length >= 4)
-                ? montarLinkPainelCaptcha(respostaOCR, true)
-                : montarLinkPainelCaptcha('', false);
-
-              enviarNotificacaoDiscordComPrint(
-                'CAPTCHA — clique no titulo para confirmar',
-                montarDescricaoDiscordCaptcha(respostaOCR),
-                '#FF0000',
-                null,
-                linkConfirmar
-              );
-            });
-
-            console.log('[Captcha] Timer de 10 minutos iniciado para redirecionar caso nao seja resolvido...');
+            console.log('[Captcha] Timer de 10 minutos iniciado...');
             setTimeout(function() {
               console.warn('[Captcha] Tempo limite de 10 minutos esgotado! Redirecionando para Caçadas...');
               window.location.href = URL_CACADAS;

@@ -225,6 +225,49 @@
     .toast.toast-error {
       background-color: #ef4444;
     }
+
+    .captcha-preview {
+      margin-bottom: 14px;
+      padding: 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .captcha-preview img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid #475569;
+    }
+
+    .captcha-preview p {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-top: 8px;
+    }
+
+    .ocr-status {
+      font-size: 0.8rem;
+      color: #eab308;
+      margin-bottom: 10px;
+      min-height: 1.2em;
+    }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 12px;
+      margin-top: 6px;
+      background: #334155;
+      color: #e2e8f0;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .nome-comando-oculto { display: none; }
   </style>
 </head>
 <body>
@@ -236,21 +279,33 @@
       <p id="badgeConta" class="badge-conta" style="display:none;"></p>
     </div>
 
-    <!-- Campo 1: Nome do Comando (modo manual) -->
-    <div class="input-group" id="grupoChaveFirebase">
+    <!-- Campo 1: chave Firebase (oculto no modo captcha) -->
+    <div class="input-group nome-comando-oculto" id="grupoNomeComando">
       <label for="nomeComandoInput">Nome do Comando (Chave Firebase)</label>
       <input type="text" id="nomeComandoInput" class="input-field" value="comando_recebido" placeholder="Ex: comando_recebido">
     </div>
 
-    <!-- Campo 2: Valor do Comando -->
+    <div id="captchaPreview" class="captcha-preview" style="display:none;">
+      <label style="display:block;font-size:0.8rem;font-weight:600;color:#cbd5e1;margin-bottom:8px;text-transform:uppercase;">Imagem do captcha (Firebase)</label>
+      <img id="captchaImg" alt="Captcha" />
+      <p>Esta e a imagem valida — igual ao Discord.</p>
+    </div>
+
+    <p id="ocrStatus" class="ocr-status"></p>
+
+    <!-- Campo 2: resposta -->
     <div class="input-group">
       <label for="valorComandoInput">Codigo do captcha (5 numeros)</label>
       <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840" inputmode="numeric" maxlength="8">
     </div>
 
+    <button type="button" id="btnOcr" class="btn-secondary" style="display:none;" onclick="executarOCR()">
+      🔍 Ler numeros (OCR)
+    </button>
+
     <!-- Botão de Disparo -->
     <button id="btnEnviar" class="btn-action" onclick="enviarComando()">
-      ⚡ ENVIAR COMANDO
+      ⚡ ENVIAR AO BOT
     </button>
 
     <!-- Histórico de Logs -->
@@ -272,6 +327,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCn92W9swCRMJfomc30lSn4GckgA2Esjm0",
@@ -287,46 +343,132 @@
       firebase.initializeApp(firebaseConfig);
     }
     const database = firebase.database();
+    let codigoContaAtual = null;
+    let captchaDataUrlAtual = null;
 
     function obterChaveFirebase() {
-      const params = new URLSearchParams(window.location.search);
-      const codigo = params.get('codigo');
-      if (codigo && codigo.trim()) {
-        return 'comandos/' + codigo.trim() + '/resposta';
+      if (codigoContaAtual) {
+        return 'comandos/' + codigoContaAtual + '/resposta';
       }
       return document.getElementById('nomeComandoInput').value.trim() || 'comando_recebido';
+    }
+
+    function obterRefImagemCaptcha() {
+      if (!codigoContaAtual) return null;
+      return 'comandos/' + codigoContaAtual + '/imagem';
+    }
+
+    function preprocessarCaptchaCanvas(img) {
+      const scale = 3;
+      const w = (img.naturalWidth || img.width || 200) * scale;
+      const h = (img.naturalHeight || img.height || 60) * scale;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i];
+        const g = d[i + 1];
+        const b = d[i + 2];
+        const ehDigito = (r > 130 && g > 110 && b < 110) || (r + g > 280 && b < 120);
+        const v = ehDigito ? 0 : 255;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      return canvas;
+    }
+
+    function executarOCR() {
+      const status = document.getElementById('ocrStatus');
+      const valorInput = document.getElementById('valorComandoInput');
+      const imgEl = document.getElementById('captchaImg');
+
+      if (!captchaDataUrlAtual && !imgEl.src) {
+        status.textContent = 'Nenhuma imagem carregada.';
+        return;
+      }
+
+      status.textContent = 'Lendo numeros (OCR)...';
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function() {
+        const canvas = preprocessarCaptchaCanvas(img);
+        Tesseract.recognize(canvas, 'eng', {
+          tessedit_char_whitelist: '0123456789',
+          tessedit_pageseg_mode: '7'
+        }).then(function(result) {
+          const raw = (result.data && result.data.text) ? result.data.text : '';
+          const digits = raw.replace(/\D/g, '');
+          if (digits.length >= 5) {
+            valorInput.value = digits.substring(0, 5);
+            status.textContent = 'OCR: ' + digits.substring(0, 5) + ' — confira e clique ENVIAR';
+          } else if (digits.length > 0) {
+            valorInput.value = digits;
+            status.textContent = 'OCR parcial: ' + digits + ' — complete manualmente';
+          } else {
+            status.textContent = 'OCR nao leu — digite manualmente';
+          }
+        }).catch(function(err) {
+          console.error(err);
+          status.textContent = 'Erro no OCR — digite manualmente';
+        });
+      };
+      img.onerror = function() {
+        status.textContent = 'Erro ao carregar imagem para OCR';
+      };
+      img.src = captchaDataUrlAtual || imgEl.src;
+    }
+
+    function carregarImagemCaptchaFirebase(codigo) {
+      const refImg = 'comandos/' + codigo + '/imagem';
+      const preview = document.getElementById('captchaPreview');
+      const imgEl = document.getElementById('captchaImg');
+      const status = document.getElementById('ocrStatus');
+      const btnOcr = document.getElementById('btnOcr');
+
+      status.textContent = 'Carregando imagem do Firebase...';
+
+      database.ref(refImg).once('value').then(function(snap) {
+        const val = snap.val();
+        if (!val) {
+          status.textContent = 'Imagem ainda nao chegou — aguarde ou abra pelo Discord';
+          return;
+        }
+        captchaDataUrlAtual = val;
+        imgEl.src = val;
+        preview.style.display = 'block';
+        btnOcr.style.display = 'block';
+        status.textContent = 'Imagem carregada — rodando OCR...';
+        executarOCR();
+      }).catch(function(err) {
+        console.error(err);
+        status.textContent = 'Erro ao buscar imagem no Firebase';
+      });
     }
 
     function aplicarParametrosUrl() {
       const params = new URLSearchParams(window.location.search);
       const codigo = params.get('codigo');
-      const resposta = params.get('resposta');
-      const auto = params.get('auto') === '1';
 
       const nomeInput = document.getElementById('nomeComandoInput');
-      const valorInput = document.getElementById('valorComandoInput');
       const badge = document.getElementById('badgeConta');
       const subtitulo = document.getElementById('headerSubtitulo');
-      const grupoChave = document.getElementById('grupoChaveFirebase');
+      const grupoNome = document.getElementById('grupoNomeComando');
 
-      if (codigo) {
-        nomeInput.value = 'comandos/' + codigo.trim() + '/resposta';
+      if (codigo && codigo.trim()) {
+        codigoContaAtual = codigo.trim();
+        nomeInput.value = 'comandos/' + codigoContaAtual + '/resposta';
         nomeInput.readOnly = true;
-        if (grupoChave) grupoChave.style.display = 'none';
+        grupoNome.classList.add('nome-comando-oculto');
         badge.style.display = 'inline-block';
-        badge.textContent = 'Conta: ' + codigo.trim();
-        subtitulo.textContent = 'Confirme o codigo e envie ao bot';
-      }
-
-      if (resposta) {
-        valorInput.value = resposta.trim();
-      }
-
-      if (auto && resposta) {
-        subtitulo.textContent = 'Enviando automaticamente...';
-        setTimeout(function() {
-          enviarComando();
-        }, 700);
+        badge.textContent = 'Conta: ' + codigoContaAtual;
+        subtitulo.textContent = 'Confira o OCR e clique ENVIAR AO BOT';
+        carregarImagemCaptchaFirebase(codigoContaAtual);
       }
     }
 
