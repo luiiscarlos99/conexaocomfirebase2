@@ -183,9 +183,9 @@ function Get-UrlJogo {
 
     $root = $Base.TrimEnd('/')
     if ($BotModo -eq 'cacadas') {
-        return '{0}/status?bot_modo=cacadas' -f $root
+        return '{0}/cacadas?bot_modo=cacadas' -f $root
     }
-    return '{0}/status?bot_modo=invasor' -f $root
+    return '{0}/invasor?bot_modo=invasor' -f $root
 }
 
 function Start-ContaJogo {

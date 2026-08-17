@@ -36,21 +36,21 @@ Locais (gitignore): `contas-jogo.config.ps1`, `discord-pc-ligado.config.ps1`, `p
 
 Abrir o jogo **sem** `?bot_modo=` = manual, sem bot (não precisa `botParar()`).
 
-### Favoritos (logado — use `/status?bot_modo=`)
+### Favoritos (logado — use `/invasor` ou `/cacadas`)
 
-Se já estiver logado, `/?bot_modo=...` redireciona para `/status` **sem** o parâmetro. Use:
+Abra direto na página do bot. O script infere o modo pelo path; se o jogo redirecionar para `/status`, o `referrer` preserva o `bot_modo`.
 
 **Shiroe (caçadas)**
 ```
-https://shadowofshinobi.com/status?bot_modo=cacadas
+https://shadowofshinobi.com/cacadas?bot_modo=cacadas
 ```
 
 **Shizuo / Sora (invasor)**
 ```
-https://shadowofshinobi.com/status?bot_modo=invasor
+https://shadowofshinobi.com/invasor?bot_modo=invasor
 ```
 
-**Login (sessão expirada)**
+**Login (sessão expirada — home não redireciona antes do script)**
 ```
 https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=2
 https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
@@ -58,14 +58,16 @@ https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 
 **Manual (desliga bot):** `/?bot_modo=off`
 
-### Redirect `/status` — opções
+**Fallback** (se `/invasor` ou `/cacadas` cair em `/status` sem modo): `/status?bot_modo=invasor` ou `/status?bot_modo=cacadas`
+
+### Redirect `/status` — opções extras
 
 | Opção | Como | Prós |
 |---|---|---|
-| **A — Favorito `/status?bot_modo=`** | URL acima | Simples, funciona sempre logado |
-| **B — Referrer (v2.19+)** | Abrir `/?bot_modo=invasor` mesmo logado | Script lê o `referrer` ao cair em `/status` |
-| **C — `bot-bootstrap.js` primeiro** | Inject Code: carregar `bot-bootstrap.js` antes dos bots, timing `document_start` | Captura mais cedo |
-| **D — Modo fixo por perfil** | Antes do script: `window.__BOT_MODO_FIXO__='invasor'` | Perfil do navegador sempre invasor/caçadas |
+| **A — `/invasor` ou `/cacadas`** | Favoritos acima | Melhor: vai direto ao destino + path + referrer |
+| **B — Referrer (v2.19+)** | Automático ao cair em `/status` | Recupera `bot_modo` da URL anterior |
+| **C — `bot-bootstrap.js` primeiro** | Inject Code: `document_start` | Captura mais cedo |
+| **D — Modo fixo por perfil** | `window.__BOT_MODO_FIXO__='invasor'` | 1 perfil = 1 modo sempre |
 
 ---
 
