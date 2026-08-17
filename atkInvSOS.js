@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      4.9
+// @version      5.0
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -67,8 +67,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '4.9';
-  var SCRIPT_ATUALIZADO = '16/08/2026 22:15';
+  var SCRIPT_VERSAO = '5.0';
+  var SCRIPT_ATUALIZADO = '16/08/2026 22:20';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -90,6 +90,12 @@
     window.botLigar = window.__BOT_CONTROLE__.ligar;
     window.botStatus = window.__BOT_CONTROLE__.status;
   }
+
+  window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
+  console.log(
+    '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
+    'color:#3498db;font-weight:bold'
+  );
 
   try {
     if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
@@ -118,7 +124,7 @@
   }
 
   if (!obterModoAba()) {
-    console.log('[Script Invasor] Sem BOT_MODO_ABA — sem acao. Use /invasor?bot_modo=invasor ou login com ?bot_modo=invasor.');
+    console.log('[Script Invasor] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /invasor?bot_modo=invasor.');
     return;
   }
 
@@ -134,12 +140,6 @@
     console.log('[Script Invasor] Pagina fora do escopo — sem acao.');
     return;
   }
-
-  window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
-  console.log(
-    '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
-    'color:#3498db;font-weight:bold'
-  );
 
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
   var LIMITE_PLAYERS_DERROTADOS = 99999999;      // Altere aqui o limite desejado!

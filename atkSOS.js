@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.16
+// @version      2.17
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -70,8 +70,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.16';
-  var SCRIPT_ATUALIZADO = '16/08/2026 22:15';
+  var SCRIPT_VERSAO = '2.17';
+  var SCRIPT_ATUALIZADO = '16/08/2026 22:20';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -110,7 +110,7 @@
 
   var modoInicial = obterModoAba();
   if (!modoInicial) {
-    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao. Use favorito ?bot_modo=cacadas ou invasor (ex: /invasor?bot_modo=invasor).');
+    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /invasor?bot_modo=invasor ou /cacadas?bot_modo=cacadas.');
     return;
   }
 
