@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.15
+// @version      2.16
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -10,9 +10,68 @@
 (function() {
   'use strict';
 
+  var BOT_MODO_KEY = 'BOT_MODO_ABA';
+  var BOT_MODO_PERFIL_KEY = 'BOT_MODO_ABA';
+
+  // Bootstrap imediato — antes de qualquer return (redirect /status nao perde o modo)
+  function aplicarParamsUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var modo = params.get('bot_modo');
+
+      if (modo === 'off' || modo === 'manual') {
+        sessionStorage.removeItem(BOT_MODO_KEY);
+        localStorage.removeItem(BOT_MODO_PERFIL_KEY);
+        return params;
+      }
+
+      if (modo === 'invasor' || modo === 'cacadas') {
+        sessionStorage.setItem(BOT_MODO_KEY, modo);
+        localStorage.setItem(BOT_MODO_PERFIL_KEY, modo);
+      }
+
+      var u = params.get('bot_user');
+      var p = params.get('bot_pass');
+      var n = params.get('bot_nivel');
+      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (p) localStorage.setItem('BOT_SENHA', p);
+      if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+
+      if ((u || p || n || modo) && window.history && window.history.replaceState) {
+        history.replaceState(null, document.title, location.pathname + location.hash);
+      }
+
+      return params;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function obterModoAba() {
+    try {
+      var modoSessao = sessionStorage.getItem(BOT_MODO_KEY);
+      if (modoSessao === 'invasor' || modoSessao === 'cacadas') {
+        return modoSessao;
+      }
+
+      var modoPerfil = localStorage.getItem(BOT_MODO_PERFIL_KEY);
+      if (modoPerfil === 'invasor' || modoPerfil === 'cacadas') {
+        sessionStorage.setItem(BOT_MODO_KEY, modoPerfil);
+        return modoPerfil;
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function sincronizarModoAba() {
+    return aplicarParamsUrl();
+  }
+
+  aplicarParamsUrl();
+
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.15';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:40';
+  var SCRIPT_VERSAO = '2.16';
+  var SCRIPT_ATUALIZADO = '16/08/2026 22:15';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -49,47 +108,9 @@
     }
   } catch (e) {}
 
-  // Credenciais e modo via URL (?bot_user=&bot_pass=&bot_nivel=&bot_modo=)
-  function sincronizarModoAba() {
-    try {
-      var params = new URLSearchParams(window.location.search);
-      var modo = params.get('bot_modo');
-      if (modo === 'invasor' || modo === 'cacadas') {
-        sessionStorage.setItem('BOT_MODO_ABA', modo);
-      }
-      return params;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function obterModoAba() {
-    try {
-      return sessionStorage.getItem('BOT_MODO_ABA') || '';
-    } catch (e) {
-      return '';
-    }
-  }
-
-  try {
-    var paramsUrl = sincronizarModoAba();
-    if (paramsUrl) {
-      var u = paramsUrl.get('bot_user');
-      var p = paramsUrl.get('bot_pass');
-      var n = paramsUrl.get('bot_nivel');
-      var modoUrl = paramsUrl.get('bot_modo');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
-      if (p) localStorage.setItem('BOT_SENHA', p);
-      if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
-      if ((u || p || n || modoUrl) && window.history && window.history.replaceState) {
-        history.replaceState(null, document.title, location.pathname + location.hash);
-      }
-    }
-  } catch (e) {}
-
   var modoInicial = obterModoAba();
   if (!modoInicial) {
-    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao. Abra favorito com ?bot_modo=cacadas ou invasor.');
+    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao. Use favorito ?bot_modo=cacadas ou invasor (ex: /invasor?bot_modo=invasor).');
     return;
   }
 
