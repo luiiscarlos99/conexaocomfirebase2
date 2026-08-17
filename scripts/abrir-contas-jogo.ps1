@@ -7,7 +7,8 @@
 
 param(
     [ValidateSet('manual', 'auto')]
-    [string]$Origem = 'manual'
+    [string]$Origem = 'manual',
+    [switch]$DevTools
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,13 @@ if (-not (Test-Path $configPath)) {
 . $configPath
 
 if (-not (Get-Variable -Name 'AbrirDevTools' -Scope Script -ErrorAction SilentlyContinue)) {
-    $AbrirDevTools = $false
+    $script:AbrirDevTools = $true
+} else {
+    $script:AbrirDevTools = [bool]$AbrirDevTools
+}
+
+if ($DevTools) {
+    $script:AbrirDevTools = $true
 }
 
 if (-not (Get-Variable -Name 'AvisarDiscordStart' -Scope Script -ErrorAction SilentlyContinue)) {
@@ -229,20 +236,12 @@ function Get-BrowserArgs {
 
     # Fase 2 anonimo Opera: --private sem --new-window → nova aba na janela privada existente
     if ($Fase -eq 'Jogo' -and $Conta.Anonimo -and $ehOpera) {
-        $args = @('--private')
-        if ($AbrirDevTools) {
-            $args = @('--auto-open-devtools-for-tabs') + $args
-        }
-        return $args
+        return @('--private')
     }
 
     # Fase 2 anonimo Chrome: nova aba na janela anonima (sem --incognito)
     if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
-        $args = @()
-        if ($AbrirDevTools) {
-            $args += '--auto-open-devtools-for-tabs'
-        }
-        return $args
+        return @()
     }
 
     $args = @()
@@ -259,11 +258,6 @@ function Get-BrowserArgs {
         }
     }
 
-    if ($AbrirDevTools) {
-        # Chrome / Opera (Chromium): F12 aberto em cada aba nova desta invocacao
-        $args = @('--auto-open-devtools-for-tabs') + $args
-    }
-
     return $args
 }
 
@@ -275,10 +269,23 @@ function Start-NavegadorComUrl {
     )
 
     $exe = Resolve-BrowserExe -ExePath $ExePath
-    $lista = @($ArgsBrowser) + @($Url)
+    $lista = [System.Collections.ArrayList]@($ArgsBrowser | Where-Object { $_ })
 
-    # ArgumentList em array — URL com & fica em um unico argumento
-    Start-Process -FilePath $exe -ArgumentList $lista | Out-Null
+    if ($script:AbrirDevTools) {
+        # Flag tem que ser no processo NOVO — navegador ja aberto ignora argumentos
+        if ($lista -notcontains '--auto-open-devtools-for-tabs') {
+            [void]$lista.Insert(0, '--auto-open-devtools-for-tabs')
+        }
+
+        # Excecao: fase 2 Opera anon (--private sem --new-window) → aba na janela privada
+        $anonOperaSegundaAba = ($lista -contains '--private') -and ($lista -notcontains '--new-window')
+        if (-not $anonOperaSegundaAba -and $lista -notcontains '--new-window') {
+            [void]$lista.Insert(1, '--new-window')
+        }
+    }
+
+    [void]$lista.Add($Url)
+    Start-Process -FilePath $exe -ArgumentList ($lista.ToArray()) | Out-Null
 }
 
 function Open-NavegadorUrl {
