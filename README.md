@@ -34,17 +34,51 @@ Na **Inject Code**, o auto-run injeta em **todas** as páginas do jogo — **nã
 | Bot Caçadas | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkSOS.js` |
 | Bot Invasor | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkInvSOS.js` |
 
-Os dois scripts carregam em **toda** aba. Quem decide o que fazer é o **`bot_modo` por aba** (via URL + `sessionStorage`):
+Os dois scripts carregam em **toda** aba, mas **só agem** se a aba tiver `BOT_MODO_ABA` no `sessionStorage` (`cacadas` ou `invasor`). Sem isso = jogo manual, sem bot.
 
-| Abrir a aba com | Comportamento |
-|---|---|
-| `.../cacadas?bot_modo=cacadas` | Só caçadas age |
-| `.../invasor?bot_modo=invasor` | Só invasor age |
-| Login (`/?bot_user=...`) | Só caçadas age (login) |
+Abra uma vez via favorito com `?bot_modo=...` — o modo fica na aba até fechar.
+
+### Favoritos (salve no navegador)
+
+Substitua `SUA_SENHA` pelas credenciais reais.
+
+**Shiroe — login (caçadas)**
+```
+https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=2
+```
+
+**Shiroe — caçadas**
+```
+https://shadowofshinobi.com/cacadas?bot_modo=cacadas
+```
+
+**Shizuo — login (invasor)**
+```
+https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
+```
+
+**Shizuo — invasor**
+```
+https://shadowofshinobi.com/invasor?bot_modo=invasor
+```
+
+**Sora — login (invasor, Opera anônimo)**
+```
+https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Sora&bot_pass=SUA_SENHA
+```
+
+**Sora — invasor**
+```
+https://shadowofshinobi.com/invasor?bot_modo=invasor
+```
+
+| Modo na aba | Caçadas age | Invasor age |
+|---|---|---|
+| *(vazio)* | ❌ | ❌ |
+| `cacadas` | ✅ | ❌ |
+| `invasor` | só login/captcha | ✅ |
 
 O launcher (`abrir-contas-jogo.ps1`) já abre com os parâmetros certos.
-
-> **Importante:** não adianta “filtrar” só o invasor na extensão se ela não suporta filtro. O controle está no código + no `bot_modo` de cada aba.
 
 ### Painel Firebase (captcha)
 
@@ -74,14 +108,11 @@ O bot envia no Discord um link `firebase.html?codigo=SRV_XXX` — abra esse link
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Sem conflito (dois scripts em /*)
+### Sem conflito (sessionStorage obrigatório)
 
-Cada aba guarda `BOT_MODO_ABA` no `sessionStorage`:
-
-- **`bot_modo=cacadas`** → invasor **sai imediatamente**; caçadas cuida de login, caçadas, captcha, atacar
-- **`bot_modo=invasor`** → caçadas **não age** em invasor/status; invasor cuida de status → invasor → combate
-
-Após login, `/status` vai para **caçadas** ou **invasor** conforme o `bot_modo` da aba — não conforme “qual script existe no navegador”.
+- **`BOT_MODO_ABA` vazio** → nenhum bot age (jogo manual)
+- **`cacadas`** → caçadas: login, caçadas, captcha, atacar
+- **`invasor`** → invasor: status, invasor, combate; caçadas só em login/captcha
 
 ### Kill switch por aba
 

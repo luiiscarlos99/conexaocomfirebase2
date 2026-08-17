@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      4.5
+// @version      4.6
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '4.5';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:10';
+  var SCRIPT_VERSAO = '4.6';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:15';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -48,6 +48,9 @@
       var modo = params.get('bot_modo');
       if (modo === 'invasor' || modo === 'cacadas') {
         sessionStorage.setItem('BOT_MODO_ABA', modo);
+        if (window.history && window.history.replaceState) {
+          history.replaceState(null, document.title, location.pathname + location.hash);
+        }
       }
     } catch (e) {}
   }
@@ -75,36 +78,31 @@
     };
   }
 
-  function ehAbaInvasor(url) {
-    var modo = obterModoAba();
-    if (modo === 'cacadas') return false;
-    if (modo === 'invasor') return true;
-    // Sem bot_modo: so age em URLs de invasor (nao redireciona /status sozinho)
-    return url.indexOf('invasor') !== -1;
+  function ehAbaInvasor() {
+    return obterModoAba() === 'invasor';
   }
 
   sincronizarModoAba();
+
+  if (!obterModoAba()) {
+    console.log('[Script Invasor] Sem BOT_MODO_ABA — sem acao. Abra favorito com ?bot_modo=invasor.');
+    return;
+  }
+
+  if (!ehAbaInvasor()) {
+    console.log('[Script Invasor] BOT_MODO_ABA=cacadas — sem acao.');
+    return;
+  }
+
   var urlInicial = window.location.href;
-
-  // Caçadas/login: invasor nao injeta nada (mesmo com filtro /* na extensao)
-  if (obterModoAba() === 'cacadas' ||
-      urlInicial.indexOf('cacadas') !== -1 ||
-      urlInicial.indexOf('atacar') !== -1) {
-    console.log('[Script Invasor] Aba de cacadas — sem acao.');
-    return;
-  }
-
   var paginaInicial = classificarPaginaInvasor(urlInicial);
-  if (!ehAbaInvasor(urlInicial) && !paginaInicial.noEscopo) {
-    console.log('[Script Invasor] Home/login — sem acao.');
+
+  if (!paginaInicial.noEscopo && !document.getElementById('login')) {
+    console.log('[Script Invasor] Pagina fora do escopo — sem acao.');
     return;
   }
 
-  // Presenca detectavel pelo atkSOS.js — so nesta aba invasor
-  window.__BOT_INVASOR_ATIVO__ = false;
-  if (ehAbaInvasor(urlInicial) && classificarPaginaInvasor(urlInicial).noEscopo) {
-    window.__BOT_INVASOR_ATIVO__ = true;
-  }
+  window.__BOT_INVASOR_ATIVO__ = paginaInicial.noEscopo;
 
   window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
   console.log(
@@ -529,7 +527,7 @@
 
   function redirecionarParaInvasor(motivo) {
     console.warn('[Script Invasor] Redirecionando para Invasor (' + motivo + ')...');
-    window.location.href = URL_INVASOR + '?bot_modo=invasor';
+    window.location.href = URL_INVASOR;
   }
 
   console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL);
@@ -537,26 +535,17 @@
   setTimeout(function() {
     try {
       sincronizarModoAba();
-      sincronizarUsuarioLocalStorage();
+
+      if (!ehAbaInvasor()) {
+        return;
+      }
 
       if (document.getElementById('login')) {
-        console.log('[Script Invasor] Tela de login — sem acao.');
+        console.log('[Script Invasor] Tela de login — sem acao (caçadas faz login).');
         return;
       }
 
       var urlAtual = window.location.href;
-
-      if (obterModoAba() === 'cacadas' ||
-          urlAtual.indexOf('cacadas') !== -1 ||
-          urlAtual.indexOf('atacar') !== -1) {
-        console.log('[Script Invasor] Aba de cacadas — sem acao.');
-        return;
-      }
-
-      if (!ehAbaInvasor(urlAtual)) {
-        console.log('[Script Invasor] Aba nao e invasor (bot_modo) — sem acao.');
-        return;
-      }
 
       var pagina = classificarPaginaInvasor(urlAtual);
 
@@ -566,6 +555,8 @@
       }
 
       window.__BOT_INVASOR_ATIVO__ = true;
+
+      sincronizarUsuarioLocalStorage();
 
       if (checarSessaoExpirada()) {
         return;
@@ -616,7 +607,7 @@
         capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído', DISCORD_COMBATE_SILENCIOSO);
 
         setTimeout(function() {
-          window.location.href = URL_INVASOR + '?bot_modo=invasor';
+          window.location.href = URL_INVASOR;
         }, TEMPO_ESPERA_POS_COMBATE);
         return;
       }

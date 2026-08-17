@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.11
+// @version      2.12
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.11';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:10';
+  var SCRIPT_VERSAO = '2.12';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:15';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -49,23 +49,19 @@
     }
   } catch (e) {}
 
-  // Credenciais via URL (?bot_user=&bot_pass=&bot_nivel=) — launcher / modo anônimo
-  try {
-    var params = new URLSearchParams(window.location.search);
-    var u = params.get('bot_user');
-    var p = params.get('bot_pass');
-    var n = params.get('bot_nivel');
-    if (u) localStorage.setItem('BOT_USUARIO', u);
-    if (p) localStorage.setItem('BOT_SENHA', p);
-    if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
-    var modo = params.get('bot_modo');
-    if (modo === 'invasor' || modo === 'cacadas') {
-      sessionStorage.setItem('BOT_MODO_ABA', modo);
+  // Credenciais e modo via URL (?bot_user=&bot_pass=&bot_nivel=&bot_modo=)
+  function sincronizarModoAba() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var modo = params.get('bot_modo');
+      if (modo === 'invasor' || modo === 'cacadas') {
+        sessionStorage.setItem('BOT_MODO_ABA', modo);
+      }
+      return params;
+    } catch (e) {
+      return null;
     }
-    if ((u || p || n) && window.history && window.history.replaceState) {
-      history.replaceState(null, document.title, location.pathname + location.hash);
-    }
-  } catch (e) {}
+  }
 
   function obterModoAba() {
     try {
@@ -75,12 +71,41 @@
     }
   }
 
-  function ehAbaCacadas(url) {
-    var modo = obterModoAba();
-    if (modo === 'invasor') return false;
-    if (modo === 'cacadas') return true;
-    if (url.indexOf('invasor') !== -1) return false;
-    return true;
+  function paginaLoginOuCaptcha(url) {
+    if (url.indexOf('captcha_seguranca') !== -1) return true;
+    var path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    return path === '/' || path === '/index.php';
+  }
+
+  try {
+    var paramsUrl = sincronizarModoAba();
+    if (paramsUrl) {
+      var u = paramsUrl.get('bot_user');
+      var p = paramsUrl.get('bot_pass');
+      var n = paramsUrl.get('bot_nivel');
+      var modoUrl = paramsUrl.get('bot_modo');
+      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (p) localStorage.setItem('BOT_SENHA', p);
+      if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if ((u || p || n || modoUrl) && window.history && window.history.replaceState) {
+        history.replaceState(null, document.title, location.pathname + location.hash);
+      }
+    }
+  } catch (e) {}
+
+  var modoInicial = obterModoAba();
+  if (!modoInicial) {
+    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao. Abra favorito com ?bot_modo=cacadas ou invasor.');
+    return;
+  }
+
+  if (modoInicial === 'invasor' && !paginaLoginOuCaptcha(window.location.href)) {
+    console.log('[Script Caçadas] Aba invasor — sem acao nesta pagina (login/captcha ficam com caçadas).');
+    return;
+  }
+
+  if (modoInicial !== 'cacadas' && modoInicial !== 'invasor') {
+    return;
   }
 
   var TEMPO_ESPERA = 2000;
@@ -527,6 +552,19 @@
 
   setTimeout(function() {
     try {
+      sincronizarModoAba();
+
+      if (obterModoAba() === 'invasor') {
+        var urlInv = window.location.href;
+        var ehLogin = !!document.getElementById('login');
+        var ehCaptcha = urlInv.indexOf('captcha_seguranca') !== -1 ||
+          document.querySelector('form[action="captcha_seguranca"]');
+        if (!ehLogin && !ehCaptcha) {
+          console.log('[Script Caçadas] Aba invasor — sem acao.');
+          return;
+        }
+      }
+
       sincronizarUsuarioLocalStorage();
       CODIGO_SERVIDOR = obterCodigoServidor();
 
@@ -580,25 +618,16 @@
         return;
       }
 
-      // Páginas do invasor — caçadas não interfere (Inject Code: ambos rodam em /*)
+      // Páginas do invasor — só roda nesta aba se BOT_MODO_ABA=invasor (script nem carrega em cacadas)
       if (urlAtual.indexOf('invasor') !== -1) {
-        console.log('[Script Caçadas] Página do invasor — sem ação (aba invasor).');
+        console.log('[Script Caçadas] Página do invasor — sem ação.');
         return;
       }
 
-      // /status: aba invasor vai pro invasor; aba caçadas vai pras caçadas
+      // /status → caçadas (aba invasor nem executa este script)
       if (urlAtual.indexOf('status') !== -1) {
-        if (obterModoAba() === 'invasor' || window.__BOT_INVASOR_ATIVO__) {
-          console.log('[Script Caçadas] Status — sem acao (aba invasor).');
-          return;
-        }
         console.log('[Script Caçadas] Status — redirecionando para caçadas...');
-        window.location.href = URL_CACADAS + '?bot_modo=cacadas';
-        return;
-      }
-
-      if (!ehAbaCacadas(urlAtual)) {
-        console.log('[Script Caçadas] Aba invasor — sem acao nesta pagina.');
+        window.location.href = URL_CACADAS;
         return;
       }
 
