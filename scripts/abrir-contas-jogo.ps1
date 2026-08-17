@@ -147,9 +147,8 @@ function Get-BotModoConta {
         return $Conta.BotModo
     }
 
-    # Compat: contas antigas sem BotModo
-    if ($Conta.Usuario -eq 'Shiroe') { return 'cacadas' }
-    return 'invasor'
+    # Compat: contas antigas sem BotModo — padrão caçadas
+    return 'cacadas'
 }
 
 function Test-ContaTemCredenciais {
@@ -341,7 +340,7 @@ $contasLoginOrdenadas = @(
 # --- Fase 1: abas de login (todas as contas com senha) ---
 if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host '--- Fase 1: login (bot_modo=invasor nas 3 contas) ---' -ForegroundColor Green
-    Write-Host '  Shizuo/Sora ficam no invasor. Shiroe loga aqui e abre caçadas na fase 2.' -ForegroundColor DarkGray
+    Write-Host '  Shizuo/Sora/Shiroe logam aqui; caçadas abre na fase 2.' -ForegroundColor DarkGray
     Write-Host '  Sora (Opera anon) abre antes do Opera normal — --private --new-window + launcher.exe' -ForegroundColor DarkGray
     $i = 0
     foreach ($conta in $contasLoginOrdenadas) {
@@ -375,14 +374,11 @@ if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host ''
 }
 
-# --- Fase 2: invasor (Sora anon, Shizuo) depois caçadas (Shiroe) ---
-$contasInvasor = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'invasor' })
-$contasCacadas = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'cacadas' })
-
+# --- Fase 2: caçadas (Sora anon, Shizuo, Shiroe) — mesma ordem da fase 1 ---
 $contasFase2Lista = [System.Collections.ArrayList]@()
-Add-ContasLista -Destino $contasFase2Lista -Itens ($contasInvasor | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
-Add-ContasLista -Destino $contasFase2Lista -Itens ($contasInvasor | Where-Object { -not $_.Anonimo })
-Add-ContasLista -Destino $contasFase2Lista -Itens $contasCacadas
+Add-ContasLista -Destino $contasFase2Lista -Itens ($Contas | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
+Add-ContasLista -Destino $contasFase2Lista -Itens ($Contas | Where-Object { -not $_.Anonimo -and $_.Exe -match '(?i)opera' })
+Add-ContasLista -Destino $contasFase2Lista -Itens ($Contas | Where-Object { $_.Exe -notmatch '(?i)opera' })
 
 $rotulosFase2 = @{}
 $contasFase2 = @($contasFase2Lista | Where-Object {
@@ -392,8 +388,8 @@ $contasFase2 = @($contasFase2Lista | Where-Object {
 })
 
 if ($contasFase2.Count -gt 0) {
-    Write-Host '--- Fase 2: invasor + caçadas ---' -ForegroundColor Green
-    Write-Host '  Sora (anon) abre invasor primeiro — --private na mesma janela privada' -ForegroundColor DarkGray
+    Write-Host '--- Fase 2: caçadas (3 contas) ---' -ForegroundColor Green
+    Write-Host '  Sora (anon) abre caçadas primeiro — --private na mesma janela privada' -ForegroundColor DarkGray
 
     $i = 0
     foreach ($conta in $contasFase2) {
@@ -428,6 +424,6 @@ if ($contasFase2.Count -gt 0) {
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = invasor (Sora, Shizuo) + caçadas (Shiroe).' -ForegroundColor Green
+Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = caçadas (Sora, Shizuo, Shiroe).' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''

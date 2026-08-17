@@ -36,7 +36,7 @@ $Contas = @(
         Rotulo  = 'Opera - Shizuo'
         Exe     = $OperaExe
         Anonimo = $false
-        BotModo = 'invasor'
+        BotModo = 'cacadas'
         Usuario = 'Shizuo'
         Senha   = 'SUA_SENHA'
     },
@@ -44,7 +44,7 @@ $Contas = @(
         Rotulo  = 'Opera anônimo - Sora'
         Exe     = $OperaExe
         Anonimo = $true
-        BotModo = 'invasor'
+        BotModo = 'cacadas'
         Usuario = 'Sora'
         Senha   = 'SUA_SENHA'
     }
