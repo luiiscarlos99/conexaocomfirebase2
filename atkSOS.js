@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.24
+// @version      2.25
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -26,6 +26,20 @@
     var minutos = parseEsperaCacadasMinutos(valor);
     if (minutos === null) return false;
     localStorage.setItem('BOT_ESPERA_CACADAS', String(minutos));
+    return true;
+  }
+
+  function parseLimiteInvasor(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, '').replace(',', ''), 10);
+    if (isNaN(n) || n < 0) return null;
+    return n;
+  }
+
+  function gravarLimiteInvasorParam(valor) {
+    var limite = parseLimiteInvasor(valor);
+    if (limite === null) return false;
+    localStorage.setItem('BOT_LIMITE_INVASOR', String(limite));
     return true;
   }
 
@@ -64,10 +78,12 @@
       var p = rp.get('bot_pass');
       var n = rp.get('bot_nivel');
       var e = rp.get('bot_espera_cacadas');
+      var l = rp.get('bot_limite_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
+      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
     } catch (e) {}
   }
 
@@ -101,13 +117,15 @@
       var p = params.get('bot_pass');
       var n = params.get('bot_nivel');
       var e = params.get('bot_espera_cacadas');
+      var l = params.get('bot_limite_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
+      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (!u && !p && !n) aplicarCredenciaisReferrer();
 
-      if ((u || p || n || e || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || n || e || l || modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -155,8 +173,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.24';
-  var SCRIPT_ATUALIZADO = '17/08/2026 09:00';
+  var SCRIPT_VERSAO = '2.25';
+  var SCRIPT_ATUALIZADO = '17/08/2026 09:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -176,10 +194,12 @@
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
+      var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
+      if (l !== null && l !== '') params.set('bot_limite_invasor', l);
     } catch (err) {}
 
     var qs = params.toString();

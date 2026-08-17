@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.6
+// @version      5.7
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -13,6 +13,35 @@
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
 
   try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
+
+  function parseLimiteInvasor(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, '').replace(',', ''), 10);
+    if (isNaN(n) || n < 0) return null;
+    return n;
+  }
+
+  function gravarLimiteInvasorParam(valor) {
+    var limite = parseLimiteInvasor(valor);
+    if (limite === null) return false;
+    localStorage.setItem('BOT_LIMITE_INVASOR', String(limite));
+    return true;
+  }
+
+  function obterLimitePlayersDerrotados() {
+    var limite = parseLimiteInvasor(localStorage.getItem('BOT_LIMITE_INVASOR'));
+    if (limite === null) return LIMITE_INVASOR_DEFAULT;
+    return limite;
+  }
+
+  function descreverLimiteInvasor() {
+    var limite = obterLimitePlayersDerrotados();
+    var raw = localStorage.getItem('BOT_LIMITE_INVASOR');
+    if (raw === null || raw === '') return limite + ' (padrao)';
+    return limite + ' (bot_limite_invasor=' + raw + ')';
+  }
+
+  var LIMITE_INVASOR_DEFAULT = 3000;
 
   function lerModoReferrer() {
     try {
@@ -47,8 +76,10 @@
       var rp = new URLSearchParams(new URL(ref).search);
       var u = rp.get('bot_user');
       var p = rp.get('bot_pass');
+      var l = rp.get('bot_limite_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
+      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
     } catch (e) {}
   }
 
@@ -79,11 +110,13 @@
 
       var u = params.get('bot_user');
       var p = params.get('bot_pass');
+      var l = params.get('bot_limite_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
+      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (!u && !p) aplicarCredenciaisReferrer();
 
-      if ((u || p || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || l || modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -110,8 +143,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.6';
-  var SCRIPT_ATUALIZADO = '17/08/2026 09:00';
+  var SCRIPT_VERSAO = '5.7';
+  var SCRIPT_ATUALIZADO = '17/08/2026 09:30';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -186,7 +219,7 @@
   }
 
   // --- CONFIGURAÇÕES DE TEMPO E LIMITES ---
-  var LIMITE_PLAYERS_DERROTADOS = 99999999;      // Altere aqui o limite desejado!
+  var LIMITE_PLAYERS_DERROTADOS = obterLimitePlayersDerrotados();
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_RELOAD_PADRAO = 60000;          // 1 minuto
@@ -212,10 +245,12 @@
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
+      var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
+      if (l !== null && l !== '') params.set('bot_limite_invasor', l);
     } catch (err) {}
 
     var qs = params.toString();
@@ -642,7 +677,7 @@
     window.location.href = URL_INVASOR;
   }
 
-  console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL);
+  console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL + ' | Limite derrotados: ' + descreverLimiteInvasor());
 
   setTimeout(function() {
     try {

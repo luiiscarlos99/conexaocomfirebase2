@@ -21,10 +21,12 @@
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
+      var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
+      if (l !== null && l !== '') params.set('bot_limite_invasor', l);
     } catch (err) {}
 
     var qs = params.toString();
@@ -38,7 +40,7 @@
 
     if (modo === 'invasor' || modo === 'cacadas') dest.set('bot_modo', modo);
 
-    ['bot_user', 'bot_pass', 'bot_nivel', 'bot_espera_cacadas'].forEach(function(k) {
+    ['bot_user', 'bot_pass', 'bot_nivel', 'bot_espera_cacadas', 'bot_limite_invasor'].forEach(function(k) {
       var v = rp.get(k);
       if (v !== null && v !== '') dest.set(k, v);
     });

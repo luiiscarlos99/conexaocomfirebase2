@@ -33,12 +33,17 @@
       var p = rp.get('bot_pass');
       var n = rp.get('bot_nivel');
       var e = rp.get('bot_espera_cacadas');
+      var l = rp.get('bot_limite_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') {
         var em = parseFloat(String(e).replace(',', '.'));
         if (!isNaN(em) && em >= 0) localStorage.setItem('BOT_ESPERA_CACADAS', String(em));
+      }
+      if (l !== null && l !== '') {
+        var lm = parseInt(String(l).replace(/\./g, '').replace(',', ''), 10);
+        if (!isNaN(lm) && lm >= 0) localStorage.setItem('BOT_LIMITE_INVASOR', String(lm));
       }
     } catch (e) {}
   }
@@ -57,7 +62,8 @@
       }
 
       aplicarCredenciais(window.location.search);
-      if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') && !params.get('bot_espera_cacadas')) {
+      if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
+          !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor')) {
         try {
           var ref = document.referrer || '';
           if (ref.indexOf('shadowofshinobi.com') !== -1) {
