@@ -137,7 +137,7 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 
 **Anonimo fase 1 (Sora):** `launcher.exe` + `--private --new-window URL`.
 
-**DevTools (F12):** ligado por padrao (`$AbrirDevTools = $true`). Desligue no config ou use `-DevTools` no script. Navegador ja aberto ignora a flag — o script usa `--new-window` para forcar.
+**Modo na tela:** `#serverID` mostra `| Bot: invasor`, `cacadas` ou `manual`.
 
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 

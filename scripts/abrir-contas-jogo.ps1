@@ -25,7 +25,7 @@ if (-not (Test-Path $configPath)) {
 . $configPath
 
 if (-not (Get-Variable -Name 'AbrirDevTools' -Scope Script -ErrorAction SilentlyContinue)) {
-    $script:AbrirDevTools = $true
+    $script:AbrirDevTools = $false
 } else {
     $script:AbrirDevTools = [bool]$AbrirDevTools
 }
@@ -269,23 +269,21 @@ function Start-NavegadorComUrl {
     )
 
     $exe = Resolve-BrowserExe -ExePath $ExePath
-    $lista = [System.Collections.ArrayList]@($ArgsBrowser | Where-Object { $_ })
+    $lista = @($ArgsBrowser | Where-Object { $_ }) + @($Url)
+    Start-Process -FilePath $exe -ArgumentList $lista | Out-Null
+}
 
-    if ($script:AbrirDevTools) {
-        # Flag tem que ser no processo NOVO — navegador ja aberto ignora argumentos
-        if ($lista -notcontains '--auto-open-devtools-for-tabs') {
-            [void]$lista.Insert(0, '--auto-open-devtools-for-tabs')
-        }
+function Add-ContasLista {
+    param(
+        [System.Collections.ArrayList]$Destino,
+        [object]$Itens
+    )
 
-        # Excecao: fase 2 Opera anon (--private sem --new-window) → aba na janela privada
-        $anonOperaSegundaAba = ($lista -contains '--private') -and ($lista -notcontains '--new-window')
-        if (-not $anonOperaSegundaAba -and $lista -notcontains '--new-window') {
-            [void]$lista.Insert(1, '--new-window')
+    foreach ($item in @($Itens)) {
+        if ($null -ne $item) {
+            [void]$Destino.Add($item)
         }
     }
-
-    [void]$lista.Add($Url)
-    Start-Process -FilePath $exe -ArgumentList ($lista.ToArray()) | Out-Null
 }
 
 function Open-NavegadorUrl {
@@ -325,9 +323,6 @@ function Open-NavegadorUrl {
 
 Write-Host ''
 Write-Host '=== Shadow of Shinobi - abrir contas ===' -ForegroundColor Green
-if ($AbrirDevTools) {
-    Write-Host 'DevTools: ativo (--auto-open-devtools-for-tabs)' -ForegroundColor DarkGray
-}
 Write-Host ''
 
 $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
@@ -388,13 +383,17 @@ if ($contasLoginOrdenadas.Count -gt 0) {
 $contasInvasor = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'invasor' })
 $contasCacadas = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'cacadas' })
 
-$contasFase2 = @(
-    @($contasInvasor | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
-) + @(
-    @($contasInvasor | Where-Object { -not $_.Anonimo })
-) + @(
-    $contasCacadas
-)
+$contasFase2Lista = [System.Collections.ArrayList]@()
+Add-ContasLista -Destino $contasFase2Lista -Itens ($contasInvasor | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
+Add-ContasLista -Destino $contasFase2Lista -Itens ($contasInvasor | Where-Object { -not $_.Anonimo })
+Add-ContasLista -Destino $contasFase2Lista -Itens $contasCacadas
+
+$rotulosFase2 = @{}
+$contasFase2 = @($contasFase2Lista | Where-Object {
+    if ($rotulosFase2[$_.Rotulo]) { return $false }
+    $rotulosFase2[$_.Rotulo] = $true
+    return $true
+})
 
 if ($contasFase2.Count -gt 0) {
     Write-Host '--- Fase 2: invasor + caçadas ---' -ForegroundColor Green

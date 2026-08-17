@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.20
+// @version      2.21
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -113,11 +113,33 @@
     return aplicarParamsUrl();
   }
 
+  function exibirModoAbaServerID() {
+    function aplicar() {
+      var el = document.getElementById('serverID');
+      if (!el) return false;
+      var modo = '';
+      try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
+      if (!el.dataset.botServerBase) {
+        el.dataset.botServerBase = (el.textContent || '').replace(/\s*\|\s*Bot:.*$/i, '').trim();
+      }
+      var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
+      el.textContent = el.dataset.botServerBase + ' | Bot: ' + label;
+      return true;
+    }
+    if (aplicar()) return;
+    setTimeout(aplicar, 800);
+    setTimeout(aplicar, 2500);
+  }
+
   aplicarParamsUrl();
+  if (!window.__BOT_SERVER_ID_ATUALIZADO__) {
+    window.__BOT_SERVER_ID_ATUALIZADO__ = true;
+    exibirModoAbaServerID();
+  }
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.20';
-  var SCRIPT_ATUALIZADO = '16/08/2026 22:45';
+  var SCRIPT_VERSAO = '2.21';
+  var SCRIPT_ATUALIZADO = '16/08/2026 23:10';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {

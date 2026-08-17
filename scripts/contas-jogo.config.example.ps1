@@ -14,8 +14,8 @@ $IntervaloEntreContas = 3
 # Espera apos abrir logins, antes de abrir invasor/cacadas (segundos)
 $IntervaloAposSetup = 60
 
-# Abrir Inspetor (F12) em cada aba — padrao ligado; desligue com $false
-$AbrirDevTools = $true
+# DevTools (F12) — desligado; nao abre janelas extras
+$AbrirDevTools = $false
 
 # Aviso Discord ao abrir contas (usa discord-pc-ligado.config.ps1 se omitir URL)
 $AvisarDiscordStart = $true
