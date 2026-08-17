@@ -141,7 +141,7 @@ function Get-BotModoConta {
     return 'invasor'
 }
 
-function Get-SetupUrl {
+function Get-UrlConta {
     param(
         [string]$Base,
         [string]$Usuario,
@@ -150,41 +150,35 @@ function Get-SetupUrl {
         [string]$BotModo
     )
 
-    if ([string]::IsNullOrWhiteSpace($Usuario) -or [string]::IsNullOrWhiteSpace($Senha)) {
-        return $null
-    }
-
-    if ($Senha -like 'PREENCHER*') {
-        return $null
-    }
-
-    $q = [ordered]@{
-        bot_modo = $BotModo
-        bot_user = $Usuario
-        bot_pass = $Senha
-    }
-
-    if ($BotModo -eq 'cacadas') {
-        $q['bot_nivel'] = $Nivel
-    }
-
-    $pairs = foreach ($key in $q.Keys) {
-        '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
-    }
-
-    return '{0}/?{1}' -f $Base.TrimEnd('/'), ($pairs -join '&')
-}
-
-function Get-UrlJogo {
-    param(
-        [string]$Base,
-        [string]$BotModo
-    )
-
     $root = $Base.TrimEnd('/')
+    $temCredenciais = -not [string]::IsNullOrWhiteSpace($Usuario) -and
+        -not [string]::IsNullOrWhiteSpace($Senha) -and
+        ($Senha -notlike 'PREENCHER*')
+
+    if ($temCredenciais) {
+        # Uma aba: login + bot_modo (session sobrevive ao redirect /status)
+        $q = [ordered]@{
+            bot_modo = $BotModo
+            bot_user = $Usuario
+            bot_pass = $Senha
+        }
+
+        if ($BotModo -eq 'cacadas') {
+            $q['bot_nivel'] = $Nivel
+        }
+
+        $pairs = foreach ($key in $q.Keys) {
+            '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
+        }
+
+        return '{0}/?{1}' -f $root, ($pairs -join '&')
+    }
+
+    # Perfil ja logado — pagina do bot com ?bot_modo=
     if ($BotModo -eq 'cacadas') {
         return '{0}/cacadas?bot_modo=cacadas' -f $root
     }
+
     return '{0}/invasor?bot_modo=invasor' -f $root
 }
 
@@ -202,8 +196,7 @@ function Start-ContaJogo {
     }
 
     $botModo = Get-BotModoConta -Conta $Conta
-    $setup = Get-SetupUrl -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel -BotModo $botModo
-    $urlJogo = Get-UrlJogo -Base $Base -BotModo $botModo
+    $url = Get-UrlConta -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel -BotModo $botModo
 
     $args = @()
     if ($Conta.Anonimo) {
@@ -215,24 +208,13 @@ function Start-ContaJogo {
     }
 
     Write-Host "Abrindo: $($Conta.Rotulo) [bot_modo=$botModo]" -ForegroundColor Cyan
+    Write-Host "  URL: $url"
 
-    if ($setup) {
-        Write-Host "  Fase 1: login -> $setup"
-        Start-Process -FilePath $exe -ArgumentList ($args + $setup) | Out-Null
-
-        $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
-        Write-Host "  Aguardando ${esperaLogin}s para login..." -ForegroundColor DarkGray
-        Start-Sleep -Seconds $esperaLogin
-
-        Write-Host "  Fase 2: $urlJogo"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlJogo) | Out-Null
-    } else {
-        if ($Conta.Anonimo) {
-            Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
-        }
-        Write-Host "  URL: $urlJogo"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlJogo) | Out-Null
+    if ($Conta.Anonimo -and ($Conta.Senha -like 'PREENCHER*' -or [string]::IsNullOrWhiteSpace($Conta.Senha))) {
+        Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
     }
+
+    Start-Process -FilePath $exe -ArgumentList ($args + $url) | Out-Null
 
     return $true
 }
@@ -260,6 +242,6 @@ foreach ($conta in $Contas) {
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Inject Code auto-run ON + abas com bot_modo no sessionStorage.' -ForegroundColor Green
+Write-Host 'Pronto. Inject Code auto-run ON — cada aba abre com ?bot_modo= na URL.' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''
