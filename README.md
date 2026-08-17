@@ -129,13 +129,11 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 
 | Fase | O que abre |
 |---|---|
-| **1 — Login** | `/?bot_modo=...&bot_user=...` — **modo por conta** (Shiroe=`cacadas`, demais=`invasor`) |
-| **Espera** | `$IntervaloAposSetup` segundos (padrao **60**) |
-| **2 — Jogo** | Sora (anon) → Shizuo → Shiroe — `/invasor?bot_modo=` ou `/cacadas?bot_modo=` |
+| **1 — Login** | `/?bot_modo=invasor&bot_user=...` nas **3 contas** (Shiroe inclui `bot_nivel`) |
+| **Espera** | 60s — Shizuo/Sora vão para `/invasor` sozinhos |
+| **2 — Caçadas** | Só contas com `BotModo=cacadas` → `/cacadas?bot_modo=cacadas` (Shiroe) |
 
-**Fase 1 com modos diferentes e intencional:** cada navegador/perfil roda um bot diferente; sem `bot_modo` na fase 1 o script nem preenche o login.
-
-**Anonimo (Sora):** fase 1 abre janela privada (`--private`); fase 2 abre **nova aba** na mesma janela (sem `--private`, senao perde a sessao).
+**Anonimo (Sora):** fase 1 `--private`; fase 2 nova aba sem `--private` (so caçadas nao afeta Sora).
 
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
