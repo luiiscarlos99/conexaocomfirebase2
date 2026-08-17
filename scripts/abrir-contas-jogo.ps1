@@ -182,11 +182,7 @@ function Get-UrlLogin {
         bot_modo = 'invasor'
         bot_user = $Usuario
         bot_pass = $Senha
-    }
-
-    # Shiroe (cacadas): guarda nivel no localStorage para a fase 2
-    if ($BotModo -eq 'cacadas') {
-        $q['bot_nivel'] = $Nivel
+        bot_nivel = $Nivel
     }
 
     $pairs = foreach ($key in $q.Keys) {
