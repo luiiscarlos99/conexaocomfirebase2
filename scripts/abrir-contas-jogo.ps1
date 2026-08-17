@@ -76,7 +76,7 @@ function Send-DiscordStartAviso {
         'Atalho manual'
     }
 
-    $txtIntro = U8 0x4E,0x61,0x76,0x65,0x67,0x61,0x64,0x6F,0x72,0x65,0x73,0x20,0x61,0x62,0x65,0x72,0x74,0x6F,0x73,0x20,0x63,0x6F,0x6D,0x20,0x63,0x61,0xC3,0xA7,0x61,0x64,0x61,0x73,0x20,0x2B,0x20,0x69,0x6E,0x76,0x61,0x73,0x6F,0x72,0x2E
+    $txtIntro = U8 0x4E,0x61,0x76,0x65,0x67,0x61,0x64,0x6F,0x72,0x65,0x73,0x20,0x61,0x62,0x65,0x72,0x74,0x6F,0x73,0x20,0x63,0x6F,0x6D,0x20,0x62,0x6F,0x74,0x5F,0x6D,0x6F,0x64,0x6F,0x20,0x28,0x63,0x61,0xC3,0xA7,0x61,0x64,0x61,0x73,0x2F,0x69,0x6E,0x76,0x61,0x73,0x6F,0x72,0x29,0x2E
     $lblNivel = U8 0x4E,0xC3,0xAD,0x76,0x65,0x6C,0x20,0x63,0x61,0xC3,0xA7,0x61,0x64,0x61,0x73
     $lblUsuario = U8 0x55,0x73,0x75,0xC3,0xA1,0x72,0x69,0x6F
     $lblHorario = U8 0x48,0x6F,0x72,0xC3,0xA1,0x72,0x69,0x6F
@@ -129,12 +129,25 @@ function Send-DiscordStartAviso {
     }
 }
 
+function Get-BotModoConta {
+    param([hashtable]$Conta)
+
+    if ($Conta.BotModo -eq 'cacadas' -or $Conta.BotModo -eq 'invasor') {
+        return $Conta.BotModo
+    }
+
+    # Compat: contas antigas sem BotModo
+    if ($Conta.Usuario -eq 'Shiroe') { return 'cacadas' }
+    return 'invasor'
+}
+
 function Get-SetupUrl {
     param(
         [string]$Base,
         [string]$Usuario,
         [string]$Senha,
-        [string]$Nivel
+        [string]$Nivel,
+        [string]$BotModo
     )
 
     if ([string]::IsNullOrWhiteSpace($Usuario) -or [string]::IsNullOrWhiteSpace($Senha)) {
@@ -145,10 +158,14 @@ function Get-SetupUrl {
         return $null
     }
 
-    $q = @{
-        bot_user  = $Usuario
-        bot_pass  = $Senha
-        bot_nivel = $Nivel
+    $q = [ordered]@{
+        bot_modo = $BotModo
+        bot_user = $Usuario
+        bot_pass = $Senha
+    }
+
+    if ($BotModo -eq 'cacadas') {
+        $q['bot_nivel'] = $Nivel
     }
 
     $pairs = foreach ($key in $q.Keys) {
@@ -156,6 +173,19 @@ function Get-SetupUrl {
     }
 
     return '{0}/?{1}' -f $Base.TrimEnd('/'), ($pairs -join '&')
+}
+
+function Get-UrlJogo {
+    param(
+        [string]$Base,
+        [string]$BotModo
+    )
+
+    $root = $Base.TrimEnd('/')
+    if ($BotModo -eq 'cacadas') {
+        return '{0}/cacadas?bot_modo=cacadas' -f $root
+    }
+    return '{0}/invasor?bot_modo=invasor' -f $root
 }
 
 function Start-ContaJogo {
@@ -171,9 +201,9 @@ function Start-ContaJogo {
         return $false
     }
 
-    $setup = Get-SetupUrl -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel
-    $urlCacadas = '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
-    $urlInvasor = '{0}/invasor?bot_modo=invasor' -f $Base.TrimEnd('/')
+    $botModo = Get-BotModoConta -Conta $Conta
+    $setup = Get-SetupUrl -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel -BotModo $botModo
+    $urlJogo = Get-UrlJogo -Base $Base -BotModo $botModo
 
     $args = @()
     if ($Conta.Anonimo) {
@@ -184,28 +214,24 @@ function Start-ContaJogo {
         }
     }
 
-    Write-Host "Abrindo: $($Conta.Rotulo)" -ForegroundColor Cyan
+    Write-Host "Abrindo: $($Conta.Rotulo) [bot_modo=$botModo]" -ForegroundColor Cyan
 
     if ($setup) {
-        Write-Host "  Fase 1: setup/login -> $setup"
+        Write-Host "  Fase 1: login -> $setup"
         Start-Process -FilePath $exe -ArgumentList ($args + $setup) | Out-Null
 
         $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
         Write-Host "  Aguardando ${esperaLogin}s para login..." -ForegroundColor DarkGray
         Start-Sleep -Seconds $esperaLogin
 
-        Write-Host "  Fase 2: cacadas + invasor (abas separadas)"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlCacadas) | Out-Null
-        Start-Sleep -Seconds 1
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlInvasor) | Out-Null
+        Write-Host "  Fase 2: $urlJogo"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlJogo) | Out-Null
     } else {
         if ($Conta.Anonimo) {
             Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
         }
-        Write-Host "  URLs: $urlCacadas | $urlInvasor"
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlCacadas) | Out-Null
-        Start-Sleep -Seconds 1
-        Start-Process -FilePath $exe -ArgumentList ($args + $urlInvasor) | Out-Null
+        Write-Host "  URL: $urlJogo"
+        Start-Process -FilePath $exe -ArgumentList ($args + $urlJogo) | Out-Null
     }
 
     return $true
@@ -234,6 +260,6 @@ foreach ($conta in $Contas) {
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Inject Code deve rodar automaticamente (auto-run ON).' -ForegroundColor Green
-Write-Host "Edite senhas em contas-jogo.config.ps1 (Shizuo e Sora) se ainda nao preencheu." -ForegroundColor Yellow
+Write-Host 'Pronto. Inject Code auto-run ON + abas com bot_modo no sessionStorage.' -ForegroundColor Green
+Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''

@@ -18,11 +18,13 @@ $AvisarDiscordStart = $true
 # $DiscordWebhookUrl = "https://discord.com/api/webhooks/..."
 # $DiscordStartSilencioso = $false
 
+# BotModo: 'cacadas' ou 'invasor' — define login + aba da fase 2
 $Contas = @(
     @{
         Rotulo  = 'Chrome - Shiroe'
         Exe     = $ChromeExe
         Anonimo = $false
+        BotModo = 'cacadas'
         Usuario = 'Shiroe'
         Senha   = 'SUA_SENHA'
     },
@@ -30,6 +32,7 @@ $Contas = @(
         Rotulo  = 'Opera - Shizuo'
         Exe     = $OperaExe
         Anonimo = $false
+        BotModo = 'invasor'
         Usuario = 'Shizuo'
         Senha   = 'SUA_SENHA'
     },
@@ -37,6 +40,7 @@ $Contas = @(
         Rotulo  = 'Opera anônimo - Sora'
         Exe     = $OperaExe
         Anonimo = $true
+        BotModo = 'invasor'
         Usuario = 'Sora'
         Senha   = 'SUA_SENHA'
     }
