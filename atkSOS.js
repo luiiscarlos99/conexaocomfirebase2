@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.21
+// @version      2.22
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -14,6 +14,20 @@
 
   // Modo so via URL (query/referrer) ou sessionStorage desta aba — nunca localStorage
   try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
+
+  function parseEsperaCacadasMinutos(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseFloat(String(valor).replace(',', '.'));
+    if (isNaN(n) || n < 0) return null;
+    return n;
+  }
+
+  function gravarEsperaCacadasParam(valor) {
+    var minutos = parseEsperaCacadasMinutos(valor);
+    if (minutos === null) return false;
+    localStorage.setItem('BOT_ESPERA_CACADAS', String(minutos));
+    return true;
+  }
 
   function lerModoReferrer() {
     try {
@@ -49,9 +63,11 @@
       var u = rp.get('bot_user');
       var p = rp.get('bot_pass');
       var n = rp.get('bot_nivel');
+      var e = rp.get('bot_espera_cacadas');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if (e !== null && e !== '') gravarEsperaCacadasParam(e);
     } catch (e) {}
   }
 
@@ -84,12 +100,14 @@
       var u = params.get('bot_user');
       var p = params.get('bot_pass');
       var n = params.get('bot_nivel');
+      var e = params.get('bot_espera_cacadas');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (!u && !p && !n) aplicarCredenciaisReferrer();
 
-      if ((u || p || n || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || n || e || modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -137,8 +155,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.21';
-  var SCRIPT_ATUALIZADO = '16/08/2026 23:10';
+  var SCRIPT_VERSAO = '2.22';
+  var SCRIPT_ATUALIZADO = '17/08/2026 08:20';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -267,6 +285,47 @@
   // Nível da Caçada (Lê do localStorage ou usa '2' como padrão)
   var NIVEL_CACADAS_DEFAULT = '2';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+
+  // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
+  var ESPERA_CACADAS_DEFAULT_MIN_MS = 300000;  // 5 min
+  var ESPERA_CACADAS_DEFAULT_MAX_MS = 720000;  // 12 min
+
+  function calcularIntervaloEsperaCacadas() {
+    var minutos = parseEsperaCacadasMinutos(localStorage.getItem('BOT_ESPERA_CACADAS'));
+
+    if (minutos === null) {
+      return {
+        minMs: ESPERA_CACADAS_DEFAULT_MIN_MS,
+        maxMs: ESPERA_CACADAS_DEFAULT_MAX_MS,
+        origem: 'padrao'
+      };
+    }
+
+    if (minutos < 2) {
+      return { minMs: 0, maxMs: 120000, origem: 'config', minutos: minutos };
+    }
+
+    return {
+      minMs: Math.round((minutos - 2) * 60000),
+      maxMs: Math.round(minutos * 60000),
+      origem: 'config',
+      minutos: minutos
+    };
+  }
+
+  function sortearTempoEsperaCacadas() {
+    var iv = calcularIntervaloEsperaCacadas();
+    if (iv.minMs >= iv.maxMs) return iv.maxMs;
+    return Math.floor(Math.random() * (iv.maxMs - iv.minMs + 1)) + iv.minMs;
+  }
+
+  function descreverEsperaCacadas() {
+    var iv = calcularIntervaloEsperaCacadas();
+    if (iv.origem === 'padrao') return '5-12min (padrao)';
+    var minMin = Math.round(iv.minMs / 60000);
+    var maxMin = Math.round(iv.maxMs / 60000);
+    return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
+  }
 
   // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---
   function obterCodigoServidor() {
@@ -642,7 +701,7 @@
     return obterModoAba() === 'invasor' ? URL_INVASOR : URL_CACADAS;
   }
 
-  console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
+  console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Espera caçadas: ' + descreverEsperaCacadas() + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
     try {
@@ -776,11 +835,14 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  // Atraso aleatório entre 5min e 12min (300.000ms a 720.000ms)
-                  var tempoAleatorio = Math.floor(Math.random() * (720000 - 300000 + 1)) + 300000;
+                  var ivEspera = calcularIntervaloEsperaCacadas();
+                  var tempoAleatorio = sortearTempoEsperaCacadas();
                   var segundos = Math.round(tempoAleatorio / 1000);
 
-                  console.log('[Caçadas] Nível selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos + 's para submeter caçada...');
+                  console.log(
+                    '[Caçadas] Nivel selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos +
+                    's (faixa ' + Math.round(ivEspera.minMs / 1000) + '-' + Math.round(ivEspera.maxMs / 1000) + 's)...'
+                  );
 
                   setTimeout(function() {
                     console.log('[Caçadas] Tempo concluído. Clicando no botão para iniciar caçada...');

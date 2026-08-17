@@ -32,9 +32,14 @@
       var u = rp.get('bot_user');
       var p = rp.get('bot_pass');
       var n = rp.get('bot_nivel');
+      var e = rp.get('bot_espera_cacadas');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if (e !== null && e !== '') {
+        var em = parseFloat(String(e).replace(',', '.'));
+        if (!isNaN(em) && em >= 0) localStorage.setItem('BOT_ESPERA_CACADAS', String(em));
+      }
     } catch (e) {}
   }
 
@@ -52,7 +57,7 @@
       }
 
       aplicarCredenciais(window.location.search);
-      if (!params.get('bot_user') && !params.get('bot_pass')) {
+      if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') && !params.get('bot_espera_cacadas')) {
         try {
           var ref = document.referrer || '';
           if (ref.indexOf('shadowofshinobi.com') !== -1) {
