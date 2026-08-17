@@ -10,8 +10,8 @@ $NivelCacadas = '2'
 # Intervalo entre abrir cada navegador (segundos)
 $IntervaloEntreContas = 3
 
-# (Legado — nao usado) Espera entre fases antigas login + jogo
-# $IntervaloAposSetup = 60
+# Espera apos abrir logins, antes de abrir invasor/cacadas (segundos)
+$IntervaloAposSetup = 60
 
 # Aviso Discord ao abrir contas (usa discord-pc-ligado.config.ps1 se omitir URL)
 $AvisarDiscordStart = $true

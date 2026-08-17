@@ -141,7 +141,18 @@ function Get-BotModoConta {
     return 'invasor'
 }
 
-function Get-UrlConta {
+function Test-ContaTemCredenciais {
+    param(
+        [string]$Usuario,
+        [string]$Senha
+    )
+
+    return -not [string]::IsNullOrWhiteSpace($Usuario) -and
+        -not [string]::IsNullOrWhiteSpace($Senha) -and
+        ($Senha -notlike 'PREENCHER*')
+}
+
+function Get-UrlLogin {
     param(
         [string]$Base,
         [string]$Usuario,
@@ -150,31 +161,35 @@ function Get-UrlConta {
         [string]$BotModo
     )
 
-    $root = $Base.TrimEnd('/')
-    $temCredenciais = -not [string]::IsNullOrWhiteSpace($Usuario) -and
-        -not [string]::IsNullOrWhiteSpace($Senha) -and
-        ($Senha -notlike 'PREENCHER*')
-
-    if ($temCredenciais) {
-        # Uma aba: login + bot_modo (session sobrevive ao redirect /status)
-        $q = [ordered]@{
-            bot_modo = $BotModo
-            bot_user = $Usuario
-            bot_pass = $Senha
-        }
-
-        if ($BotModo -eq 'cacadas') {
-            $q['bot_nivel'] = $Nivel
-        }
-
-        $pairs = foreach ($key in $q.Keys) {
-            '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
-        }
-
-        return '{0}/?{1}' -f $root, ($pairs -join '&')
+    if (-not (Test-ContaTemCredenciais -Usuario $Usuario -Senha $Senha)) {
+        return $null
     }
 
-    # Perfil ja logado — pagina do bot com ?bot_modo=
+    $root = $Base.TrimEnd('/')
+    $q = [ordered]@{
+        bot_modo = $BotModo
+        bot_user = $Usuario
+        bot_pass = $Senha
+    }
+
+    if ($BotModo -eq 'cacadas') {
+        $q['bot_nivel'] = $Nivel
+    }
+
+    $pairs = foreach ($key in $q.Keys) {
+        '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
+    }
+
+    return '{0}/?{1}' -f $root, ($pairs -join '&')
+}
+
+function Get-UrlJogo {
+    param(
+        [string]$Base,
+        [string]$BotModo
+    )
+
+    $root = $Base.TrimEnd('/')
     if ($BotModo -eq 'cacadas') {
         return '{0}/cacadas?bot_modo=cacadas' -f $root
     }
@@ -182,11 +197,26 @@ function Get-UrlConta {
     return '{0}/invasor?bot_modo=invasor' -f $root
 }
 
-function Start-ContaJogo {
+function Get-BrowserArgs {
+    param([hashtable]$Conta)
+
+    $args = @()
+    if ($Conta.Anonimo) {
+        if ($Conta.Exe -imatch 'chrome') {
+            $args += '--incognito'
+        } else {
+            $args += '--private'
+        }
+    }
+
+    return $args
+}
+
+function Open-NavegadorUrl {
     param(
         [hashtable]$Conta,
-        [string]$Base,
-        [string]$Nivel
+        [string]$Url,
+        [string]$RotuloFase
     )
 
     $exe = $Conta.Exe
@@ -195,27 +225,13 @@ function Start-ContaJogo {
         return $false
     }
 
+    $args = Get-BrowserArgs -Conta $Conta
     $botModo = Get-BotModoConta -Conta $Conta
-    $url = Get-UrlConta -Base $Base -Usuario $Conta.Usuario -Senha $Conta.Senha -Nivel $Nivel -BotModo $botModo
 
-    $args = @()
-    if ($Conta.Anonimo) {
-        if ($exe -imatch 'chrome') {
-            $args += '--incognito'
-        } else {
-            $args += '--private'
-        }
-    }
+    Write-Host "  $RotuloFase [$($Conta.Rotulo) | bot_modo=$botModo]" -ForegroundColor Cyan
+    Write-Host "    $Url"
 
-    Write-Host "Abrindo: $($Conta.Rotulo) [bot_modo=$botModo]" -ForegroundColor Cyan
-    Write-Host "  URL: $url"
-
-    if ($Conta.Anonimo -and ($Conta.Senha -like 'PREENCHER*' -or [string]::IsNullOrWhiteSpace($Conta.Senha))) {
-        Write-Warning "$($Conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
-    }
-
-    Start-Process -FilePath $exe -ArgumentList ($args + $url) | Out-Null
-
+    Start-Process -FilePath $exe -ArgumentList ($args + $Url) | Out-Null
     return $true
 }
 
@@ -223,25 +239,80 @@ Write-Host ''
 Write-Host '=== Shadow of Shinobi - abrir contas ===' -ForegroundColor Green
 Write-Host ''
 
-$i = 0
+$esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
 $contasAbertas = @()
 $contasIgnoradas = @()
 
-foreach ($conta in $Contas) {
+$contasLogin = @($Contas | Where-Object {
+    Test-ContaTemCredenciais -Usuario $_.Usuario -Senha $_.Senha
+})
+
+# --- Fase 1: abas de login (todas as contas com senha) ---
+if ($contasLogin.Count -gt 0) {
+    Write-Host '--- Fase 1: login ---' -ForegroundColor Green
+    $i = 0
+    foreach ($conta in $contasLogin) {
+        if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
+            Start-Sleep -Seconds $IntervaloEntreContas
+        }
+
+        if ($conta.Anonimo -and ($conta.Senha -like 'PREENCHER*' -or [string]::IsNullOrWhiteSpace($conta.Senha))) {
+            Write-Warning "$($conta.Rotulo): modo anonimo sem senha no config - login pode falhar."
+        }
+
+        $botModo = Get-BotModoConta -Conta $conta
+        $urlLogin = Get-UrlLogin -Base $UrlBase -Usuario $conta.Usuario -Senha $conta.Senha -Nivel $NivelCacadas -BotModo $botModo
+
+        if (Open-NavegadorUrl -Conta $conta -Url $urlLogin -RotuloFase 'Login') {
+            if ($contasAbertas -notcontains $conta.Rotulo) {
+                $contasAbertas += $conta.Rotulo
+            }
+        } else {
+            if ($contasIgnoradas -notcontains $conta.Rotulo) {
+                $contasIgnoradas += $conta.Rotulo
+            }
+        }
+
+        $i++
+    }
+
+    Write-Host ''
+    Write-Host "Aguardando ${esperaLogin}s para o bot concluir os logins..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds $esperaLogin
+    Write-Host ''
+}
+
+# --- Fase 2: invasor primeiro, depois cacadas ---
+Write-Host '--- Fase 2: paginas do bot ---' -ForegroundColor Green
+$invasor = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'invasor' })
+$cacadas = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'cacadas' })
+$contasJogo = $invasor + $cacadas
+
+$i = 0
+foreach ($conta in $contasJogo) {
     if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
         Start-Sleep -Seconds $IntervaloEntreContas
     }
-    if (Start-ContaJogo -Conta $conta -Base $UrlBase -Nivel $NivelCacadas) {
-        $contasAbertas += $conta.Rotulo
+
+    $botModo = Get-BotModoConta -Conta $conta
+    $urlJogo = Get-UrlJogo -Base $UrlBase -BotModo $botModo
+
+    if (Open-NavegadorUrl -Conta $conta -Url $urlJogo -RotuloFase 'Jogo') {
+        if ($contasAbertas -notcontains $conta.Rotulo) {
+            $contasAbertas += $conta.Rotulo
+        }
     } else {
-        $contasIgnoradas += $conta.Rotulo
+        if ($contasIgnoradas -notcontains $conta.Rotulo) {
+            $contasIgnoradas += $conta.Rotulo
+        }
     }
+
     $i++
 }
 
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Inject Code auto-run ON — cada aba abre com ?bot_modo= na URL.' -ForegroundColor Green
+Write-Host 'Pronto. Fase 1 = login | espera | Fase 2 = invasor depois cacadas (?bot_modo= na URL).' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''

@@ -125,15 +125,15 @@ Painel: [firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/fire
 powershell -ExecutionPolicy Bypass -File .\scripts\abrir-contas-jogo.ps1
 ```
 
-Por conta no `contas-jogo.config.ps1` — **uma URL por navegador**:
+Por conta no `contas-jogo.config.ps1` — **duas fases**:
 
-| Campo | Shiroe | Shizuo/Sora |
-|---|---|---|
-| `BotModo` | `cacadas` | `invasor` |
-| **Com senha** | `/?bot_modo=cacadas&bot_user=...&bot_pass=...&bot_nivel=2` | `/?bot_modo=invasor&bot_user=...&bot_pass=...` |
-| **Ja logado** (sem senha no config) | `/cacadas?bot_modo=cacadas` | `/invasor?bot_modo=invasor` |
+| Fase | O que abre |
+|---|---|
+| **1 — Login** | `/?bot_modo=...&bot_user=...&bot_pass=...` (todas com senha) |
+| **Espera** | `$IntervaloAposSetup` segundos (padrao **60**) |
+| **2 — Jogo** | invasor primeiro, depois caçadas (`/invasor?bot_modo=invasor` ou `/cacadas?bot_modo=cacadas`) |
 
-Login e bot rodam na **mesma aba** (sessionStorage sobrevive ao redirect para `/status`).
+Sem senha no config: pula fase 1 e abre so a fase 2 (perfil ja logado).
 
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
