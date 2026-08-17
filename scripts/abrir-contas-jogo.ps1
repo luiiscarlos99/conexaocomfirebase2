@@ -195,6 +195,12 @@ function Get-UrlCacadas {
     return '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
 }
 
+function Get-UrlInvasor {
+    param([string]$Base)
+
+    return '{0}/invasor?bot_modo=invasor' -f $Base.TrimEnd('/')
+}
+
 function Resolve-BrowserExe {
     param([string]$ExePath)
 
@@ -221,12 +227,22 @@ function Get-BrowserArgs {
 
     $ehOpera = $Conta.Exe -match '(?i)opera'
 
-    # Fase 2 anonimo: nova aba na janela privada ja aberta (sem --private).
-    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
-        if ($ehOpera) {
-            return @('--new-tab')
+    # Fase 2 anonimo Opera: --private sem --new-window → nova aba na janela privada existente
+    if ($Fase -eq 'Jogo' -and $Conta.Anonimo -and $ehOpera) {
+        $args = @('--private')
+        if ($AbrirDevTools) {
+            $args = @('--auto-open-devtools-for-tabs') + $args
         }
-        return @()
+        return $args
+    }
+
+    # Fase 2 anonimo Chrome: nova aba na janela anonima (sem --incognito)
+    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
+        $args = @()
+        if ($AbrirDevTools) {
+            $args += '--auto-open-devtools-for-tabs'
+        }
+        return $args
     }
 
     $args = @()
@@ -280,12 +296,13 @@ function Open-NavegadorUrl {
     }
 
     $args = Get-BrowserArgs -Conta $Conta -Fase $Fase
+    $botModo = Get-BotModoConta -Conta $Conta
     $rotulo = if ($Fase -eq 'Login') { 'Login' } else { 'Jogo' }
-    $modoLog = if ($Fase -eq 'Login') { 'invasor' } else { 'cacadas' }
+    $modoLog = if ($Fase -eq 'Login') { 'invasor' } else { $botModo }
 
     Write-Host "  $rotulo [$($Conta.Rotulo) | bot_modo=$modoLog]" -ForegroundColor Cyan
-    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
-        Write-Host '    (nova aba na janela privada ja aberta — sem --private na fase 2)' -ForegroundColor DarkGray
+    if ($Fase -eq 'Jogo' -and $Conta.Anonimo -and $Conta.Exe -match '(?i)opera') {
+        Write-Host '    (fase 2 anon: --private + URL na janela privada existente)' -ForegroundColor DarkGray
     }
     Write-Host "    $Url"
     if ($Conta.Exe -match '(?i)opera') {
@@ -360,20 +377,36 @@ if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host ''
 }
 
-# --- Fase 2: so caçadas (Shiroe) ---
+# --- Fase 2: invasor (Sora anon, Shizuo) depois caçadas (Shiroe) ---
+$contasInvasor = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'invasor' })
 $contasCacadas = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'cacadas' })
 
-if ($contasCacadas.Count -gt 0) {
-    Write-Host '--- Fase 2: caçadas ---' -ForegroundColor Green
-    $urlCacadas = Get-UrlCacadas -Base $UrlBase
+$contasFase2 = @(
+    @($contasInvasor | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
+) + @(
+    @($contasInvasor | Where-Object { -not $_.Anonimo })
+) + @(
+    $contasCacadas
+)
+
+if ($contasFase2.Count -gt 0) {
+    Write-Host '--- Fase 2: invasor + caçadas ---' -ForegroundColor Green
+    Write-Host '  Sora (anon) abre invasor primeiro — --private na mesma janela privada' -ForegroundColor DarkGray
 
     $i = 0
-    foreach ($conta in $contasCacadas) {
+    foreach ($conta in $contasFase2) {
         if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
             Start-Sleep -Seconds $IntervaloEntreContas
         }
 
-        if (Open-NavegadorUrl -Conta $conta -Url $urlCacadas -Fase Jogo) {
+        $botModo = Get-BotModoConta -Conta $conta
+        $urlJogo = if ($botModo -eq 'cacadas') {
+            Get-UrlCacadas -Base $UrlBase
+        } else {
+            Get-UrlInvasor -Base $UrlBase
+        }
+
+        if (Open-NavegadorUrl -Conta $conta -Url $urlJogo -Fase Jogo) {
             if ($contasAbertas -notcontains $conta.Rotulo) {
                 $contasAbertas += $conta.Rotulo
             }
@@ -386,13 +419,13 @@ if ($contasCacadas.Count -gt 0) {
         $i++
     }
 } elseif ($contasLogin.Count -eq 0) {
-    Write-Host '--- Fase 2: caçadas ---' -ForegroundColor Yellow
-    Write-Host '  Nenhuma conta com BotModo=cacadas no config.' -ForegroundColor Yellow
+    Write-Host '--- Fase 2 ---' -ForegroundColor Yellow
+    Write-Host '  Nenhuma conta configurada para fase 2.' -ForegroundColor Yellow
 }
 
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Fase 1 = login invasor (3 contas) | 60s | Fase 2 = caçadas (Shiroe).' -ForegroundColor Green
+Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = invasor (Sora, Shizuo) + caçadas (Shiroe).' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''

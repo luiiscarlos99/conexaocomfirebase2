@@ -131,9 +131,11 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 |---|---|
 | **1 — Login** | `/?bot_modo=invasor&bot_user=...` nas **3 contas** (Shiroe inclui `bot_nivel`) |
 | **Espera** | 60s — Shizuo/Sora vão para `/invasor` sozinhos |
-| **2 — Caçadas** | Só contas com `BotModo=cacadas` → `/cacadas?bot_modo=cacadas` (Shiroe) |
+| **2 — Jogo** | Sora (anon invasor) → Shizuo (invasor) → Shiroe (caçadas) |
 
-**Anonimo (Sora):** abre **antes** do Shizuo no Opera; usa `launcher.exe` + `--private --new-window URL`.
+**Fase 2 anon (Sora):** `--private` **sem** `--new-window` → nova aba `/invasor?bot_modo=invasor` na janela privada do login (Sora abre **antes** do Shizuo).
+
+**Anonimo fase 1 (Sora):** `launcher.exe` + `--private --new-window URL`.
 
 **DevTools (F12):** `$AbrirDevTools = $true` no config → flag `--auto-open-devtools-for-tabs` (Chrome / Opera).
 
