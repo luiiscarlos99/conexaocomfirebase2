@@ -135,6 +135,8 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 
 **Anonimo (Sora):** abre **antes** do Shizuo no Opera; usa `launcher.exe` + `--private --new-window URL`.
 
+**DevTools (F12):** `$AbrirDevTools = $true` no config → flag `--auto-open-devtools-for-tabs` (Chrome / Opera).
+
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
 ---

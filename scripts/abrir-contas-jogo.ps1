@@ -23,6 +23,10 @@ if (-not (Test-Path $configPath)) {
 
 . $configPath
 
+if (-not (Get-Variable -Name 'AbrirDevTools' -Scope Script -ErrorAction SilentlyContinue)) {
+    $AbrirDevTools = $false
+}
+
 if (-not (Get-Variable -Name 'AvisarDiscordStart' -Scope Script -ErrorAction SilentlyContinue)) {
     $AvisarDiscordStart = $true
 }
@@ -239,6 +243,11 @@ function Get-BrowserArgs {
         }
     }
 
+    if ($AbrirDevTools) {
+        # Chrome / Opera (Chromium): F12 aberto em cada aba nova desta invocacao
+        $args = @('--auto-open-devtools-for-tabs') + $args
+    }
+
     return $args
 }
 
@@ -292,6 +301,9 @@ function Open-NavegadorUrl {
 
 Write-Host ''
 Write-Host '=== Shadow of Shinobi - abrir contas ===' -ForegroundColor Green
+if ($AbrirDevTools) {
+    Write-Host 'DevTools: ativo (--auto-open-devtools-for-tabs)' -ForegroundColor DarkGray
+}
 Write-Host ''
 
 $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
