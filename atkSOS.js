@@ -110,7 +110,9 @@
   }
 
   function sincronizarModoAba() {
-    return aplicarParamsUrl();
+    var params = aplicarParamsUrl();
+    exibirModoAbaServerID();
+    return params;
   }
 
   function exibirModoAbaServerID() {
@@ -132,10 +134,7 @@
   }
 
   aplicarParamsUrl();
-  if (!window.__BOT_SERVER_ID_ATUALIZADO__) {
-    window.__BOT_SERVER_ID_ATUALIZADO__ = true;
-    exibirModoAbaServerID();
-  }
+  exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
   var SCRIPT_VERSAO = '2.21';
