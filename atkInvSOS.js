@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.1
+// @version      5.2
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -20,6 +20,16 @@
     return '';
   }
 
+  function lerModoReferrer() {
+    try {
+      var ref = document.referrer || '';
+      if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return '';
+      var modo = new URLSearchParams(new URL(ref).search).get('bot_modo');
+      if (modo === 'invasor' || modo === 'cacadas') return modo;
+    } catch (e) {}
+    return '';
+  }
+
   function lerModoUrl(params) {
     var modo = params.get('bot_modo');
     if (modo === 'invasor' || modo === 'cacadas') return modo;
@@ -33,7 +43,22 @@
       }
     } catch (e) {}
 
+    modo = lerModoReferrer();
+    if (modo) return modo;
+
     return inferirModoPorPath();
+  }
+
+  function aplicarCredenciaisReferrer() {
+    try {
+      var ref = document.referrer || '';
+      if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return;
+      var rp = new URLSearchParams(new URL(ref).search);
+      var u = rp.get('bot_user');
+      var p = rp.get('bot_pass');
+      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (p) localStorage.setItem('BOT_SENHA', p);
+    } catch (e) {}
   }
 
   function logDiagnosticoModo(rotulo) {
@@ -43,6 +68,7 @@
     try { s = sessionStorage.getItem(BOT_MODO_KEY) || '(vazio)'; } catch (e) {}
     try { l = localStorage.getItem(BOT_MODO_PERFIL_KEY) || '(vazio)'; } catch (e) {}
     console.log('[Bot Bootstrap] URL: ' + location.href);
+    console.log('[Bot Bootstrap] referrer: ' + (document.referrer || '(vazio)'));
     console.log('[Bot Bootstrap] session=' + s + ' | local=' + l + ' | path=' + location.pathname);
   }
 
@@ -58,6 +84,11 @@
         return params;
       }
 
+      if (window.__BOT_MODO_FIXO__ === 'invasor' || window.__BOT_MODO_FIXO__ === 'cacadas') {
+        sessionStorage.setItem(BOT_MODO_KEY, window.__BOT_MODO_FIXO__);
+        localStorage.setItem(BOT_MODO_PERFIL_KEY, window.__BOT_MODO_FIXO__);
+      }
+
       if (modo === 'invasor' || modo === 'cacadas') {
         sessionStorage.setItem(BOT_MODO_KEY, modo);
         localStorage.setItem(BOT_MODO_PERFIL_KEY, modo);
@@ -67,6 +98,7 @@
       var p = params.get('bot_pass');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
+      if (!u && !p) aplicarCredenciaisReferrer();
 
       if ((u || p || modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
@@ -101,8 +133,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.1';
-  var SCRIPT_ATUALIZADO = '16/08/2026 22:25';
+  var SCRIPT_VERSAO = '5.2';
+  var SCRIPT_ATUALIZADO = '16/08/2026 22:35';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
