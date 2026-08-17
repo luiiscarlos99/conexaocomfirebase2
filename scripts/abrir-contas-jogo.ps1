@@ -198,7 +198,17 @@ function Get-UrlJogo {
 }
 
 function Get-BrowserArgs {
-    param([hashtable]$Conta)
+    param(
+        [hashtable]$Conta,
+        [ValidateSet('Login', 'Jogo')]
+        [string]$Fase = 'Login'
+    )
+
+    # Fase 2 anonimo: SEM --private/--incognito — senao abre sessao NOVA sem cookies.
+    # O executavel ja aberto recebe a URL como nova aba na janela privada existente.
+    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
+        return @()
+    }
 
     $args = @()
     if ($Conta.Anonimo) {
@@ -216,7 +226,8 @@ function Open-NavegadorUrl {
     param(
         [hashtable]$Conta,
         [string]$Url,
-        [string]$RotuloFase
+        [ValidateSet('Login', 'Jogo')]
+        [string]$Fase = 'Login'
     )
 
     $exe = $Conta.Exe
@@ -225,10 +236,14 @@ function Open-NavegadorUrl {
         return $false
     }
 
-    $args = Get-BrowserArgs -Conta $Conta
+    $args = Get-BrowserArgs -Conta $Conta -Fase $Fase
     $botModo = Get-BotModoConta -Conta $Conta
+    $rotulo = if ($Fase -eq 'Login') { 'Login' } else { 'Jogo' }
 
-    Write-Host "  $RotuloFase [$($Conta.Rotulo) | bot_modo=$botModo]" -ForegroundColor Cyan
+    Write-Host "  $rotulo [$($Conta.Rotulo) | bot_modo=$botModo]" -ForegroundColor Cyan
+    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
+        Write-Host '    (nova aba na janela privada ja aberta — sem --private na fase 2)' -ForegroundColor DarkGray
+    }
     Write-Host "    $Url"
 
     Start-Process -FilePath $exe -ArgumentList ($args + $Url) | Out-Null
@@ -250,6 +265,7 @@ $contasLogin = @($Contas | Where-Object {
 # --- Fase 1: abas de login (todas as contas com senha) ---
 if ($contasLogin.Count -gt 0) {
     Write-Host '--- Fase 1: login ---' -ForegroundColor Green
+    Write-Host '  Cada conta usa seu BotModo (Shiroe=cacadas, Shizuo/Sora=invasor) para o bot logar e saber o destino.' -ForegroundColor DarkGray
     $i = 0
     foreach ($conta in $contasLogin) {
         if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
@@ -263,7 +279,7 @@ if ($contasLogin.Count -gt 0) {
         $botModo = Get-BotModoConta -Conta $conta
         $urlLogin = Get-UrlLogin -Base $UrlBase -Usuario $conta.Usuario -Senha $conta.Senha -Nivel $NivelCacadas -BotModo $botModo
 
-        if (Open-NavegadorUrl -Conta $conta -Url $urlLogin -RotuloFase 'Login') {
+        if (Open-NavegadorUrl -Conta $conta -Url $urlLogin -Fase Login) {
             if ($contasAbertas -notcontains $conta.Rotulo) {
                 $contasAbertas += $conta.Rotulo
             }
@@ -282,11 +298,13 @@ if ($contasLogin.Count -gt 0) {
     Write-Host ''
 }
 
-# --- Fase 2: invasor primeiro, depois cacadas ---
+# --- Fase 2: anon invasor -> normal invasor -> cacadas ---
 Write-Host '--- Fase 2: paginas do bot ---' -ForegroundColor Green
 $invasor = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'invasor' })
+$invasorAnon = @($invasor | Where-Object { $_.Anonimo })
+$invasorNormal = @($invasor | Where-Object { -not $_.Anonimo })
 $cacadas = @($Contas | Where-Object { Get-BotModoConta -Conta $_ -eq 'cacadas' })
-$contasJogo = $invasor + $cacadas
+$contasJogo = $invasorAnon + $invasorNormal + $cacadas
 
 $i = 0
 foreach ($conta in $contasJogo) {
@@ -297,7 +315,7 @@ foreach ($conta in $contasJogo) {
     $botModo = Get-BotModoConta -Conta $conta
     $urlJogo = Get-UrlJogo -Base $UrlBase -BotModo $botModo
 
-    if (Open-NavegadorUrl -Conta $conta -Url $urlJogo -RotuloFase 'Jogo') {
+    if (Open-NavegadorUrl -Conta $conta -Url $urlJogo -Fase Jogo) {
         if ($contasAbertas -notcontains $conta.Rotulo) {
             $contasAbertas += $conta.Rotulo
         }
