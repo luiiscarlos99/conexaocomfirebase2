@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.14
+// @version      2.15
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.14';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:25';
+  var SCRIPT_VERSAO = '2.15';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:40';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -71,12 +71,6 @@
     }
   }
 
-  function paginaLoginOuCaptcha(url) {
-    if (url.indexOf('captcha_seguranca') !== -1) return true;
-    var path = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-    return path === '/' || path === '/index.php';
-  }
-
   try {
     var paramsUrl = sincronizarModoAba();
     if (paramsUrl) {
@@ -107,6 +101,7 @@
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
+  var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
@@ -554,6 +549,10 @@
     window.location.href = URL_HOME;
   }
 
+  function urlAposCaptcha() {
+    return obterModoAba() === 'invasor' ? URL_INVASOR : URL_CACADAS;
+  }
+
   console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
@@ -630,14 +629,14 @@
         return;
       }
 
-      // Páginas do invasor — só roda nesta aba se BOT_MODO_ABA=invasor (script nem carrega em cacadas)
-      if (urlAtual.indexOf('invasor') !== -1) {
-        console.log('[Script Caçadas] Página do invasor — sem ação.');
+      // Modo cacadas: ignora paginas do invasor
+      if (obterModoAba() === 'cacadas' && urlAtual.indexOf('invasor') !== -1) {
+        console.log('[Script Caçadas] Pagina do invasor — sem acao.');
         return;
       }
 
-      // /status → caçadas (aba invasor nem executa este script)
-      if (urlAtual.indexOf('status') !== -1) {
+      // Modo cacadas: /status → caçadas
+      if (obterModoAba() === 'cacadas' && urlAtual.indexOf('status') !== -1) {
         console.log('[Script Caçadas] Status — redirecionando para caçadas...');
         window.location.href = URL_CACADAS;
         return;
@@ -666,8 +665,9 @@
             console.log('[Captcha] Timer de 10 minutos iniciado...');
             if (timerCaptchaTimeout) clearTimeout(timerCaptchaTimeout);
             timerCaptchaTimeout = setTimeout(function() {
-              console.warn('[Captcha] Tempo limite esgotado! Redirecionando para Caçadas...');
-              window.location.href = URL_CACADAS;
+              var destino = urlAposCaptcha();
+              console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
+              window.location.href = destino;
             }, TEMPO_TIMEOUT_CAPTCHA);
 
             return true; 

@@ -1,6 +1,6 @@
 # Bot Shadow of Shinobi
 
-Automação para o jogo [Shadow of Shinobi](https://shadowofshinobi.com/) via extensão de injeção de código (**Inject Code** / similar) ou **Tampermonkey**, com painel web no **Firebase Realtime Database** para resolver captcha remotamente e disparar ataque no invasor.
+Automação para [Shadow of Shinobi](https://shadowofshinobi.com/) via **Inject Code** (auto-run em `/*`), painel **Firebase** para captcha remoto e launcher PowerShell para abrir contas.
 
 ---
 
@@ -8,197 +8,98 @@ Automação para o jogo [Shadow of Shinobi](https://shadowofshinobi.com/) via ex
 
 | Arquivo | Descrição |
 |---|---|
-| `atkSOS.js` | Bot de **Caçadas** — login, caçadas, captcha, atacar jogador |
-| `atkInvSOS.js` | Bot do **Invasor** — ataque automático/remoto no boss |
+| `atkSOS.js` | Bot **Caçadas** — login, caçadas, captcha, atacar |
+| `atkInvSOS.js` | Bot **Invasor** — status, invasor, combate, Firebase |
 | `firebase.html` | Painel captcha (OCR + envio ao bot) |
-| `scripts/abrir-contas-jogo.ps1` | Abre 3 contas (login → espera → caçadas/invasor) |
-| `scripts/instalar-atalho-contas.ps1` | Atalho na área de trabalho + tarefa agendada no logon |
-| `scripts/discord-pc-ligado.ps1` | Aviso no Discord quando o PC liga |
+| `scripts/abrir-contas-jogo.ps1` | Abre contas com `bot_modo` por perfil |
+| `scripts/instalar-atalho-contas.ps1` | Atalho + tarefa agendada no logon |
+| `scripts/discord-pc-ligado.ps1` | Aviso Discord quando o PC liga |
 
-Arquivos locais ignorados pelo Git:
-
-- `paginas/` — HTMLs salvos do jogo para consulta
-- `scripts/contas-jogo.config.ps1` — credenciais das contas (copie do `.example`)
-- `scripts/discord-pc-ligado.config.ps1` — webhook Discord local
+Locais (gitignore): `contas-jogo.config.ps1`, `discord-pc-ligado.config.ps1`, `paginas/`
 
 ---
 
-## Instalação (Inject Code — Chrome / Opera)
+## Inject Code — auto-run nos dois
 
-### Auto-run nos dois (sem filtro de URL)
-
-Na **Inject Code**, o auto-run injeta em **todas** as páginas do jogo — **não há filtro por URL**. Por isso você cria **duas regras**, ambas com auto-run ligado:
-
-| Regra | Auto-run | Code Source |
+| Regra | Auto-run | CDN |
 |---|---|---|
-| Bot Caçadas | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkSOS.js` |
-| Bot Invasor | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkInvSOS.js` |
+| Caçadas | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkSOS.js` |
+| Invasor | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkInvSOS.js` |
 
-Os dois scripts carregam em **toda** aba, mas **só agem** se a aba tiver `BOT_MODO_ABA` no `sessionStorage` (`cacadas` ou `invasor`). Sem isso = jogo manual, sem bot.
+**Sem filtro de URL** na extensão. Os dois carregam em toda aba, mas **só agem** com `BOT_MODO_ABA` no `sessionStorage`:
 
-Abra uma vez via favorito com `?bot_modo=...` — o modo fica na aba até fechar.
+| `sessionStorage` | Caçadas | Invasor |
+|---|---|---|
+| *(vazio)* | ❌ | ❌ |
+| `cacadas` | ✅ login, caçadas, captcha, atacar | ❌ |
+| `invasor` | ✅ login, captcha, re-login após logout | ✅ status, invasor, combate |
 
-### Favoritos (salve no navegador)
+Abrir o jogo **sem** `?bot_modo=` = manual, sem bot (não precisa `botParar()`).
 
-Substitua `SUA_SENHA` pelas credenciais reais.
+### Favoritos
 
-**Shiroe — login (caçadas)**
+Use `?bot_modo=` na 1ª abertura — grava no `sessionStorage` da aba.
+
+**Shiroe (caçadas)**
 ```
 https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=2
-```
-
-**Shiroe — caçadas**
-```
 https://shadowofshinobi.com/cacadas?bot_modo=cacadas
 ```
 
-**Shizuo — login (invasor)**
+**Shizuo / Sora (invasor)**
 ```
 https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
-```
-
-**Shizuo — invasor**
-```
 https://shadowofshinobi.com/invasor?bot_modo=invasor
-```
-
-**Sora — login (invasor, Opera anônimo)**
-```
-https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Sora&bot_pass=SUA_SENHA
-```
-
-**Sora — invasor**
-```
-https://shadowofshinobi.com/invasor?bot_modo=invasor
-```
-
-| Modo na aba | Caçadas age | Invasor age |
-|---|---|---|
-| *(vazio)* | ❌ | ❌ |
-| `cacadas` | ✅ | ❌ |
-| `invasor` | só login/captcha | ✅ |
-
-O launcher (`abrir-contas-jogo.ps1`) já abre com os parâmetros certos.
-
-### Painel Firebase (captcha)
-
-**Online:** [luiiscarlos99.github.io/conexaocomfirebase2/firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html)
-
-O bot envia no Discord um link `firebase.html?codigo=SRV_XXX` — abra esse link para ver a **mesma imagem** que foi salva no Firebase.
-
----
-
-## Dois scripts ao mesmo tempo
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  atkSOS.js (todas as páginas)                               │
-│  → login na home (sempre, antes de qualquer skip)           │
-│  → captcha, caçadas, atacar                                 │
-│  → ignora /invasor* e /status se invasor presente           │
-│  → demais páginas desconhecidas → /cacadas                  │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│  atkInvSOS.js (status + invasor + invasor-combate)          │
-│  → /status → redireciona para /invasor                      │
-│  → /invasor → ataca, reload, Firebase                       │
-│  → /invasor-combate → espera 1min → /invasor                │
-│  → captcha → delegado ao atkSOS.js                          │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Sem conflito (sessionStorage obrigatório)
-
-- **`BOT_MODO_ABA` vazio** → nenhum bot age (jogo manual)
-- **`cacadas`** → caçadas: login, caçadas, captcha, atacar
-- **`invasor`** → invasor: status, invasor, combate; caçadas só em login/captcha
-
-### Kill switch por aba
-
-No console (F12):
-
-```javascript
-botParar()   // pausa o bot nesta aba
-botLigar()   // reativa
-botStatus()  // 'on' ou 'off'
 ```
 
 ---
 
-## Scripts ativos
+## Fluxo por modo
 
-### `atkSOS.js` — Caçadas (v2.9)
+### Aba `cacadas`
+```
+Login → /status → /cacadas → atacar → (captcha → painel Firebase)
+```
 
-Fluxo: **Login → Caçadas → Atacar**
+### Aba `invasor`
+```
+Login (caçadas preenche) → /status → /invasor → atacar/reload
+Logout/sessão expirada → home → login automático → /invasor
+Captcha → caçadas trata → volta ao invasor
+```
 
-- Login na home (tratado primeiro)
-- Caçadas com atraso aleatório entre **5min e 12min**
-- Clique automático em **Atacar**
-- **Captcha:** recorta só a `<img>`, salva em Firebase, envia a **mesma imagem** ao Discord, escuta resposta em Firebase, digita no jogo
-- OCR roda no **painel** (`firebase.html`), não no jogo
-- Timeout captcha: **10 min** → redireciona para `/cacadas`
-- `/status` → `/cacadas` (exceto se invasor presente)
+---
 
-### `atkInvSOS.js` — Invasor (v4.3)
+## Scripts (versões atuais)
 
-| Página | Ação |
+### `atkSOS.js` — v2.15
+
+- Exige `BOT_MODO_ABA` (`cacadas` ou `invasor`)
+- Modo `invasor`: só login, captcha e re-login
+- Modo `cacadas`: login, caçadas (5–12 min aleatório), atacar
+- Captcha: recorte da `<img>` → Firebase + Discord; OCR no painel
+- Timeout captcha 10 min → `/cacadas` ou `/invasor` conforme o modo
+- Código Firebase por usuário: `BOT_CODIGO_SRV_<usuario>`
+
+### `atkInvSOS.js` — v4.8
+
+- Exige `BOT_MODO_ABA=invasor`
+- `/status` → `/invasor` | `/invasor` → ataque + reload 60s | combate → 1 min → invasor
+- Sessão expirada → home (caçadas reloga)
+- Firebase `comando_atacar` com debounce anti-burst
+- Captcha delegado ao `atkSOS.js`
+
+---
+
+## Firebase
+
+| Chave | Uso |
 |---|---|
-| `/status` | Redireciona para `/invasor` |
-| `/invasor` | Ataca (local + Firebase), reload 60s (2s se conta gerenciada) |
-| `/invasor-combate` | Aguarda 1min, print Discord, volta para `/invasor` |
-| Captcha | Sem ação — delegado ao `atkSOS.js` |
-| Login (home) | Não injeta — login fica com `atkSOS.js` |
+| `comandos/{CODIGO}/imagem` | PNG do captcha (bot → painel) |
+| `comandos/{CODIGO}/resposta` | 5 dígitos (painel → bot) |
+| `comando_atacar` | Ataque remoto invasor |
 
-- Ataque local com limite configurável de derrotas
-- Escuta `comando_atacar` no Firebase (com debounce anti-burst)
-- Trata sessão expirada, conta gerenciada e erros HTTP 500+
-
----
-
-## Configuração
-
-Valores padrão ficam no topo de cada script. Credenciais via `localStorage` ou URL do launcher:
-
-```javascript
-localStorage.setItem('BOT_USUARIO', 'SeuUsuario');
-localStorage.setItem('BOT_SENHA', 'SuaSenha');
-localStorage.setItem('BOT_NIVEL_CACADAS', '2'); // apenas atkSOS.js
-```
-
-O código do servidor Firebase é **por usuário**: `BOT_CODIGO_SRV_<usuario>` (evita colisão entre contas no mesmo perfil).
-
-### Parâmetros principais (`atkInvSOS.js`)
-
-| Variável | Padrão | Função |
-|---|---|---|
-| `LIMITE_PLAYERS_DERROTADOS` | `99999999` | Máximo de derrotas para ataque local automático |
-| `TEMPO_RELOAD_PADRAO` | 60s | Intervalo de refresh na página do invasor |
-| `TEMPO_RELOAD_GERENCIADA` | 2s | Refresh em conta gerenciada |
-| `TEMPO_ESPERA_POS_COMBATE` | 60s | Espera após combate antes de voltar ao invasor |
-
----
-
-## Integração Firebase
-
-| Chave | Direção | Usado por |
-|---|---|---|
-| `comandos/{CODIGO}/imagem` | Bot → Painel | PNG do captcha (`atkSOS.js`) |
-| `comandos/{CODIGO}/resposta` | Painel → Bot | 5 dígitos do captcha |
-| `comando_atacar` | Painel/Bot → Bot | Ataque remoto invasor (`atkInvSOS.js`) |
-
-`CODIGO` = `SRV_<slug>_<rand>` gerado por conta (ex.: `SRV_SHIROE_A3F2`).
-
-### Resolver captcha
-
-1. Bot detecta captcha → Discord recebe **a imagem recortada** + link do painel
-2. Abra `firebase.html?codigo=SRV_XXX` (link do Discord)
-3. Painel carrega imagem do Firebase, roda OCR, **confira os 5 números**
-4. Clique **ENVIAR AO BOT** — bot digita e confirma no jogo
-
-### Atacar invasor remotamente
-
-1. No Firebase, chave `comando_atacar`, valor `atacar`
+Painel: [firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html?codigo=SRV_XXX)
 
 ---
 
@@ -208,30 +109,20 @@ O código do servidor Firebase é **por usuário**: `BOT_CODIGO_SRV_<usuario>` (
 powershell -ExecutionPolicy Bypass -File .\scripts\abrir-contas-jogo.ps1
 ```
 
-Fase 1: abre 3 navegadores com login. Espera **60s**. Fase 2: abre caçadas (Shiroe) e invasor (Shizuo, Sora).
+Por conta no `contas-jogo.config.ps1`:
 
-Instalar atalho + auto-start no logon:
+| Campo | Exemplo Shiroe | Exemplo Shizuo |
+|---|---|---|
+| `BotModo` | `cacadas` | `invasor` |
+| Fase 1 | login com `bot_modo` + credenciais | idem |
+| Fase 2 | `/cacadas?bot_modo=cacadas` | `/invasor?bot_modo=invasor` |
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\instalar-atalho-contas.ps1
-```
-
-Requer `scripts/contas-jogo.config.ps1` (copie do `.example`).
-
----
-
-## Fluxo resumido
-
-```
-Jogo (Inject Code)  ←——→  Firebase Realtime DB  ←——→  firebase.html (OCR)
-        ↓
-   Discord Webhook (captcha + prints invasor)
-```
+Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
 ---
 
 ## Desenvolvimento
 
-A cada alteração nos `.js`, atualize `SCRIPT_VERSAO` e `SCRIPT_ATUALIZADO` no topo do arquivo (regra em `.cursor/rules/bot-scripts-versionamento.mdc`).
+Bump `SCRIPT_VERSAO` + `SCRIPT_ATUALIZADO` a cada alteração (`.cursor/rules/bot-scripts-versionamento.mdc`).
 
-Salve HTMLs de referência em `paginas/` (ignorado pelo Git).
+Opcional no console: `botParar()` / `botLigar()` / `botStatus()`
