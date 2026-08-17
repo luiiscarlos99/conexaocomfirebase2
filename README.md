@@ -26,19 +26,19 @@ Locais (gitignore): `contas-jogo.config.ps1`, `discord-pc-ligado.config.ps1`, `p
 | Caçadas | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkSOS.js` |
 | Invasor | ✅ ON | `https://cdn.jsdelivr.net/gh/luiiscarlos99/conexaocomfirebase2@main/atkInvSOS.js` |
 
-**Sem filtro de URL** na extensão. Os dois carregam em toda aba, mas **só agem** com `BOT_MODO_ABA` no `sessionStorage`:
+**Sem filtro de URL** na extensão. Os dois carregam em toda aba, mas **só agem** se `?bot_modo=` foi passado na URL **desta aba** (fica no `sessionStorage` até fechar a aba):
 
-| `sessionStorage` | Caçadas | Invasor |
+| `?bot_modo=` na URL | Caçadas | Invasor |
 |---|---|---|
-| *(vazio)* | ❌ | ❌ |
+| *(omitido)* | ❌ manual | ❌ manual |
 | `cacadas` | ✅ login, caçadas, captcha, atacar | ❌ |
 | `invasor` | ✅ login, captcha, re-login após logout | ✅ status, invasor, combate |
 
-Abrir o jogo **sem** `?bot_modo=` = manual, sem bot (não precisa `botParar()`).
+- **Aba nova sem `?bot_modo=`** → manual (não herda de outra aba)
+- **Login na mesma aba** → modo gravado antes do redirect para `/status`
+- **Credenciais** (`bot_user`, `bot_pass`) continuam no `localStorage` para re-login
 
-### Favoritos (logado — use `/invasor` ou `/cacadas`)
-
-Abra direto na página do bot. O script infere o modo pelo path; se o jogo redirecionar para `/status`, o `referrer` preserva o `bot_modo`.
+### Favoritos (sempre com `?bot_modo=`)
 
 **Shiroe (caçadas)**
 ```
@@ -58,16 +58,15 @@ https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 
 **Manual (desliga bot):** `/?bot_modo=off`
 
-**Fallback** (se `/invasor` ou `/cacadas` cair em `/status` sem modo): `/status?bot_modo=invasor` ou `/status?bot_modo=cacadas`
+**Fallback redirect:** se cair em `/status` sem parâmetro, o script lê `bot_modo` do `referrer` (URL que você abriu antes do redirect).
 
 ### Redirect `/status` — opções extras
 
 | Opção | Como | Prós |
 |---|---|---|
-| **A — `/invasor` ou `/cacadas`** | Favoritos acima | Melhor: vai direto ao destino + path + referrer |
-| **B — Referrer (v2.19+)** | Automático ao cair em `/status` | Recupera `bot_modo` da URL anterior |
-| **C — `bot-bootstrap.js` primeiro** | Inject Code: `document_start` | Captura mais cedo |
-| **D — Modo fixo por perfil** | `window.__BOT_MODO_FIXO__='invasor'` | 1 perfil = 1 modo sempre |
+| **A — URL com `?bot_modo=`** | Favoritos acima | Obrigatório para ligar o bot |
+| **B — Referrer (v2.19+)** | Automático após redirect | Recupera `bot_modo` da URL anterior na mesma aba |
+| **C — `bot-bootstrap.js` primeiro** | Inject Code: `document_start` | Captura mais cedo no redirect |
 
 ---
 

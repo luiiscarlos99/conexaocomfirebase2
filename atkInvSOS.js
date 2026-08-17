@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.2
+// @version      5.3
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,14 +11,8 @@
   'use strict';
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
-  var BOT_MODO_PERFIL_KEY = 'BOT_MODO_ABA';
 
-  function inferirModoPorPath() {
-    var p = (window.location.pathname || '').toLowerCase();
-    if (p.indexOf('/invasor') !== -1) return 'invasor';
-    if (p.indexOf('/cacadas') !== -1 || p.indexOf('/atacar') !== -1) return 'cacadas';
-    return '';
-  }
+  try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
 
   function lerModoReferrer() {
     try {
@@ -43,10 +37,7 @@
       }
     } catch (e) {}
 
-    modo = lerModoReferrer();
-    if (modo) return modo;
-
-    return inferirModoPorPath();
+    return lerModoReferrer();
   }
 
   function aplicarCredenciaisReferrer() {
@@ -64,12 +55,11 @@
   function logDiagnosticoModo(rotulo) {
     if (window.__BOT_BOOTSTRAP_LOG__) return;
     window.__BOT_BOOTSTRAP_LOG__ = true;
-    var s = '(erro)', l = '(erro)';
+    var s = '(erro)';
     try { s = sessionStorage.getItem(BOT_MODO_KEY) || '(vazio)'; } catch (e) {}
-    try { l = localStorage.getItem(BOT_MODO_PERFIL_KEY) || '(vazio)'; } catch (e) {}
     console.log('[Bot Bootstrap] URL: ' + location.href);
     console.log('[Bot Bootstrap] referrer: ' + (document.referrer || '(vazio)'));
-    console.log('[Bot Bootstrap] session=' + s + ' | local=' + l + ' | path=' + location.pathname);
+    console.log('[Bot Bootstrap] session=' + s + ' | path=' + location.pathname);
   }
 
   function aplicarParamsUrl() {
@@ -80,18 +70,11 @@
 
       if (params.get('bot_modo') === 'off' || params.get('bot_modo') === 'manual') {
         sessionStorage.removeItem(BOT_MODO_KEY);
-        localStorage.removeItem(BOT_MODO_PERFIL_KEY);
         return params;
-      }
-
-      if (window.__BOT_MODO_FIXO__ === 'invasor' || window.__BOT_MODO_FIXO__ === 'cacadas') {
-        sessionStorage.setItem(BOT_MODO_KEY, window.__BOT_MODO_FIXO__);
-        localStorage.setItem(BOT_MODO_PERFIL_KEY, window.__BOT_MODO_FIXO__);
       }
 
       if (modo === 'invasor' || modo === 'cacadas') {
         sessionStorage.setItem(BOT_MODO_KEY, modo);
-        localStorage.setItem(BOT_MODO_PERFIL_KEY, modo);
       }
 
       var u = params.get('bot_user');
@@ -116,12 +99,6 @@
       if (modoSessao === 'invasor' || modoSessao === 'cacadas') {
         return modoSessao;
       }
-
-      var modoPerfil = localStorage.getItem(BOT_MODO_PERFIL_KEY);
-      if (modoPerfil === 'invasor' || modoPerfil === 'cacadas') {
-        sessionStorage.setItem(BOT_MODO_KEY, modoPerfil);
-        return modoPerfil;
-      }
     } catch (e) {}
     return '';
   }
@@ -133,8 +110,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.2';
-  var SCRIPT_ATUALIZADO = '16/08/2026 22:35';
+  var SCRIPT_VERSAO = '5.3';
+  var SCRIPT_ATUALIZADO = '16/08/2026 22:45';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
