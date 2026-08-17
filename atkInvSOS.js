@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.4
+// @version      5.6
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -110,8 +110,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.4';
-  var SCRIPT_ATUALIZADO = '16/08/2026 23:10';
+  var SCRIPT_VERSAO = '5.6';
+  var SCRIPT_ATUALIZADO = '17/08/2026 09:00';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -198,6 +198,40 @@
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
 
+  function montarUrlLoginComParams() {
+    if (window.__BOT_RECOVERY__) {
+      return window.__BOT_RECOVERY__.montarUrlLoginComParams();
+    }
+
+    var params = new URLSearchParams();
+    var modo = obterModoAba();
+    if (modo === 'invasor' || modo === 'cacadas') params.set('bot_modo', modo);
+
+    try {
+      var u = localStorage.getItem('BOT_USUARIO');
+      var p = localStorage.getItem('BOT_SENHA');
+      var n = localStorage.getItem('BOT_NIVEL_CACADAS');
+      var e = localStorage.getItem('BOT_ESPERA_CACADAS');
+      if (u) params.set('bot_user', u);
+      if (p) params.set('bot_pass', p);
+      if (n) params.set('bot_nivel', n);
+      if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
+    } catch (err) {}
+
+    var qs = params.toString();
+    return URL_HOME + (qs ? '?' + qs : '');
+  }
+
+  function salvarRecuperacaoAntesDeSair(url) {
+    var destino = url || montarUrlLoginComParams();
+    if (window.__BOT_RECOVERY__) {
+      window.__BOT_RECOVERY__.salvar(destino);
+    } else {
+      try { window.name = '__BOT_RECUP__:' + destino; } catch (e) {}
+    }
+    return destino;
+  }
+
   var reloadAgendado = false;
   var jaAtacouNestaPagina = false;
 
@@ -274,8 +308,9 @@
     if (textoCorpo.indexOf('sessão expirada ou requisição inválida') !== -1 ||
         textoCorpo.indexOf('sessao expirada ou requisicao invalida') !== -1 ||
         linkVoltar) {
-      console.warn('[Script Invasor] Sessao expirada — indo para login (caçadas reautentica)...');
-      window.location.href = URL_HOME;
+      console.warn('[Script Invasor] Sessao expirada — indo para login com parametros da sessao...');
+      var url = salvarRecuperacaoAntesDeSair();
+      try { location.replace(url); } catch (e) { location.href = url; }
       return true;
     }
     return false;
@@ -588,11 +623,18 @@
     } catch (e) {}
   }
 
-  function agendarReloadFalha(motivo) {
+  function agendarReloadFalha(motivo, delayMs) {
     if (reloadAgendado) return;
     reloadAgendado = true;
+
+    var url = salvarRecuperacaoAntesDeSair();
+    var espera = typeof delayMs === 'number' ? delayMs : TEMPO_RELOAD_FALHA;
+
     console.warn('[Script Invasor] FALHA: ' + motivo);
-    setTimeout(function() { location.reload(); }, TEMPO_RELOAD_FALHA);
+    setTimeout(function() {
+      console.log('[Script Invasor] Recuperacao — login com parametros da sessao (sem reload)...');
+      try { location.replace(url); } catch (e) { location.href = url; }
+    }, espera);
   }
 
   function redirecionarParaInvasor(motivo) {
@@ -631,7 +673,7 @@
       }
 
       if (checarErroServidor()) {
-        agendarReloadFalha('Erro de Servidor 500/502/503/504 detectado.');
+        agendarReloadFalha('Erro de Servidor 500/502/503/504 detectado.', 3000);
         return;
       }
 

@@ -197,6 +197,38 @@ function Get-UrlCacadas {
     return '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
 }
 
+function Get-UrlJogo {
+    param(
+        [string]$Base,
+        [string]$Usuario,
+        [string]$Senha,
+        [string]$Nivel,
+        [string]$BotModo
+    )
+
+    if (-not (Test-ContaTemCredenciais -Usuario $Usuario -Senha $Senha)) {
+        if ($BotModo -eq 'cacadas') {
+            return Get-UrlCacadas -Base $Base
+        }
+        return Get-UrlInvasor -Base $Base
+    }
+
+    $root = $Base.TrimEnd('/')
+    # Fase 2: home com params completos (mais seguro que /cacadas direto se der 500)
+    $q = [ordered]@{
+        bot_modo = $BotModo
+        bot_user = $Usuario
+        bot_pass = $Senha
+        bot_nivel = $Nivel
+    }
+
+    $pairs = foreach ($key in $q.Keys) {
+        '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
+    }
+
+    return '{0}/?{1}' -f $root, ($pairs -join '&')
+}
+
 function Get-UrlInvasor {
     param([string]$Base)
 
@@ -398,11 +430,7 @@ if ($contasFase2.Count -gt 0) {
         }
 
         $botModo = Get-BotModoConta -Conta $conta
-        $urlJogo = if ($botModo -eq 'cacadas') {
-            Get-UrlCacadas -Base $UrlBase
-        } else {
-            Get-UrlInvasor -Base $UrlBase
-        }
+        $urlJogo = Get-UrlJogo -Base $UrlBase -Usuario $conta.Usuario -Senha $conta.Senha -Nivel $NivelCacadas -BotModo $botModo
 
         if (Open-NavegadorUrl -Conta $conta -Url $urlJogo -Fase Jogo) {
             if ($contasAbertas -notcontains $conta.Rotulo) {

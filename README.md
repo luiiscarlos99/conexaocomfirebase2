@@ -8,6 +8,8 @@ Automação para [Shadow of Shinobi](https://shadowofshinobi.com/) via **Inject 
 
 | Arquivo | Descrição |
 |---|---|
+| `bot-recovery.js` | Recuperação em erro 500 / `chrome-error://` via `window.name` |
+| `bot-bootstrap.js` | Bootstrap cedo — grava modo/credenciais + URL de recuperação |
 | `atkSOS.js` | Bot **Caçadas** — login, caçadas, captcha, atacar |
 | `atkInvSOS.js` | Bot **Invasor** — status, invasor, combate, Firebase |
 | `firebase.html` | Painel captcha (OCR + envio ao bot) |
@@ -19,7 +21,16 @@ Locais (gitignore): `contas-jogo.config.ps1`, `discord-pc-ligado.config.ps1`, `p
 
 ---
 
-## Inject Code — auto-run nos dois
+## Inject Code — ordem e auto-run
+
+Injetar **nesta ordem** (auto-run ON em todos):
+
+| # | Script | CDN |
+|---|---|---|
+| 1 | `bot-recovery.js` | `.../bot-recovery.js` |
+| 2 | `bot-bootstrap.js` | `.../bot-bootstrap.js` |
+| 3 | Caçadas | `.../atkSOS.js` |
+| 4 | Invasor | `.../atkInvSOS.js` |
 
 | Regra | Auto-run | CDN |
 |---|---|---|
@@ -66,7 +77,7 @@ https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 |---|---|---|
 | **A — URL com `?bot_modo=`** | Favoritos acima | Obrigatório para ligar o bot |
 | **B — Referrer (v2.19+)** | Automático após redirect | Recupera `bot_modo` da URL anterior na mesma aba |
-| **C — `bot-bootstrap.js` primeiro** | Inject Code: `document_start` | Captura mais cedo no redirect |
+| **C — `bot-bootstrap.js` + `bot-recovery.js`** | Inject Code: ordem acima | Recuperação em erro 500 / `chrome-error://` |
 
 ---
 

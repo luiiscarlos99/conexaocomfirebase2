@@ -65,6 +65,16 @@
           }
         } catch (e) {}
       }
+
+      // Salva URL de login em window.name (sobrevive a chrome-error://)
+      try {
+        if (window.__BOT_RECOVERY__) {
+          var modoSalvar = sessionStorage.getItem(BOT_MODO_KEY);
+          if (modoSalvar === 'invasor' || modoSalvar === 'cacadas') {
+            window.__BOT_RECOVERY__.salvar();
+          }
+        }
+      } catch (e) {}
     }
   } catch (e) {}
 

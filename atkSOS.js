@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.22
+// @version      2.24
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -155,8 +155,60 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.22';
-  var SCRIPT_ATUALIZADO = '17/08/2026 08:20';
+  var SCRIPT_VERSAO = '2.24';
+  var SCRIPT_ATUALIZADO = '17/08/2026 09:00';
+  var URL_HOME = 'https://shadowofshinobi.com/';
+  var TEMPO_RECUPERACAO_FALHA = 20000;
+  var TEMPO_RECUPERACAO_SERVIDOR = 3000;
+  var reloadAgendado = false;
+
+  function montarUrlLoginComParams() {
+    if (window.__BOT_RECOVERY__) {
+      return window.__BOT_RECOVERY__.montarUrlLoginComParams();
+    }
+
+    var params = new URLSearchParams();
+    var modo = obterModoAba();
+    if (modo === 'invasor' || modo === 'cacadas') params.set('bot_modo', modo);
+
+    try {
+      var u = localStorage.getItem('BOT_USUARIO');
+      var p = localStorage.getItem('BOT_SENHA');
+      var n = localStorage.getItem('BOT_NIVEL_CACADAS');
+      var e = localStorage.getItem('BOT_ESPERA_CACADAS');
+      if (u) params.set('bot_user', u);
+      if (p) params.set('bot_pass', p);
+      if (n) params.set('bot_nivel', n);
+      if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
+    } catch (err) {}
+
+    var qs = params.toString();
+    return URL_HOME + (qs ? '?' + qs : '');
+  }
+
+  function salvarRecuperacaoAntesDeSair(url) {
+    var destino = url || montarUrlLoginComParams();
+    if (window.__BOT_RECOVERY__) {
+      window.__BOT_RECOVERY__.salvar(destino);
+    } else {
+      try { window.name = '__BOT_RECUP__:' + destino; } catch (e) {}
+    }
+    return destino;
+  }
+
+  function agendarRecuperacaoViaLogin(motivo, delayMs) {
+    if (reloadAgendado) return;
+    reloadAgendado = true;
+
+    var url = salvarRecuperacaoAntesDeSair();
+    var espera = typeof delayMs === 'number' ? delayMs : TEMPO_RECUPERACAO_FALHA;
+
+    console.warn('[Script] FALHA DE EXECUÇÃO: ' + motivo);
+    setTimeout(function() {
+      console.log('[Script] Recuperacao — login com parametros da sessao (sem reload)...');
+      try { location.replace(url); } catch (e) { location.href = url; }
+    }, espera);
+  }
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -205,14 +257,12 @@
   }
 
   var TEMPO_ESPERA = 2000;
-  var TEMPO_RELOAD_FALHA = 20000;
+  var TEMPO_RELOAD_FALHA = TEMPO_RECUPERACAO_FALHA;
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
-  var URL_HOME = 'https://shadowofshinobi.com/';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
-  var reloadAgendado = false;
   var captchaJaNotificado = false;
   var timerCaptchaTimeout = null;
   var captchaRespostaProcessando = false;
@@ -661,14 +711,8 @@
     }
   }
 
-  function agendarReloadFalha(motivo) {
-    if (reloadAgendado) return;
-    reloadAgendado = true;
-
-    console.warn('[Script] FALHA DE EXECUÇÃO: ' + motivo);
-    setTimeout(function() {
-      location.reload();
-    }, TEMPO_RELOAD_FALHA);
+  function agendarReloadFalha(motivo, delayMs) {
+    agendarRecuperacaoViaLogin(motivo, delayMs);
   }
 
   function redirecionarParaCacadas(motivo) {
@@ -693,8 +737,9 @@
   }
 
   function redirecionarParaLogin(motivo) {
-    console.warn('[Script Caçadas] ' + motivo + ' — redirecionando para login...');
-    window.location.href = URL_HOME;
+    console.warn('[Script Caçadas] ' + motivo + ' — redirecionando para login com parametros da sessao...');
+    var url = salvarRecuperacaoAntesDeSair();
+    try { location.replace(url); } catch (e) { location.href = url; }
   }
 
   function urlAposCaptcha() {
@@ -773,7 +818,7 @@
       // 1. VERIFICAÇÃO DE ERRO NO SERVIDOR (HTTP 500)
       var erroServidor = checarErroServidor();
       if (erroServidor) {
-        agendarReloadFalha(erroServidor);
+        agendarReloadFalha(erroServidor, TEMPO_RECUPERACAO_SERVIDOR);
         return;
       }
 
