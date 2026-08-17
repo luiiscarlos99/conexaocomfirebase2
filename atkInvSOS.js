@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.7
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '4.6';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:15';
+  var SCRIPT_VERSAO = '4.7';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:25';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -119,6 +119,7 @@
   var TEMPO_ESPERA_POS_COMBATE = 60000;      // 1 minuto
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
+  var URL_HOME = 'https://shadowofshinobi.com/';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
 
@@ -198,14 +199,8 @@
     if (textoCorpo.indexOf('sessão expirada ou requisição inválida') !== -1 ||
         textoCorpo.indexOf('sessao expirada ou requisicao invalida') !== -1 ||
         linkVoltar) {
-      console.warn('[Script Invasor] Sessão expirada detectada! Voltando...');
-
-      if (linkVoltar) {
-        linkVoltar.click();
-      } else {
-        window.history.back();
-      }
-
+      console.warn('[Script Invasor] Sessao expirada — indo para login (caçadas reautentica)...');
+      window.location.href = URL_HOME;
       return true;
     }
     return false;

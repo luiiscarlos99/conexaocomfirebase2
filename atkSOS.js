@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.13
+// @version      2.14
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,8 +11,8 @@
   'use strict';
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.13';
-  var SCRIPT_ATUALIZADO = '16/08/2026 21:20';
+  var SCRIPT_VERSAO = '2.14';
+  var SCRIPT_ATUALIZADO = '16/08/2026 21:25';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -107,6 +107,7 @@
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
+  var URL_HOME = 'https://shadowofshinobi.com/';
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var reloadAgendado = false;
@@ -543,6 +544,16 @@
     return false;
   }
 
+  function sessaoExpiradaSemLogin() {
+    if (document.getElementById('login')) return false;
+    return aguardandoAutenticacao();
+  }
+
+  function redirecionarParaLogin(motivo) {
+    console.warn('[Script Caçadas] ' + motivo + ' — redirecionando para login...');
+    window.location.href = URL_HOME;
+  }
+
   console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Código: ' + CODIGO_SERVIDOR);
 
   setTimeout(function() {
@@ -550,10 +561,16 @@
       sincronizarModoAba();
 
       if (obterModoAba() === 'invasor') {
-        var urlInv = window.location.href;
         var ehLogin = !!document.getElementById('login');
+        var urlInv = window.location.href;
         var ehCaptcha = urlInv.indexOf('captcha_seguranca') !== -1 ||
           document.querySelector('form[action="captcha_seguranca"]');
+
+        if (sessaoExpiradaSemLogin()) {
+          redirecionarParaLogin('Sessao expirada (aba invasor)');
+          return;
+        }
+
         if (!ehLogin && !ehCaptcha) {
           console.log('[Script Caçadas] Aba invasor — sem acao.');
           return;
@@ -623,6 +640,11 @@
       if (urlAtual.indexOf('status') !== -1) {
         console.log('[Script Caçadas] Status — redirecionando para caçadas...');
         window.location.href = URL_CACADAS;
+        return;
+      }
+
+      if (sessaoExpiradaSemLogin()) {
+        redirecionarParaLogin('Sessao expirada');
         return;
       }
 
