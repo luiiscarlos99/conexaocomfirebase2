@@ -133,7 +133,7 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 | **Espera** | 60s — Shizuo/Sora vão para `/invasor` sozinhos |
 | **2 — Caçadas** | Só contas com `BotModo=cacadas` → `/cacadas?bot_modo=cacadas` (Shiroe) |
 
-**Anonimo (Sora):** fase 1 `--private`; fase 2 nova aba sem `--private` (so caçadas nao afeta Sora).
+**Anonimo (Sora):** fase 1 `--private`; fica no invasor na mesma aba (fase 2 e so Shiroe).
 
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
