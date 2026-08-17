@@ -191,6 +191,23 @@ function Get-UrlCacadas {
     return '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
 }
 
+function Resolve-BrowserExe {
+    param([string]$ExePath)
+
+    if ([string]::IsNullOrWhiteSpace($ExePath)) {
+        return $ExePath
+    }
+
+    $dir = Split-Path -Parent $ExePath
+    $launcher = Join-Path $dir 'launcher.exe'
+
+    if ((Split-Path -Leaf $ExePath) -match '(?i)opera' -and (Test-Path $launcher)) {
+        return $launcher
+    }
+
+    return $ExePath
+}
+
 function Get-BrowserArgs {
     param(
         [hashtable]$Conta,
@@ -198,9 +215,13 @@ function Get-BrowserArgs {
         [string]$Fase = 'Login'
     )
 
-    # Fase 2 anonimo: SEM --private/--incognito — senao abre sessao NOVA sem cookies.
-    # O executavel ja aberto recebe a URL como nova aba na janela privada existente.
+    $ehOpera = $Conta.Exe -match '(?i)opera'
+
+    # Fase 2 anonimo: nova aba na janela privada ja aberta (sem --private).
     if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
+        if ($ehOpera) {
+            return @('--new-tab')
+        }
         return @()
     }
 
@@ -208,12 +229,31 @@ function Get-BrowserArgs {
     if ($Conta.Anonimo) {
         if ($Conta.Exe -imatch 'chrome') {
             $args += '--incognito'
+            $args += '--new-window'
+        } elseif ($ehOpera) {
+            # Opera: --private ANTES da URL; --new-window se Opera normal ja estiver aberto
+            $args += '--private'
+            $args += '--new-window'
         } else {
             $args += '--private'
         }
     }
 
     return $args
+}
+
+function Start-NavegadorComUrl {
+    param(
+        [string]$ExePath,
+        [string[]]$ArgsBrowser,
+        [string]$Url
+    )
+
+    $exe = Resolve-BrowserExe -ExePath $ExePath
+    $lista = @($ArgsBrowser) + @($Url)
+
+    # ArgumentList em array — URL com & fica em um unico argumento
+    Start-Process -FilePath $exe -ArgumentList $lista | Out-Null
 }
 
 function Open-NavegadorUrl {
@@ -239,8 +279,14 @@ function Open-NavegadorUrl {
         Write-Host '    (nova aba na janela privada ja aberta — sem --private na fase 2)' -ForegroundColor DarkGray
     }
     Write-Host "    $Url"
+    if ($Conta.Exe -match '(?i)opera') {
+        $exeResolvido = Resolve-BrowserExe -ExePath $exe
+        if ($exeResolvido -ne $exe) {
+            Write-Host "    exe: $exeResolvido" -ForegroundColor DarkGray
+        }
+    }
 
-    Start-Process -FilePath $exe -ArgumentList ($args + $Url) | Out-Null
+    Start-NavegadorComUrl -ExePath $exe -ArgsBrowser $args -Url $Url
     return $true
 }
 
@@ -256,12 +302,22 @@ $contasLogin = @($Contas | Where-Object {
     Test-ContaTemCredenciais -Usuario $_.Usuario -Senha $_.Senha
 })
 
+# Opera anonimo ANTES do Opera normal (Shizuo), senao --private perde a URL
+$contasLoginOrdenadas = @(
+    @($contasLogin | Where-Object { $_.Exe -notmatch '(?i)opera' })
+) + @(
+    @($contasLogin | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
+) + @(
+    @($contasLogin | Where-Object { -not $_.Anonimo -and $_.Exe -match '(?i)opera' })
+)
+
 # --- Fase 1: abas de login (todas as contas com senha) ---
-if ($contasLogin.Count -gt 0) {
+if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host '--- Fase 1: login (bot_modo=invasor nas 3 contas) ---' -ForegroundColor Green
     Write-Host '  Shizuo/Sora ficam no invasor. Shiroe loga aqui e abre caçadas na fase 2.' -ForegroundColor DarkGray
+    Write-Host '  Sora (Opera anon) abre antes do Opera normal — --private --new-window + launcher.exe' -ForegroundColor DarkGray
     $i = 0
-    foreach ($conta in $contasLogin) {
+    foreach ($conta in $contasLoginOrdenadas) {
         if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
             Start-Sleep -Seconds $IntervaloEntreContas
         }

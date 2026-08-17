@@ -3,6 +3,7 @@
 
 $ChromeExe = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 $OperaExe  = "C:\Users\SEU_USUARIO\AppData\Local\Programs\Opera GX\opera.exe"
+# O script usa launcher.exe na mesma pasta (melhor para --private + URL)
 
 $UrlBase = 'https://shadowofshinobi.com'
 $NivelCacadas = '2'
