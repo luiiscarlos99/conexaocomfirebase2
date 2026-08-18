@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.37
+// @version      2.38
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.37';
-  var SCRIPT_ATUALIZADO = '18/08/2026 02:00';
+  var SCRIPT_VERSAO = '2.38';
+  var SCRIPT_ATUALIZADO = '18/08/2026 02:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -778,28 +778,30 @@
     return ehPaginaCombateCacadas(window.location.href);
   }
 
-  function extrairAvisoResultadoCombate() {
-    var col = document.getElementById('col_direita') || document;
-    var aviso = col.querySelector('.avisos_erro');
-    if (!aviso) return null;
-    return (aviso.innerText || aviso.textContent || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function classificarResultadoCombate() {
-    var texto = extrairAvisoResultadoCombate();
-    if (!texto) return null;
-
-    var norm = texto
+  function normalizarTextoCombate(texto) {
+    return String(texto || '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
+  }
 
-    if (norm.indexOf('foi derrotado') !== -1) {
-      return { resultado: 'derrota', texto: texto };
-    }
+  function classificarResultadoCombate() {
+    var col = document.getElementById('col_direita') || document.body || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
 
-    if (norm.indexOf('o vencedor') !== -1 && norm.indexOf('faturou') !== -1) {
-      return { resultado: 'vitoria', texto: texto };
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+
+      if (norm.indexOf('foi derrotado') !== -1) {
+        return { resultado: 'derrota', texto: texto };
+      }
+
+      if (norm.indexOf('o vencedor') !== -1 && norm.indexOf('faturou') !== -1) {
+        return { resultado: 'vitoria', texto: texto };
+      }
     }
 
     return null;
@@ -882,13 +884,24 @@
     return false;
   }
 
+  function irParaCacadasAposCombate(motivo) {
+    console.log('[Combate] ' + motivo + ' — redirecionando para caçadas...');
+    setTimeout(function() {
+      window.location.href = URL_CACADAS;
+    }, 1500);
+  }
+
   function processarPaginaCombate() {
     if (!estaNaPaginaCombateCacadas()) return false;
-    if (combateJaNotificado()) return true;
+
+    if (combateJaNotificado()) {
+      irParaCacadasAposCombate('Combate ja processado');
+      return true;
+    }
 
     var parsed = classificarResultadoCombate();
     if (!parsed) {
-      console.log('[Combate] Pagina /combate sem .avisos_erro de resultado.');
+      console.log('[Combate] Pagina /combate sem resultado final (vitoria/derrota).');
       return true;
     }
 
@@ -897,6 +910,7 @@
     notificarCombateSeNecessario('combate', dados, parsed.resultado);
 
     console.log('[Combate] ' + parsed.resultado + ' detectado: ' + parsed.texto);
+    irParaCacadasAposCombate('Resultado processado');
     return true;
   }
 
