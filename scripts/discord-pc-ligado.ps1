@@ -6,18 +6,20 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $scriptDir 'discord-webhook.ps1')
 
-$configPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
+$configPath = Join-Path $scriptDir 'discord-webhooks.config.ps1'
+$legacyConfigPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
 
-if (-not (Test-Path $configPath)) {
+if (-not (Test-Path $configPath) -and -not (Test-Path $legacyConfigPath)) {
     $msg = U8 0x41,0x72,0x71,0x75,0x69,0x76,0x6F,0x20,0x64,0x65,0x20,0x63,0x6F,0x6E,0x66,0x69,0x67,0x20,0x6E,0xC3,0xA3,0x6F,0x20,0x65,0x6E,0x63,0x6F,0x6E,0x74,0x72,0x61,0x64,0x6F
-    Write-Error "$msg`: $configPath`nCopie discord-pc-ligado.config.example.ps1 para discord-pc-ligado.config.ps1"
+    Write-Error "$msg`: copie discord-webhooks.config.example.ps1 para discord-webhooks.config.ps1"
     exit 1
 }
 
-. $configPath
+$DiscordWebhookUrl = Get-DiscordWebhookGeral -ScriptDir $scriptDir
+$EnviarSilencioso = Get-DiscordGeralSilencioso -ScriptDir $scriptDir
 
 if ([string]::IsNullOrWhiteSpace($DiscordWebhookUrl)) {
-    Write-Error 'DiscordWebhookUrl nao configurado em discord-pc-ligado.config.ps1'
+    Write-Error 'Webhook #geral nao configurado em discord-webhooks.config.ps1'
     exit 1
 }
 

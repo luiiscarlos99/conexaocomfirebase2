@@ -22,3 +22,54 @@ function Send-DiscordWebhookUtf8 {
         -ContentType 'application/json; charset=utf-8' `
         -UseBasicParsing | Out-Null
 }
+
+function Get-DiscordWebhookGeral {
+    param([string]$ScriptDir)
+
+    $DiscordWebhookGeral = $null
+    $DiscordGeralSilencioso = $null
+
+    $webhooksConfig = Join-Path $ScriptDir 'discord-webhooks.config.ps1'
+    if (Test-Path $webhooksConfig) {
+        . $webhooksConfig
+        if (-not [string]::IsNullOrWhiteSpace($DiscordWebhookGeral)) {
+            return $DiscordWebhookGeral
+        }
+    }
+
+    $legacyConfig = Join-Path $ScriptDir 'discord-pc-ligado.config.ps1'
+    if (Test-Path $legacyConfig) {
+        $DiscordWebhookUrl = $null
+        . $legacyConfig
+        if (-not [string]::IsNullOrWhiteSpace($DiscordWebhookUrl)) {
+            return $DiscordWebhookUrl
+        }
+    }
+
+    return $null
+}
+
+function Get-DiscordGeralSilencioso {
+    param([string]$ScriptDir)
+
+    $DiscordGeralSilencioso = $null
+    $EnviarSilencioso = $null
+
+    $webhooksConfig = Join-Path $ScriptDir 'discord-webhooks.config.ps1'
+    if (Test-Path $webhooksConfig) {
+        . $webhooksConfig
+        if ($null -ne $DiscordGeralSilencioso) {
+            return [bool]$DiscordGeralSilencioso
+        }
+    }
+
+    $legacyConfig = Join-Path $ScriptDir 'discord-pc-ligado.config.ps1'
+    if (Test-Path $legacyConfig) {
+        . $legacyConfig
+        if ($null -ne $EnviarSilencioso) {
+            return [bool]$EnviarSilencioso
+        }
+    }
+
+    return $false
+}

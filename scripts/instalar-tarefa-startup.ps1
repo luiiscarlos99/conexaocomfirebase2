@@ -6,17 +6,18 @@ $ErrorActionPreference = 'Stop'
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $scriptPath = Join-Path $scriptDir 'discord-pc-ligado.ps1'
-$configPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
+$configPath = Join-Path $scriptDir 'discord-webhooks.config.ps1'
+$legacyConfigPath = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
 $taskName = 'Discord-Aviso-PC-Ligado'
 
 if (-not (Test-Path $scriptPath)) {
     Write-Error "Script não encontrado: $scriptPath"
 }
 
-if (-not (Test-Path $configPath)) {
+if (-not (Test-Path $configPath) -and -not (Test-Path $legacyConfigPath)) {
     Write-Host ''
     Write-Host 'ATENÇÃO: Crie o arquivo de config antes de instalar:' -ForegroundColor Yellow
-    Write-Host "  Copie: discord-pc-ligado.config.example.ps1 -> discord-pc-ligado.config.ps1" -ForegroundColor Yellow
+    Write-Host '  Copie: discord-webhooks.config.example.ps1 -> discord-webhooks.config.ps1' -ForegroundColor Yellow
     Write-Host ''
     $continuar = Read-Host 'Continuar mesmo assim? (s/N)'
     if ($continuar -ne 's' -and $continuar -ne 'S') { exit 1 }

@@ -9,7 +9,10 @@ sof.js
 # Documentação antiga exportada do Gemini (contexto completo com código)
 README-contexto-gemini.md
 
-# Config local do aviso Discord "PC ligou" (contém webhook)
+# Config local dos webhooks Discord
+scripts/discord-webhooks.config.ps1
+
+# Config local do aviso Discord "PC ligou" (legado; prefira discord-webhooks.config.ps1)
 scripts/discord-pc-ligado.config.ps1
 
 # Config local das contas do jogo (senhas)

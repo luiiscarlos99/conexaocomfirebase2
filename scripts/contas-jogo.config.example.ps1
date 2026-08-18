@@ -17,9 +17,9 @@ $IntervaloAposSetup = 60
 # DevTools (F12) — desligado; nao abre janelas extras
 $AbrirDevTools = $false
 
-# Aviso Discord ao abrir contas (usa discord-pc-ligado.config.ps1 se omitir URL)
+# Aviso Discord ao abrir contas (canal #geral — discord-webhooks.config.ps1)
 $AvisarDiscordStart = $true
-# $DiscordWebhookUrl = "https://discord.com/api/webhooks/..."
+# $DiscordWebhookUrl = "..."  # opcional: sobrescreve o webhook #geral
 # $DiscordStartSilencioso = $false
 
 # BotModo: 'cacadas' ou 'invasor' — define login + aba da fase 2

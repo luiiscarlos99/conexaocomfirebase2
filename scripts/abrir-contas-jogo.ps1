@@ -46,21 +46,7 @@ function Get-DiscordWebhookStart {
         return $DiscordWebhookUrl
     }
 
-    $discordConfig = Join-Path $scriptDir 'discord-pc-ligado.config.ps1'
-    if (Test-Path $discordConfig) {
-        . $discordConfig
-        if (-not [string]::IsNullOrWhiteSpace($DiscordWebhookUrl)) {
-            if (-not (Get-Variable -Name 'DiscordStartSilencioso' -Scope Script -ErrorAction SilentlyContinue) -or
-                -not $script:DiscordStartSilencioso) {
-                if ($null -ne $EnviarSilencioso) {
-                    $script:DiscordStartSilencioso = [bool]$EnviarSilencioso
-                }
-            }
-            return $DiscordWebhookUrl
-        }
-    }
-
-    return $null
+    return Get-DiscordWebhookGeral -ScriptDir $scriptDir
 }
 
 function Send-DiscordStartAviso {
@@ -129,6 +115,8 @@ function Send-DiscordStartAviso {
     }
 
     if ($DiscordStartSilencioso) {
+        $payload.flags = 4096
+    } elseif (Get-DiscordGeralSilencioso -ScriptDir $scriptDir) {
         $payload.flags = 4096
     }
 
