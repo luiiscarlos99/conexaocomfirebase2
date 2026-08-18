@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.46
+// @version      2.47
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.46';
-  var SCRIPT_ATUALIZADO = '18/08/2026 18:25';
+  var SCRIPT_VERSAO = '2.47';
+  var SCRIPT_ATUALIZADO = '18/08/2026 18:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -431,11 +431,13 @@
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
-  // Padrao sem config: 2h-9h = 5-12min; demais horarios = 5min (3-5min)
-  var ESPERA_CACADAS_DEFAULT_MIN_MS = 300000;  // 5 min
-  var ESPERA_CACADAS_DEFAULT_MAX_MS = 720000;  // 12 min
-  var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;    // 02:00
-  var ESPERA_CACADAS_HORA_FIM_LENTA = 9;       // ate 08:59
+  // Padrao sem config: madrugada (2h-9h) = 8-20min; comercial = 3-12min
+  var ESPERA_CACADAS_MADRUGADA_MIN_MS = 480000;   // 8 min
+  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 1200000;  // 20 min
+  var ESPERA_CACADAS_COMERCIAL_MIN_MS = 180000;    // 3 min
+  var ESPERA_CACADAS_COMERCIAL_MAX_MS = 720000;    // 12 min
+  var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;        // 02:00
+  var ESPERA_CACADAS_HORA_FIM_LENTA = 9;           // ate 08:59
 
   function estaNoHorarioEsperaCacadasLenta() {
     var hora = new Date().getHours();
@@ -448,12 +450,16 @@
     if (minutos === null) {
       if (estaNoHorarioEsperaCacadasLenta()) {
         return {
-          minMs: ESPERA_CACADAS_DEFAULT_MIN_MS,
-          maxMs: ESPERA_CACADAS_DEFAULT_MAX_MS,
+          minMs: ESPERA_CACADAS_MADRUGADA_MIN_MS,
+          maxMs: ESPERA_CACADAS_MADRUGADA_MAX_MS,
           origem: 'padrao-madrugada'
         };
       }
-      return { minMs: 180000, maxMs: 300000, origem: 'padrao-dia', minutos: 5 };
+      return {
+        minMs: ESPERA_CACADAS_COMERCIAL_MIN_MS,
+        maxMs: ESPERA_CACADAS_COMERCIAL_MAX_MS,
+        origem: 'padrao-comercial'
+      };
     }
 
     if (minutos < 2) {
@@ -477,10 +483,10 @@
   function descreverEsperaCacadas() {
     var iv = calcularIntervaloEsperaCacadas();
     if (iv.origem === 'padrao-madrugada') {
-      return '5-12min (padrao 2h-9h)';
+      return '8-20min (madrugada 2h-9h)';
     }
-    if (iv.origem === 'padrao-dia') {
-      return '3-5min (padrao fora 2h-9h, min=5)';
+    if (iv.origem === 'padrao-comercial') {
+      return '3-12min (horario comercial)';
     }
     var minMin = Math.round(iv.minMs / 60000);
     var maxMin = Math.round(iv.maxMs / 60000);
