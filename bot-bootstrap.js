@@ -34,6 +34,10 @@
       var n = rp.get('bot_nivel');
       var e = rp.get('bot_espera_cacadas');
       var l = rp.get('bot_limite_invasor');
+      var w = rp.get('bot_whitelist_cacadas');
+      var r = rp.get('bot_max_ryous_cacadas');
+      var d = rp.get('bot_diff_nivel_cacadas');
+      var v = rp.get('bot_min_ryous_vitoria_cacadas');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
@@ -44,6 +48,19 @@
       if (l !== null && l !== '') {
         var lm = parseInt(String(l).replace(/\./g, '').replace(',', ''), 10);
         if (!isNaN(lm) && lm >= 0) localStorage.setItem('BOT_LIMITE_INVASOR', String(lm));
+      }
+      if (w !== null && w !== '') localStorage.setItem('BOT_WHITELIST_CACADAS', String(w).trim());
+      if (r !== null && r !== '') {
+        var rm = parseInt(String(r).replace(/\./g, '').replace(',', ''), 10);
+        if (!isNaN(rm) && rm >= 0) localStorage.setItem('BOT_MAX_RYOUS_CACADAS', String(rm));
+      }
+      if (d !== null && d !== '') {
+        var dm = parseInt(String(d).replace(/\./g, '').replace(',', ''), 10);
+        if (!isNaN(dm) && dm >= 0) localStorage.setItem('BOT_DIFF_NIVEL_CACADAS', String(dm));
+      }
+      if (v !== null && v !== '') {
+        var vm = parseInt(String(v).replace(/\./g, '').replace(',', ''), 10);
+        if (!isNaN(vm) && vm >= 0) localStorage.setItem('BOT_MIN_RYOUS_VITORIA_CACADAS', String(vm));
       }
     } catch (e) {}
   }
@@ -63,7 +80,9 @@
 
       aplicarCredenciais(window.location.search);
       if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
-          !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor')) {
+          !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
+          !params.get('bot_whitelist_cacadas') && !params.get('bot_max_ryous_cacadas') &&
+          !params.get('bot_diff_nivel_cacadas') && !params.get('bot_min_ryous_vitoria_cacadas')) {
         try {
           var ref = document.referrer || '';
           if (ref.indexOf('shadowofshinobi.com') !== -1) {

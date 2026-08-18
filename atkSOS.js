@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.25
+// @version      2.31
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -40,6 +40,52 @@
     var limite = parseLimiteInvasor(valor);
     if (limite === null) return false;
     localStorage.setItem('BOT_LIMITE_INVASOR', String(limite));
+    return true;
+  }
+
+  function parseNumeroInteiro(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, '').replace(',', ''), 10);
+    if (isNaN(n) || n < 0) return null;
+    return n;
+  }
+
+  function gravarMaxRyousCacadasParam(valor) {
+    var max = parseNumeroInteiro(valor);
+    if (max === null) return false;
+    localStorage.setItem('BOT_MAX_RYOUS_CACADAS', String(max));
+    return true;
+  }
+
+  function gravarDiffNivelCacadasParam(valor) {
+    var diff = parseNumeroInteiro(valor);
+    if (diff === null) return false;
+    localStorage.setItem('BOT_DIFF_NIVEL_CACADAS', String(diff));
+    return true;
+  }
+
+  function gravarWhitelistCacadasParam(valor) {
+    if (valor === null || valor === undefined || String(valor).trim() === '') return false;
+    localStorage.setItem('BOT_WHITELIST_CACADAS', String(valor).trim());
+    return true;
+  }
+
+  function aplicarParamsCacadasAtacar(rp) {
+    if (!rp) return;
+    var w = rp.get('bot_whitelist_cacadas');
+    var r = rp.get('bot_max_ryous_cacadas');
+    var d = rp.get('bot_diff_nivel_cacadas');
+    var v = rp.get('bot_min_ryous_vitoria_cacadas');
+    if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
+    if (r !== null && r !== '') gravarMaxRyousCacadasParam(r);
+    if (d !== null && d !== '') gravarDiffNivelCacadasParam(d);
+    if (v !== null && v !== '') gravarMinRyousVitoriaCacadasParam(v);
+  }
+
+  function gravarMinRyousVitoriaCacadasParam(valor) {
+    var min = parseNumeroInteiro(valor);
+    if (min === null) return false;
+    localStorage.setItem('BOT_MIN_RYOUS_VITORIA_CACADAS', String(min));
     return true;
   }
 
@@ -84,6 +130,7 @@
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
+      aplicarParamsCacadasAtacar(rp);
     } catch (e) {}
   }
 
@@ -123,9 +170,13 @@
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
+      aplicarParamsCacadasAtacar(params);
       if (!u && !p && !n) aplicarCredenciaisReferrer();
 
-      if ((u || p || n || e || l || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
+          params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
+          params.get('bot_min_ryous_vitoria_cacadas') ||
+          modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -173,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.25';
-  var SCRIPT_ATUALIZADO = '17/08/2026 09:25';
+  var SCRIPT_VERSAO = '2.31';
+  var SCRIPT_ATUALIZADO = '18/08/2026 01:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -195,11 +246,19 @@
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
+      var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
+      var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
+      var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
+      var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
+      if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
+      if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
+      if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
+      if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
     } catch (err) {}
 
     var qs = params.toString();
@@ -284,6 +343,10 @@
   var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var captchaJaNotificado = false;
+  var atacarJaProcessado = false;
+  var combateProcessando = false;
+  var BOT_ULTIMO_ALVO_KEY = 'BOT_ULTIMO_ALVO_CACADAS';
+  var BOT_COMBATE_NOTIFICADO_KEY = 'BOT_COMBATE_NOTIFICADO';
   var timerCaptchaTimeout = null;
   var captchaRespostaProcessando = false;
 
@@ -395,6 +458,495 @@
     var minMin = Math.round(iv.minMs / 60000);
     var maxMin = Math.round(iv.maxMs / 60000);
     return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
+  }
+
+  // --- Whitelist / validacao antes de atacar (pagina atacar) ---
+  var WHITELIST_CACADAS_DEFAULT = 'yoruhime,bardo';
+  var MAX_RYOUS_CACADAS_DEFAULT = 20000000;
+  var DIFF_NIVEL_CACADAS_DEFAULT = 20;
+
+  function normalizarNomeCacadas(nome) {
+    return String(nome || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function obterWhitelistCacadas() {
+    var raw = localStorage.getItem('BOT_WHITELIST_CACADAS');
+    if (!raw) raw = WHITELIST_CACADAS_DEFAULT;
+    return raw.split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
+  }
+
+  function obterMaxRyousCacadas() {
+    var n = parseNumeroInteiro(localStorage.getItem('BOT_MAX_RYOUS_CACADAS'));
+    return n === null ? MAX_RYOUS_CACADAS_DEFAULT : n;
+  }
+
+  function obterDiffNivelCacadas() {
+    var n = parseNumeroInteiro(localStorage.getItem('BOT_DIFF_NIVEL_CACADAS'));
+    return n === null ? DIFF_NIVEL_CACADAS_DEFAULT : n;
+  }
+
+  function descreverWhitelistAtacar() {
+    var lista = obterWhitelistCacadas();
+    if (!localStorage.getItem('BOT_WHITELIST_CACADAS')) {
+      return lista.join(', ') + ' (padrao)';
+    }
+    return lista.join(', ') + ' (bot_whitelist_cacadas)';
+  }
+
+  function parseNumeroBr(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var s = String(valor).replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
+    var n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+
+  function formatarNumeroBr(n) {
+    if (n === null || n === undefined || isNaN(n)) return '?';
+    try {
+      return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch (e) {
+      return String(n);
+    }
+  }
+
+  function extrairValorLinhaTabela(rotuloParcial) {
+    var linhas = document.querySelectorAll('table tr');
+    var alvo = rotuloParcial.toLowerCase();
+
+    for (var i = 0; i < linhas.length; i++) {
+      var tds = linhas[i].querySelectorAll('td');
+      if (tds.length < 2) continue;
+
+      var rotulo = (tds[0].innerText || tds[0].textContent || '').trim().toLowerCase();
+      if (rotulo.indexOf(alvo) !== 0) continue;
+
+      return (tds[1].innerText || tds[1].textContent || '').replace(/^\|\s*/, '').trim();
+    }
+
+    return null;
+  }
+
+  function extrairNivelJogadorSidebar() {
+    var col = document.getElementById('col_esquerda');
+    if (!col) return null;
+
+    var html = col.innerHTML || '';
+    var m = html.match(/N[ií]vel:<\/strong>\s*(\d+)/i);
+    if (m) return parseInt(m[1], 10);
+
+    var texto = col.innerText || col.textContent || '';
+    m = texto.match(/N[ií]vel:\s*(\d+)/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function extrairNivelInimigo(textoNivel) {
+    if (!textoNivel) return null;
+    var m = String(textoNivel).match(/\[(\d+)\]/);
+    if (m) return parseInt(m[1], 10);
+    m = String(textoNivel).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function extrairNomeBuscaInimigo() {
+    var els = document.querySelectorAll('td[style*="padding-top"]');
+    for (var i = 0; i < els.length; i++) {
+      var txt = (els[i].innerText || els[i].textContent || '').trim();
+      var m = txt.match(/Inimigo\s+(.+)/i);
+      if (m) return m[1].trim();
+    }
+    return null;
+  }
+
+  function extrairDadosAlvoAtacar() {
+    var personagem = extrairValorLinhaTabela('personagem');
+    var nivelTexto = extrairValorLinhaTabela('nível ninja');
+    if (!nivelTexto) nivelTexto = extrairValorLinhaTabela('nivel ninja');
+    var ryousTexto = extrairValorLinhaTabela('ryous faturados');
+    var cla = extrairValorLinhaTabela('clã');
+    if (!cla) cla = extrairValorLinhaTabela('cla');
+
+    return {
+      personagem: personagem || '(desconhecido)',
+      busca: extrairNomeBuscaInimigo(),
+      nivelTexto: nivelTexto || '?',
+      nivel: extrairNivelInimigo(nivelTexto),
+      ryousTexto: ryousTexto || '?',
+      ryous: parseNumeroBr(ryousTexto),
+      cla: cla || '?',
+      meuNivel: extrairNivelJogadorSidebar()
+    };
+  }
+
+  function nomeNaWhitelistCacadas(nome) {
+    var norm = normalizarNomeCacadas(nome);
+    if (!norm) return false;
+    var lista = obterWhitelistCacadas();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
+  function validarAlvoAtacar() {
+    var dados = extrairDadosAlvoAtacar();
+    var motivos = [];
+    var maxRyous = obterMaxRyousCacadas();
+    var diffMin = obterDiffNivelCacadas();
+    var whitelist = obterWhitelistCacadas();
+
+    if (!nomeNaWhitelistCacadas(dados.personagem)) {
+      motivos.push(
+        'Nome "' + dados.personagem + '" fora da whitelist (' + whitelist.join(', ') + ')'
+      );
+    }
+
+    if (dados.ryous === null) {
+      motivos.push('Ryous faturados nao encontrados na pagina');
+    } else if (dados.ryous >= maxRyous) {
+      motivos.push(
+        'Ryous faturados ' + formatarNumeroBr(dados.ryous) +
+        ' >= limite ' + formatarNumeroBr(maxRyous)
+      );
+    }
+
+    if (dados.meuNivel === null) {
+      motivos.push('Nivel do jogador nao encontrado na sidebar');
+    } else if (dados.nivel === null) {
+      motivos.push('Nivel do inimigo nao encontrado (' + dados.nivelTexto + ')');
+    } else {
+      var diff = dados.meuNivel - dados.nivel;
+      dados.diffNivel = diff;
+      if (diff < diffMin) {
+        motivos.push(
+          'Inimigo nivel ' + dados.nivel + ' nao esta ' + diffMin +
+          '+ abaixo do seu (' + dados.meuNivel + ', diff=' + diff + ')'
+        );
+      }
+    }
+
+    return {
+      ok: motivos.length === 0,
+      motivos: motivos,
+      dados: dados,
+      config: {
+        whitelist: whitelist,
+        maxRyous: maxRyous,
+        diffNivel: diffMin
+      }
+    };
+  }
+
+  function enviarDiscordTexto(mensagem) {
+    return fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'Bot Shadow of Shinobi',
+        content: mensagem
+      })
+    }).then(function(r) {
+      if (r.ok) console.log('[Discord] Aviso enviado.');
+      else console.warn('[Discord] Falha ao enviar aviso:', r.status);
+    }).catch(function(e) {
+      console.error('[Discord] Erro ao enviar aviso:', e);
+    });
+  }
+
+  function montarMensagemAlvoIgnorado(resultado) {
+    var d = resultado.dados;
+    var linhas = [
+      '**Alvo ignorado** — ' + USUARIO_FINAL,
+      'Personagem: **' + d.personagem + '**',
+      'Ryous faturados: ' + d.ryousTexto,
+      'Nivel inimigo: ' + d.nivelTexto +
+        ' | Seu nivel: ' + (d.meuNivel !== null ? d.meuNivel : '?') +
+        ' | Diff: ' + (d.diffNivel !== undefined ? d.diffNivel : '?'),
+      'Cla: ' + d.cla,
+      'Motivo: ' + resultado.motivos.join('; ')
+    ];
+    return linhas.join('\n');
+  }
+
+  function avisarDiscordEVoltarCacadas(mensagem) {
+    enviarDiscordTexto(mensagem).finally(function() {
+      setTimeout(function() {
+        window.location.href = URL_CACADAS;
+      }, 1500);
+    });
+  }
+
+  function atacarAlvoValido(resultado, btnAtacar) {
+    console.log(
+      '[Atacar] Alvo aprovado — ' + resultado.dados.personagem +
+      ' | Ryous ' + resultado.dados.ryousTexto +
+      ' | Diff nivel ' + resultado.dados.diffNivel
+    );
+    if (btnAtacar) btnAtacar.click();
+  }
+
+  function pularAlvoInvalido(resultado) {
+    console.warn('[Atacar] Alvo ignorado — ' + resultado.motivos.join(' | '));
+    avisarDiscordEVoltarCacadas(montarMensagemAlvoIgnorado(resultado));
+  }
+
+  function paginaConfirmacaoAtaque() {
+    return !!document.querySelector('form[action="atacar"] input[name="confirmar_ataque"]');
+  }
+
+  // --- Resultado do combate (caçadas) ---
+  var MIN_RYOUS_VITORIA_CACADAS_DEFAULT = 100000;
+  var COMBATE_POLL_MS = 2000;
+  var COMBATE_POLL_MAX = 45;
+
+  function obterMinRyousVitoriaCacadas() {
+    var n = parseNumeroInteiro(localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS'));
+    return n === null ? MIN_RYOUS_VITORIA_CACADAS_DEFAULT : n;
+  }
+
+  function limparNotificacaoCombate() {
+    try { sessionStorage.removeItem(BOT_COMBATE_NOTIFICADO_KEY); } catch (e) {}
+  }
+
+  function marcarCombateNotificado() {
+    try { sessionStorage.setItem(BOT_COMBATE_NOTIFICADO_KEY, '1'); } catch (e) {}
+  }
+
+  function combateJaNotificado() {
+    try { return sessionStorage.getItem(BOT_COMBATE_NOTIFICADO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function salvarUltimoAlvo(dados) {
+    try {
+      sessionStorage.setItem(BOT_ULTIMO_ALVO_KEY, JSON.stringify({
+        personagem: dados.personagem,
+        ryous: dados.ryous,
+        ryousTexto: dados.ryousTexto,
+        cla: dados.cla,
+        ts: Date.now()
+      }));
+      limparNotificacaoCombate();
+    } catch (e) {}
+  }
+
+  function lerUltimoAlvo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_ULTIMO_ALVO_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  }
+
+  function extrairHpSidebar() {
+    var col = document.getElementById('col_esquerda');
+    if (!col) return null;
+
+    var html = col.innerHTML || '';
+    var m = html.match(/HP:<\/strong>\s*<span[^>]*>([\d.]+)<\/span>\s*\/\s*<span[^>]*>([\d.]+)<\/span>/i);
+    if (m) {
+      return { atual: parseNumeroBr(m[1]), max: parseNumeroBr(m[2]), texto: m[1] + '/' + m[2] };
+    }
+
+    var texto = col.innerText || col.textContent || '';
+    m = texto.match(/HP:\s*([\d.]+)\s*\/\s*([\d.]+)/i);
+    if (!m) return null;
+    return { atual: parseNumeroBr(m[1]), max: parseNumeroBr(m[2]), texto: m[1] + '/' + m[2] };
+  }
+
+  function indicioDerrotaPorHp(hp) {
+    if (!hp || hp.atual === null || hp.max === null || hp.max <= 0) return false;
+    return hp.atual <= 1 || (hp.atual / hp.max) <= 0.05;
+  }
+
+  function ehPaginaCombateCacadas(url) {
+    return url.indexOf('invasor-combate') === -1 && /\/combate(?:[\/?#]|$)/i.test(url);
+  }
+
+  function paginaCooldownCacadas() {
+    return !!document.getElementById('caca_cd_timer');
+  }
+
+  function classificarResultadoCombate() {
+    var texto = (document.body ? document.body.innerText || document.body.textContent || '' : '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    if (
+      texto.indexOf('voce perdeu') !== -1 ||
+      texto.indexOf('you lose') !== -1 ||
+      texto.indexOf('foi derrotado') !== -1 ||
+      texto.indexOf('nao venceu') !== -1 ||
+      texto.indexOf('perdeu o combate') !== -1 ||
+      (texto.indexOf('derrota') !== -1 && texto.indexOf('vitoria') === -1)
+    ) {
+      return 'derrota';
+    }
+
+    if (
+      texto.indexOf('voce venceu') !== -1 ||
+      texto.indexOf('you win') !== -1 ||
+      texto.indexOf('venceu o combate') !== -1 ||
+      texto.indexOf('vitoria') !== -1 ||
+      texto.indexOf('parabens') !== -1
+    ) {
+      return 'vitoria';
+    }
+
+    return null;
+  }
+
+  function extrairDadosResultadoCombate() {
+    var dados = extrairDadosAlvoAtacar();
+    var alvo = lerUltimoAlvo();
+
+    if ((!dados.personagem || dados.personagem === '(desconhecido)') && alvo && alvo.personagem) {
+      dados.personagem = alvo.personagem;
+    }
+    if (dados.ryous === null && alvo) {
+      dados.ryous = alvo.ryous;
+      dados.ryousTexto = alvo.ryousTexto || '?';
+    }
+    if ((!dados.cla || dados.cla === '?') && alvo && alvo.cla) {
+      dados.cla = alvo.cla;
+    }
+
+    dados.hp = extrairHpSidebar();
+    return dados;
+  }
+
+  function montarMensagemCombateDerrota(dados) {
+    var linhas = [
+      '**Combate — Derrota** — ' + USUARIO_FINAL,
+      'Inimigo: **' + (dados.personagem || '?') + '**',
+      'Ryous faturados: ' + (dados.ryousTexto || '?')
+    ];
+    if (dados.hp && dados.hp.texto) linhas.push('HP apos combate: ' + dados.hp.texto);
+    return linhas.join('\n');
+  }
+
+  function montarMensagemCombateVitoria(dados) {
+    var linhas = [
+      '**Combate — Vitoria** — ' + USUARIO_FINAL,
+      'Inimigo: **' + (dados.personagem || '?') + '**',
+      'Ryous faturados: ' + (dados.ryousTexto || '?') +
+        ' (min. ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) + ')'
+    ];
+    if (dados.hp && dados.hp.texto) linhas.push('HP apos combate: ' + dados.hp.texto);
+    return linhas.join('\n');
+  }
+
+  function notificarCombateSeNecessario(origem, dados, resultado) {
+    if (combateJaNotificado()) {
+      console.log('[Combate] Ja notificado nesta batalha (' + origem + ').');
+      return false;
+    }
+
+    if (resultado === 'derrota') {
+      marcarCombateNotificado();
+      enviarDiscordTexto(montarMensagemCombateDerrota(dados));
+      console.log('[Combate] Derrota avisada no Discord (' + origem + ').');
+      return true;
+    }
+
+    if (resultado === 'vitoria') {
+      var minRyous = obterMinRyousVitoriaCacadas();
+      if (dados.ryous !== null && dados.ryous > minRyous) {
+        marcarCombateNotificado();
+        enviarDiscordTexto(montarMensagemCombateVitoria(dados));
+        console.log('[Combate] Vitoria avisada no Discord (' + origem + ').');
+        return true;
+      }
+      console.log('[Combate] Vitoria com ryous <= limite — sem Discord.');
+    }
+
+    return false;
+  }
+
+  function finalizarCombate(origem, resultado) {
+    var dados = extrairDadosResultadoCombate();
+    notificarCombateSeNecessario(origem, dados, resultado);
+
+    if (origem === 'combate' && !paginaCooldownCacadas()) {
+      setTimeout(function() {
+        window.location.href = URL_CACADAS;
+      }, 1500);
+    }
+  }
+
+  function aguardarResultadoCombate(tentativa) {
+    if (combateJaNotificado()) return;
+
+    var resultado = classificarResultadoCombate();
+    if (resultado) {
+      combateProcessando = false;
+      finalizarCombate('combate', resultado);
+      return;
+    }
+
+    var hp = extrairHpSidebar();
+    if (paginaCooldownCacadas() || (tentativa >= 3 && indicioDerrotaPorHp(hp))) {
+      combateProcessando = false;
+      if (indicioDerrotaPorHp(hp)) {
+        finalizarCombate('combate-hp', 'derrota');
+      } else if (paginaCooldownCacadas()) {
+        processarPosCombateCacadas('combate-cooldown');
+      } else {
+        console.warn('[Combate] Resultado nao identificado na pagina /combate.');
+        window.location.href = URL_CACADAS;
+      }
+      return;
+    }
+
+    if (tentativa >= COMBATE_POLL_MAX) {
+      combateProcessando = false;
+      console.warn('[Combate] Tempo esgotado aguardando resultado.');
+      window.location.href = URL_CACADAS;
+      return;
+    }
+
+    setTimeout(function() {
+      aguardarResultadoCombate(tentativa + 1);
+    }, COMBATE_POLL_MS);
+  }
+
+  function iniciarMonitorCombate() {
+    if (combateProcessando || combateJaNotificado()) return true;
+    combateProcessando = true;
+    console.log('[Combate] Monitorando resultado...');
+    aguardarResultadoCombate(0);
+    return true;
+  }
+
+  function processarPosCombateCacadas(origem) {
+    if (combateJaNotificado()) return true;
+
+    var alvo = lerUltimoAlvo();
+    if (!alvo) return true;
+
+    var dados = extrairDadosResultadoCombate();
+    var hp = dados.hp || extrairHpSidebar();
+    var derrota = indicioDerrotaPorHp(hp);
+
+    if (derrota) {
+      notificarCombateSeNecessario(origem || 'cacadas-cooldown', dados, 'derrota');
+      return true;
+    }
+
+    var minRyous = obterMinRyousVitoriaCacadas();
+    if (dados.ryous !== null && dados.ryous > minRyous) {
+      notificarCombateSeNecessario(origem || 'cacadas-cooldown', dados, 'vitoria');
+      return true;
+    }
+
+    marcarCombateNotificado();
+    console.log('[Combate] Pos-combate em caçadas — sem aviso Discord.');
+    return true;
   }
 
   // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---
@@ -766,7 +1318,15 @@
     return obterModoAba() === 'invasor' ? URL_INVASOR : URL_CACADAS;
   }
 
-  console.log('[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL + ' | Espera caçadas: ' + descreverEsperaCacadas() + ' | Código: ' + CODIGO_SERVIDOR);
+  console.log(
+    '[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL +
+    ' | Espera caçadas: ' + descreverEsperaCacadas() +
+    ' | Whitelist: ' + descreverWhitelistAtacar() +
+    ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
+    ' | Diff nivel: ' + obterDiffNivelCacadas() +
+    ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
+    ' | Código: ' + CODIGO_SERVIDOR
+  );
 
   setTimeout(function() {
     try {
@@ -887,9 +1447,22 @@
           }
         },
         {
+          id: 'combate',
+          checar: function() {
+            return obterModoAba() === 'cacadas' && ehPaginaCombateCacadas(urlAtual);
+          },
+          executar: function() {
+            return iniciarMonitorCombate();
+          }
+        },
+        {
           id: 'cacadas',
           checar: function() { return urlAtual.indexOf('cacadas') !== -1; },
           executar: function() {
+            if (paginaCooldownCacadas()) {
+              return processarPosCombateCacadas('cacadas-cooldown');
+            }
+
             var selectNivel = document.getElementById('por_nivel');
 
             if (selectNivel) {
@@ -923,15 +1496,26 @@
         },
         {
           id: 'atacar',
-          checar: function() { return urlAtual.indexOf('atacar') !== -1; },
+          checar: function() {
+            return urlAtual.indexOf('atacar') !== -1 && paginaConfirmacaoAtaque();
+          },
           executar: function() {
-            var btnAtacar = document.querySelector('form[action="atacar"] input[type="submit"]');
+            if (atacarJaProcessado) return true;
 
-            if (btnAtacar) {
-              btnAtacar.click();
+            var btnAtacar = document.querySelector('form[action="atacar"] input[type="submit"]');
+            if (!btnAtacar) return false;
+
+            var resultado = validarAlvoAtacar();
+            atacarJaProcessado = true;
+            salvarUltimoAlvo(resultado.dados);
+
+            if (!resultado.ok) {
+              pularAlvoInvalido(resultado);
               return true;
             }
-            return false;
+
+            atacarAlvoValido(resultado, btnAtacar);
+            return true;
           }
         }
       ];
@@ -945,7 +1529,7 @@
           paginaEncontrada = true;
           var sucessoAcao = pagina.executar();
 
-          if (!sucessoAcao && pagina.id !== 'captcha_seguranca') { 
+          if (!sucessoAcao && pagina.id !== 'captcha_seguranca' && pagina.id !== 'combate') { 
             agendarReloadFalha('Falha de ação na página ' + pagina.id);
           }
           break;
