@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.47
+// @version      2.48
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.47';
-  var SCRIPT_ATUALIZADO = '18/08/2026 18:30';
+  var SCRIPT_VERSAO = '2.48';
+  var SCRIPT_ATUALIZADO = '18/08/2026 18:32';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -431,9 +431,9 @@
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
-  // Padrao sem config: madrugada (2h-9h) = 8-20min; comercial = 3-12min
+  // Padrao sem config: madrugada (2h-9h) = 8-15min; comercial = 3-12min
   var ESPERA_CACADAS_MADRUGADA_MIN_MS = 480000;   // 8 min
-  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 1200000;  // 20 min
+  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 900000;    // 15 min
   var ESPERA_CACADAS_COMERCIAL_MIN_MS = 180000;    // 3 min
   var ESPERA_CACADAS_COMERCIAL_MAX_MS = 720000;    // 12 min
   var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;        // 02:00
@@ -483,7 +483,7 @@
   function descreverEsperaCacadas() {
     var iv = calcularIntervaloEsperaCacadas();
     if (iv.origem === 'padrao-madrugada') {
-      return '8-20min (madrugada 2h-9h)';
+      return '8-15min (madrugada 2h-9h)';
     }
     if (iv.origem === 'padrao-comercial') {
       return '3-12min (horario comercial)';
