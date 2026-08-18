@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.41
+// @version      2.42
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.41';
-  var SCRIPT_ATUALIZADO = '18/08/2026 10:35';
+  var SCRIPT_VERSAO = '2.42';
+  var SCRIPT_ATUALIZADO = '18/08/2026 10:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -340,7 +340,8 @@
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
-  var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
+  var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
+  var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var captchaJaNotificado = false;
   var atacarJaProcessado = false;
@@ -676,8 +677,10 @@
     };
   }
 
-  function enviarDiscordTexto(mensagem) {
-    return fetch(DISCORD_WEBHOOK_URL, {
+  function enviarDiscordTexto(mensagem, webhookUrl) {
+    var url = webhookUrl || DISCORD_WEBHOOK_CACADAS;
+    if (!url) return Promise.resolve();
+    return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1122,7 +1125,7 @@
     formData.append('payload_json', JSON.stringify(payloadData));
     formData.append('file', blob, 'captcha.png');
 
-    fetch(DISCORD_WEBHOOK_URL, { method: 'POST', body: formData })
+    fetch(DISCORD_WEBHOOK_CAPTCHA, { method: 'POST', body: formData })
       .then(function(r) {
         if (r.ok) console.log('[Discord] Captcha enviado (recorte, sem html2canvas).');
         if (callback) callback();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.8
+// @version      5.9
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -143,8 +143,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.8';
-  var SCRIPT_ATUALIZADO = '18/08/2026 00:05';
+  var SCRIPT_VERSAO = '5.9';
+  var SCRIPT_ATUALIZADO = '18/08/2026 10:45';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -228,7 +228,7 @@
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var URL_HOME = 'https://shadowofshinobi.com/';
-  var DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1536968358195503224/lSz9-SrV7bPRk5B-RHrvPgn2Uij-hr7TLhgtOVx_0-5dfPVc6Kp2YMv5xG9SZvJxcsCO';
+  var DISCORD_WEBHOOK_INVASOR = 'https://discord.com/api/webhooks/1539268145745895516/YLx8PWr2YwMwHflKqSM8docpJzKdcdNuYHyzyYRrSRMgrioGEhzc4OKp83Q-gLrAuUTH';
   var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
 
   function montarUrlLoginComParams() {
@@ -419,7 +419,7 @@
 
   // --- ROLA A TELA E ENVIA PRINT PRO DISCORD ---
   async function capturarEEnviarPrintInferiorDiscord(motivo, silencioso) {
-    if (!DISCORD_WEBHOOK_URL) return;
+    if (!DISCORD_WEBHOOK_INVASOR) return;
 
     try {
       window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
@@ -452,7 +452,7 @@
         formData.append('payload_json', JSON.stringify(payload));
         formData.append('file', blob, 'print-invasor.png');
 
-        fetch(DISCORD_WEBHOOK_URL, {
+        fetch(DISCORD_WEBHOOK_INVASOR, {
           method: 'POST',
           body: formData
         })
