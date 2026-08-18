@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.31
+// @version      2.32
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.31';
-  var SCRIPT_ATUALIZADO = '18/08/2026 01:05';
+  var SCRIPT_VERSAO = '2.32';
+  var SCRIPT_ATUALIZADO = '18/08/2026 01:10';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -460,7 +460,7 @@
     return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
   }
 
-  // --- Whitelist / validacao antes de atacar (pagina atacar) ---
+  // --- Whitelist = nomes que NAO atacar (pagina atacar) ---
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,bardo';
   var MAX_RYOUS_CACADAS_DEFAULT = 20000000;
   var DIFF_NIVEL_CACADAS_DEFAULT = 20;
@@ -491,10 +491,10 @@
 
   function descreverWhitelistAtacar() {
     var lista = obterWhitelistCacadas();
-    if (!localStorage.getItem('BOT_WHITELIST_CACADAS')) {
-      return lista.join(', ') + ' (padrao)';
-    }
-    return lista.join(', ') + ' (bot_whitelist_cacadas)';
+    var sufixo = localStorage.getItem('BOT_WHITELIST_CACADAS')
+      ? ' (bot_whitelist_cacadas)'
+      : ' (padrao)';
+    return 'nao atacar: ' + lista.join(', ') + sufixo;
   }
 
   function parseNumeroBr(valor) {
@@ -513,8 +513,9 @@
     }
   }
 
-  function extrairValorLinhaTabela(rotuloParcial) {
-    var linhas = document.querySelectorAll('table tr');
+  function extrairValorLinhaTabela(rotuloParcial, escopo) {
+    var root = escopo || document.getElementById('col_direita') || document;
+    var linhas = root.querySelectorAll('table tr');
     var alvo = rotuloParcial.toLowerCase();
 
     for (var i = 0; i < linhas.length; i++) {
@@ -551,27 +552,39 @@
     return m ? parseInt(m[1], 10) : null;
   }
 
-  function extrairNomeBuscaInimigo() {
-    var els = document.querySelectorAll('td[style*="padding-top"]');
+  function extrairNomeInimigo() {
+    var col = document.getElementById('col_direita');
+    var texto = col ? (col.innerText || col.textContent || '') : '';
+
+    var m = texto.match(/Resultados da busca\s*[-–—]\s*Inimigo\s+(.+)/i);
+    if (m) return m[1].trim();
+
+    var els = col
+      ? col.querySelectorAll('td[style*="padding-top"]')
+      : document.querySelectorAll('td[style*="padding-top"]');
+
     for (var i = 0; i < els.length; i++) {
       var txt = (els[i].innerText || els[i].textContent || '').trim();
-      var m = txt.match(/Inimigo\s+(.+)/i);
+      m = txt.match(/Inimigo\s+(.+)/i);
       if (m) return m[1].trim();
     }
+
     return null;
   }
 
   function extrairDadosAlvoAtacar() {
-    var personagem = extrairValorLinhaTabela('personagem');
-    var nivelTexto = extrairValorLinhaTabela('nível ninja');
-    if (!nivelTexto) nivelTexto = extrairValorLinhaTabela('nivel ninja');
-    var ryousTexto = extrairValorLinhaTabela('ryous faturados');
-    var cla = extrairValorLinhaTabela('clã');
-    if (!cla) cla = extrairValorLinhaTabela('cla');
+    var colDireita = document.getElementById('col_direita');
+    var inimigo = extrairNomeInimigo();
+    var personagem = extrairValorLinhaTabela('personagem', colDireita);
+    var nivelTexto = extrairValorLinhaTabela('nível ninja', colDireita);
+    if (!nivelTexto) nivelTexto = extrairValorLinhaTabela('nivel ninja', colDireita);
+    var ryousTexto = extrairValorLinhaTabela('ryous faturados', colDireita);
+    var cla = extrairValorLinhaTabela('clã', colDireita);
+    if (!cla) cla = extrairValorLinhaTabela('cla', colDireita);
 
     return {
-      personagem: personagem || '(desconhecido)',
-      busca: extrairNomeBuscaInimigo(),
+      inimigo: inimigo || '(desconhecido)',
+      personagem: personagem || '?',
       nivelTexto: nivelTexto || '?',
       nivel: extrairNivelInimigo(nivelTexto),
       ryousTexto: ryousTexto || '?',
@@ -581,7 +594,14 @@
     };
   }
 
-  function nomeNaWhitelistCacadas(nome) {
+  function nomeExibicaoInimigo(dados) {
+    if (!dados) return '?';
+    if (dados.inimigo && dados.inimigo !== '(desconhecido)') return dados.inimigo;
+    if (dados.personagem && dados.personagem !== '?') return dados.personagem;
+    return '?';
+  }
+
+  function nomeBloqueadoPorWhitelist(nome) {
     var norm = normalizarNomeCacadas(nome);
     if (!norm) return false;
     var lista = obterWhitelistCacadas();
@@ -598,9 +618,11 @@
     var diffMin = obterDiffNivelCacadas();
     var whitelist = obterWhitelistCacadas();
 
-    if (!nomeNaWhitelistCacadas(dados.personagem)) {
+    if (dados.inimigo === '(desconhecido)') {
+      motivos.push('Nome do inimigo nao encontrado na pagina');
+    } else if (nomeBloqueadoPorWhitelist(dados.inimigo)) {
       motivos.push(
-        'Nome "' + dados.personagem + '" fora da whitelist (' + whitelist.join(', ') + ')'
+        'Inimigo "' + dados.inimigo + '" esta na whitelist — nao atacar (' + whitelist.join(', ') + ')'
       );
     }
 
@@ -660,14 +682,19 @@
     var d = resultado.dados;
     var linhas = [
       '**Alvo ignorado** — ' + USUARIO_FINAL,
-      'Personagem: **' + d.personagem + '**',
+      'Inimigo: **' + nomeExibicaoInimigo(d) + '**'
+    ];
+    if (d.personagem && d.personagem !== '?') {
+      linhas.push('Personagem: ' + d.personagem);
+    }
+    linhas.push(
       'Ryous faturados: ' + d.ryousTexto,
       'Nivel inimigo: ' + d.nivelTexto +
         ' | Seu nivel: ' + (d.meuNivel !== null ? d.meuNivel : '?') +
         ' | Diff: ' + (d.diffNivel !== undefined ? d.diffNivel : '?'),
       'Cla: ' + d.cla,
       'Motivo: ' + resultado.motivos.join('; ')
-    ];
+    );
     return linhas.join('\n');
   }
 
@@ -681,7 +708,7 @@
 
   function atacarAlvoValido(resultado, btnAtacar) {
     console.log(
-      '[Atacar] Alvo aprovado — ' + resultado.dados.personagem +
+      '[Atacar] Alvo aprovado — ' + nomeExibicaoInimigo(resultado.dados) +
       ' | Ryous ' + resultado.dados.ryousTexto +
       ' | Diff nivel ' + resultado.dados.diffNivel
     );
@@ -723,6 +750,7 @@
   function salvarUltimoAlvo(dados) {
     try {
       sessionStorage.setItem(BOT_ULTIMO_ALVO_KEY, JSON.stringify({
+        inimigo: dados.inimigo,
         personagem: dados.personagem,
         ryous: dados.ryous,
         ryousTexto: dados.ryousTexto,
@@ -805,7 +833,11 @@
     var dados = extrairDadosAlvoAtacar();
     var alvo = lerUltimoAlvo();
 
-    if ((!dados.personagem || dados.personagem === '(desconhecido)') && alvo && alvo.personagem) {
+    if ((!dados.inimigo || dados.inimigo === '(desconhecido)') && alvo) {
+      if (alvo.inimigo) dados.inimigo = alvo.inimigo;
+      else if (alvo.personagem) dados.inimigo = alvo.personagem;
+    }
+    if ((!dados.personagem || dados.personagem === '?') && alvo && alvo.personagem) {
       dados.personagem = alvo.personagem;
     }
     if (dados.ryous === null && alvo) {
@@ -823,9 +855,12 @@
   function montarMensagemCombateDerrota(dados) {
     var linhas = [
       '**Combate — Derrota** — ' + USUARIO_FINAL,
-      'Inimigo: **' + (dados.personagem || '?') + '**',
+      'Inimigo: **' + nomeExibicaoInimigo(dados) + '**',
       'Ryous faturados: ' + (dados.ryousTexto || '?')
     ];
+    if (dados.personagem && dados.personagem !== '?') {
+      linhas.push('Personagem: ' + dados.personagem);
+    }
     if (dados.hp && dados.hp.texto) linhas.push('HP apos combate: ' + dados.hp.texto);
     return linhas.join('\n');
   }
@@ -833,10 +868,13 @@
   function montarMensagemCombateVitoria(dados) {
     var linhas = [
       '**Combate — Vitoria** — ' + USUARIO_FINAL,
-      'Inimigo: **' + (dados.personagem || '?') + '**',
+      'Inimigo: **' + nomeExibicaoInimigo(dados) + '**',
       'Ryous faturados: ' + (dados.ryousTexto || '?') +
         ' (min. ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) + ')'
     ];
+    if (dados.personagem && dados.personagem !== '?') {
+      linhas.push('Personagem: ' + dados.personagem);
+    }
     if (dados.hp && dados.hp.texto) linhas.push('HP apos combate: ' + dados.hp.texto);
     return linhas.join('\n');
   }
