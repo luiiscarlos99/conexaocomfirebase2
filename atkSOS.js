@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.39
+// @version      2.40
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.39';
-  var SCRIPT_ATUALIZADO = '18/08/2026 02:25';
+  var SCRIPT_VERSAO = '2.40';
+  var SCRIPT_ATUALIZADO = '18/08/2026 02:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -596,7 +596,6 @@
   function nomeExibicaoInimigo(dados) {
     if (!dados) return '?';
     if (dados.inimigo && dados.inimigo !== '(desconhecido)') return dados.inimigo;
-    if (dados.personagem && dados.personagem !== '?') return dados.personagem;
     return '?';
   }
 
@@ -683,9 +682,6 @@
       '**Alvo ignorado** — ' + USUARIO_FINAL,
       'Inimigo: **' + nomeExibicaoInimigo(d) + '**'
     ];
-    if (d.personagem && d.personagem !== '?') {
-      linhas.push('Personagem: ' + d.personagem);
-    }
     linhas.push(
       'Ryous faturados: ' + d.ryousTexto,
       'Nivel inimigo: ' + d.nivelTexto +
@@ -836,12 +832,8 @@
     var dados = extrairDadosAlvoAtacar();
     var alvo = lerUltimoAlvo();
 
-    if ((!dados.inimigo || dados.inimigo === '(desconhecido)') && alvo) {
-      if (alvo.inimigo) dados.inimigo = alvo.inimigo;
-      else if (alvo.personagem) dados.inimigo = alvo.personagem;
-    }
-    if ((!dados.personagem || dados.personagem === '?') && alvo && alvo.personagem) {
-      dados.personagem = alvo.personagem;
+    if ((!dados.inimigo || dados.inimigo === '(desconhecido)') && alvo && alvo.inimigo) {
+      dados.inimigo = alvo.inimigo;
     }
     if (dados.ryous === null && alvo) {
       dados.ryous = alvo.ryous;
@@ -860,9 +852,6 @@
       'Inimigo: **' + nomeExibicaoInimigo(dados) + '**',
       'Ryous faturados: ' + (dados.ryousTexto || '?')
     ];
-    if (dados.personagem && dados.personagem !== '?') {
-      linhas.push('Personagem: ' + dados.personagem);
-    }
     if (dados.resumoCombate) linhas.push('Resumo: ' + dados.resumoCombate);
     return linhas.join('\n');
   }
@@ -874,9 +863,6 @@
       'Ryous faturados: ' + (dados.ryousTexto || '?') +
         ' (min. ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) + ')'
     ];
-    if (dados.personagem && dados.personagem !== '?') {
-      linhas.push('Personagem: ' + dados.personagem);
-    }
     if (dados.resumoCombate) linhas.push('Resumo: ' + dados.resumoCombate);
     return linhas.join('\n');
   }
