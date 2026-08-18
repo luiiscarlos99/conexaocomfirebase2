@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.7
+// @version      5.8
 // @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -41,7 +41,7 @@
     return limite + ' (bot_limite_invasor=' + raw + ')';
   }
 
-  var LIMITE_INVASOR_DEFAULT = 3000;
+  var LIMITE_INVASOR_DEFAULT = 2000;
 
   function lerModoReferrer() {
     try {
@@ -143,8 +143,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.7';
-  var SCRIPT_ATUALIZADO = '17/08/2026 09:30';
+  var SCRIPT_VERSAO = '5.8';
+  var SCRIPT_ATUALIZADO = '18/08/2026 00:05';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
