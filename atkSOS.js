@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.40
+// @version      2.41
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.40';
-  var SCRIPT_ATUALIZADO = '18/08/2026 02:35';
+  var SCRIPT_VERSAO = '2.41';
+  var SCRIPT_ATUALIZADO = '18/08/2026 10:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -419,18 +419,29 @@
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
+  // Padrao sem config: 2h-9h = 5-12min; demais horarios = 1min (minimo)
   var ESPERA_CACADAS_DEFAULT_MIN_MS = 300000;  // 5 min
   var ESPERA_CACADAS_DEFAULT_MAX_MS = 720000;  // 12 min
+  var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;    // 02:00
+  var ESPERA_CACADAS_HORA_FIM_LENTA = 9;       // ate 08:59
+
+  function estaNoHorarioEsperaCacadasLenta() {
+    var hora = new Date().getHours();
+    return hora >= ESPERA_CACADAS_HORA_INICIO_LENTA && hora < ESPERA_CACADAS_HORA_FIM_LENTA;
+  }
 
   function calcularIntervaloEsperaCacadas() {
     var minutos = parseEsperaCacadasMinutos(localStorage.getItem('BOT_ESPERA_CACADAS'));
 
     if (minutos === null) {
-      return {
-        minMs: ESPERA_CACADAS_DEFAULT_MIN_MS,
-        maxMs: ESPERA_CACADAS_DEFAULT_MAX_MS,
-        origem: 'padrao'
-      };
+      if (estaNoHorarioEsperaCacadasLenta()) {
+        return {
+          minMs: ESPERA_CACADAS_DEFAULT_MIN_MS,
+          maxMs: ESPERA_CACADAS_DEFAULT_MAX_MS,
+          origem: 'padrao-madrugada'
+        };
+      }
+      return { minMs: 0, maxMs: 120000, origem: 'padrao-dia', minutos: 1 };
     }
 
     if (minutos < 2) {
@@ -453,7 +464,12 @@
 
   function descreverEsperaCacadas() {
     var iv = calcularIntervaloEsperaCacadas();
-    if (iv.origem === 'padrao') return '5-12min (padrao)';
+    if (iv.origem === 'padrao-madrugada') {
+      return '5-12min (padrao 2h-9h)';
+    }
+    if (iv.origem === 'padrao-dia') {
+      return '0-2min (padrao fora 2h-9h, min=1)';
+    }
     var minMin = Math.round(iv.minMs / 60000);
     var maxMin = Math.round(iv.maxMs / 60000);
     return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
