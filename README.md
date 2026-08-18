@@ -63,7 +63,7 @@ https://shadowofshinobi.com/invasor?bot_modo=invasor
 
 **Login (sessão expirada — home não redireciona antes do script)**
 ```
-https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=2
+https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=3
 https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 ```
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.42
+// @version      2.43
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.42';
-  var SCRIPT_ATUALIZADO = '18/08/2026 10:45';
+  var SCRIPT_VERSAO = '2.43';
+  var SCRIPT_ATUALIZADO = '18/08/2026 11:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -415,8 +415,8 @@
     USUARIO_FINAL = nomeLogado;
   }
 
-  // Nível da Caçada (Lê do localStorage ou usa '2' como padrão)
-  var NIVEL_CACADAS_DEFAULT = '2';
+  // Nível da Caçada (Lê do localStorage ou usa '3' como padrão)
+  var NIVEL_CACADAS_DEFAULT = '3';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
