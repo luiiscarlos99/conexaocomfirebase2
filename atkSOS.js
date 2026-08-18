@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.38
+// @version      2.39
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -224,8 +224,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.38';
-  var SCRIPT_ATUALIZADO = '18/08/2026 02:15';
+  var SCRIPT_VERSAO = '2.39';
+  var SCRIPT_ATUALIZADO = '18/08/2026 02:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -807,6 +807,31 @@
     return null;
   }
 
+  function extrairRyousDoResumoCombate(texto, resultado) {
+    if (!texto) return null;
+
+    var padrao = resultado === 'derrota'
+      ? /perdeu\s+([\d.,]+)\s*ryous/i
+      : /faturou\s+([\d.,]+)\s*ryous/i;
+    var m = texto.match(padrao);
+    if (!m) return null;
+
+    var bruto = m[1].trim();
+    return {
+      valor: parseNumeroBr(bruto),
+      texto: bruto
+    };
+  }
+
+  function aplicarRyousDoResumoCombate(dados, textoResumo, resultado) {
+    var ryousCombate = extrairRyousDoResumoCombate(textoResumo, resultado);
+    if (!ryousCombate || ryousCombate.valor === null) return dados;
+
+    dados.ryous = ryousCombate.valor;
+    dados.ryousTexto = ryousCombate.texto;
+    return dados;
+  }
+
   function extrairDadosResultadoCombate() {
     var dados = extrairDadosAlvoAtacar();
     var alvo = lerUltimoAlvo();
@@ -871,13 +896,14 @@
 
     if (resultado === 'vitoria') {
       var minRyous = obterMinRyousVitoriaCacadas();
-      if (dados.ryous !== null && dados.ryous > minRyous) {
+      var ryousFaturados = dados.ryous;
+      if (ryousFaturados !== null && ryousFaturados > minRyous) {
         marcarCombateNotificado();
         enviarDiscordTexto(montarMensagemCombateVitoria(dados));
-        console.log('[Combate] Vitoria avisada no Discord (' + origem + ').');
+        console.log('[Combate] Vitoria avisada no Discord (' + origem + '). Ryous faturados: ' + ryousFaturados);
         return true;
       }
-      console.log('[Combate] Vitoria com ryous <= limite — sem Discord.');
+      console.log('[Combate] Vitoria com ryous faturados <= limite (' + (ryousFaturados !== null ? ryousFaturados : '?') + ') — sem Discord.');
       marcarCombateNotificado();
     }
 
@@ -907,6 +933,7 @@
 
     var dados = extrairDadosResultadoCombate();
     dados.resumoCombate = parsed.texto;
+    aplicarRyousDoResumoCombate(dados, parsed.texto, parsed.resultado);
     notificarCombateSeNecessario('combate', dados, parsed.resultado);
 
     console.log('[Combate] ' + parsed.resultado + ' detectado: ' + parsed.texto);
