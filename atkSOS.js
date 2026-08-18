@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.43
+// @version      2.44
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -70,13 +70,21 @@
     return true;
   }
 
+  function gravarWhitelistClaCacadasParam(valor) {
+    if (valor === null || valor === undefined || String(valor).trim() === '') return false;
+    localStorage.setItem('BOT_WHITELIST_CLA_CACADAS', String(valor).trim());
+    return true;
+  }
+
   function aplicarParamsCacadasAtacar(rp) {
     if (!rp) return;
     var w = rp.get('bot_whitelist_cacadas');
+    var wc = rp.get('bot_whitelist_cla_cacadas');
     var r = rp.get('bot_max_ryous_cacadas');
     var d = rp.get('bot_diff_nivel_cacadas');
     var v = rp.get('bot_min_ryous_vitoria_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
+    if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
     if (r !== null && r !== '') gravarMaxRyousCacadasParam(r);
     if (d !== null && d !== '') gravarDiffNivelCacadasParam(d);
     if (v !== null && v !== '') gravarMinRyousVitoriaCacadasParam(v);
@@ -174,6 +182,7 @@
       if (!u && !p && !n) aplicarCredenciaisReferrer();
 
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
+          params.get('bot_whitelist_cla_cacadas') ||
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
           modoVeioDeQuery) && window.history && window.history.replaceState) {
@@ -224,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.43';
-  var SCRIPT_ATUALIZADO = '18/08/2026 11:35';
+  var SCRIPT_VERSAO = '2.44';
+  var SCRIPT_ATUALIZADO = '18/08/2026 12:10';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -247,6 +256,7 @@
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
+      var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
       var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
       var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
@@ -256,6 +266,7 @@
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
+      if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
       if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
@@ -476,8 +487,9 @@
     return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
   }
 
-  // --- Whitelist = nomes que NAO atacar (pagina atacar) ---
+  // --- Whitelist = nomes/clas que NAO atacar (pagina atacar) ---
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,bardo,shizuo,sora,shiroe';
+  var WHITELIST_CLA_CACADAS_DEFAULT = 'akatsuki';
   var MAX_RYOUS_CACADAS_DEFAULT = 20000000;
   var DIFF_NIVEL_CACADAS_DEFAULT = 20;
 
@@ -503,6 +515,20 @@
   function obterDiffNivelCacadas() {
     var n = parseNumeroInteiro(localStorage.getItem('BOT_DIFF_NIVEL_CACADAS'));
     return n === null ? DIFF_NIVEL_CACADAS_DEFAULT : n;
+  }
+
+  function obterWhitelistClaCacadas() {
+    var raw = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
+    if (!raw) raw = WHITELIST_CLA_CACADAS_DEFAULT;
+    return raw.split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
+  }
+
+  function descreverWhitelistClaAtacar() {
+    var lista = obterWhitelistClaCacadas();
+    var sufixo = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS')
+      ? ' (bot_whitelist_cla_cacadas)'
+      : ' (padrao)';
+    return 'nao atacar cla: ' + lista.join(', ') + sufixo;
   }
 
   function descreverWhitelistAtacar() {
@@ -626,12 +652,23 @@
     return false;
   }
 
+  function claBloqueadoPorWhitelist(cla) {
+    var norm = normalizarNomeCacadas(cla);
+    if (!norm || norm === '?') return false;
+    var lista = obterWhitelistClaCacadas();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
   function validarAlvoAtacar() {
     var dados = extrairDadosAlvoAtacar();
     var motivos = [];
     var maxRyous = obterMaxRyousCacadas();
     var diffMin = obterDiffNivelCacadas();
     var whitelist = obterWhitelistCacadas();
+    var whitelistCla = obterWhitelistClaCacadas();
 
     if (dados.inimigo === '(desconhecido)') {
       motivos.push('Nome do inimigo nao encontrado na pagina');
@@ -639,6 +676,14 @@
       motivos.push(
         'Inimigo "' + dados.inimigo + '" esta na whitelist — nao atacar (' + whitelist.join(', ') + ')'
       );
+    }
+
+    if (dados.cla && dados.cla !== '?') {
+      if (claBloqueadoPorWhitelist(dados.cla)) {
+        motivos.push(
+          'Cla "' + dados.cla + '" esta na whitelist — nao atacar (' + whitelistCla.join(', ') + ')'
+        );
+      }
     }
 
     if (dados.ryous === null) {
@@ -671,6 +716,7 @@
       dados: dados,
       config: {
         whitelist: whitelist,
+        whitelistCla: whitelistCla,
         maxRyous: maxRyous,
         diffNivel: diffMin
       }
@@ -1319,6 +1365,7 @@
     '[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL +
     ' | Espera caçadas: ' + descreverEsperaCacadas() +
     ' | Whitelist: ' + descreverWhitelistAtacar() +
+    ' | ' + descreverWhitelistClaAtacar() +
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +

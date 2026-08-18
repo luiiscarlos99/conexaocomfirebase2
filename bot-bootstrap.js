@@ -35,6 +35,7 @@
       var e = rp.get('bot_espera_cacadas');
       var l = rp.get('bot_limite_invasor');
       var w = rp.get('bot_whitelist_cacadas');
+      var wc = rp.get('bot_whitelist_cla_cacadas');
       var r = rp.get('bot_max_ryous_cacadas');
       var d = rp.get('bot_diff_nivel_cacadas');
       var v = rp.get('bot_min_ryous_vitoria_cacadas');
@@ -50,6 +51,7 @@
         if (!isNaN(lm) && lm >= 0) localStorage.setItem('BOT_LIMITE_INVASOR', String(lm));
       }
       if (w !== null && w !== '') localStorage.setItem('BOT_WHITELIST_CACADAS', String(w).trim());
+      if (wc !== null && wc !== '') localStorage.setItem('BOT_WHITELIST_CLA_CACADAS', String(wc).trim());
       if (r !== null && r !== '') {
         var rm = parseInt(String(r).replace(/\./g, '').replace(',', ''), 10);
         if (!isNaN(rm) && rm >= 0) localStorage.setItem('BOT_MAX_RYOUS_CACADAS', String(rm));
@@ -81,7 +83,8 @@
       aplicarCredenciais(window.location.search);
       if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
           !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
-          !params.get('bot_whitelist_cacadas') && !params.get('bot_max_ryous_cacadas') &&
+          !params.get('bot_whitelist_cacadas') && !params.get('bot_whitelist_cla_cacadas') &&
+          !params.get('bot_max_ryous_cacadas') &&
           !params.get('bot_diff_nivel_cacadas') && !params.get('bot_min_ryous_vitoria_cacadas')) {
         try {
           var ref = document.referrer || '';
