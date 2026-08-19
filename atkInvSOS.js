@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      6.4
-// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), Discord e sessão.
+// @version      6.5
+// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), Discord, conta gerenciada e sessão.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -738,18 +738,22 @@
     logMonitorLastHitAtivo(coord, derrotados, temBotao, temTimer);
   }
 
-  function calcularTempoReloadInvasor(coord) {
+  function resolverTempoReloadInvasor(coord) {
     if (checarContaGerenciada()) return TEMPO_RELOAD_GERENCIADA;
-    // Poll rapido SOMENTE com invasor_coord ativa (aguardando derrotados)
     if (coordMonitorAtivo(coord)) return TEMPO_RELOAD_MONITOR;
     return TEMPO_RELOAD_PADRAO;
+  }
+
+  function descreverTempoReload(tempoMs) {
+    return (tempoMs / 1000) + 's' +
+      (tempoMs === TEMPO_RELOAD_GERENCIADA ? ' (conta gerenciada)' : '');
   }
 
   function processarCoordInvasor(coord, derrotados, temBotao, temTimer) {
     if (coord && coordExpirada(coord)) {
       console.warn('[LastHit] Coord expirada (>45min) — limpando estado.');
       return limparEstadoFirebaseInvasor('coord expirada').then(function() {
-        return calcularTempoReloadInvasor(null);
+        return resolverTempoReloadInvasor(null);
       });
     }
 
@@ -757,7 +761,7 @@
       console.warn('[LastHit] Derrotados (' + derrotados + ') < base (' +
         coord.derrotados_base + ') — novo evento? Limpando coord.');
       return limparEstadoFirebaseInvasor('contador derrotados regrediu').then(function() {
-        return calcularTempoReloadInvasor(null);
+        return resolverTempoReloadInvasor(null);
       });
     }
 
@@ -773,11 +777,11 @@
         return marcarCoordAtacando(coord).then(function() {
           tentarAtacarLocalmente('Last hit (+' + lh.delta + ' derrotados, min ' + lh.minDelta + ')');
         }).then(function() {
-          return TEMPO_RELOAD_MONITOR;
+          return resolverTempoReloadInvasor(coord);
         });
       }
 
-      return TEMPO_RELOAD_MONITOR;
+      return resolverTempoReloadInvasor(coord);
     }
 
     console.log('[Invasor] Players derrotados: ' + derrotados +
@@ -786,10 +790,12 @@
     if (temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS) {
       tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
     } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
-      console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload 60s).');
+      var tempoPosLimite = resolverTempoReloadInvasor(coord);
+      console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload ' +
+        descreverTempoReload(tempoPosLimite) + ').');
     }
 
-    return calcularTempoReloadInvasor(coord);
+    return resolverTempoReloadInvasor(coord);
   }
 
   function processarPaginaInvasor() {
@@ -810,7 +816,7 @@
 
       if (invasorDerrotado) {
         return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
-          return TEMPO_RELOAD_PADRAO;
+          return resolverTempoReloadInvasor(null);
         });
       }
 
@@ -869,10 +875,32 @@
   }
 
   // --- CHECA SE É CONTA GERENCIADA ---
+  function normalizarTextoPagina(texto) {
+    return String(texto || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  }
+
   function checarContaGerenciada() {
-    var linkVoltar = document.querySelector('a[href*="automacao?voltar=1"]');
-    var possuiTextoGerenciada = document.body && document.body.innerHTML.indexOf("Você está jogando com a conta gerenciada") !== -1;
-    return !!(linkVoltar || possuiTextoGerenciada);
+    try {
+      if (localStorage.getItem('BOT_CONTA_GERENCIADA') === '1') return true;
+    } catch (e) {}
+
+    var linkVoltar = document.querySelector('a[href*="automacao?voltar=1"]') ||
+      document.querySelector('a[href*="automacao"][href*="voltar"]');
+
+    if (linkVoltar) return true;
+
+    var corpo = normalizarTextoPagina(
+      document.body ? (document.body.innerText || document.body.textContent || '') : ''
+    );
+
+    if (corpo.indexOf('conta gerenciada') !== -1) return true;
+    if (corpo.indexOf('jogando com a conta gerenciada') !== -1) return true;
+    if (corpo.indexOf('voce esta jogando com a conta gerenciada') !== -1) return true;
+
+    return false;
   }
 
   // --- DETECÇÃO DE ERRO DE SERVIDOR ---
@@ -949,6 +977,11 @@
         return;
       }
 
+      if (checarContaGerenciada()) {
+        console.warn('[Invasor] Conta GERENCIADA detectada — reload rapido ' +
+          (TEMPO_RELOAD_GERENCIADA / 1000) + 's para acompanhar sumida do botao.');
+      }
+
       var urlAtual = window.location.href;
 
       var pagina = classificarPaginaInvasor(urlAtual);
@@ -980,8 +1013,10 @@
       // 2. TELA DO INVASOR (PRINCIPAL)
       if (pagina.ehInvasor) {
         processarPaginaInvasor().then(function(tempoReload) {
-          var espera = typeof tempoReload === 'number' ? tempoReload : TEMPO_RELOAD_PADRAO;
-          console.log('[Script Invasor] Reload em ' + (espera / 1000) + 's.');
+          var espera = typeof tempoReload === 'number'
+            ? tempoReload
+            : resolverTempoReloadInvasor(null);
+          console.log('[Script Invasor] Reload em ' + descreverTempoReload(espera) + '.');
           setTimeout(function() {
             location.reload();
           }, espera);
