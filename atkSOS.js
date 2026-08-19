@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.48
+// @version      2.51
 // @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.48';
-  var SCRIPT_ATUALIZADO = '18/08/2026 18:32';
+  var SCRIPT_VERSAO = '2.51';
+  var SCRIPT_ATUALIZADO = '19/08/2026 11:52';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -360,6 +360,80 @@
   var BOT_COMBATE_NOTIFICADO_KEY = 'BOT_COMBATE_NOTIFICADO';
   var timerCaptchaTimeout = null;
   var captchaRespostaProcessando = false;
+  var loginJaEnviado = false;
+
+  function recarregarCredenciaisLogin() {
+    USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+    SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
+  }
+
+  function tentarLoginAutomatico(origem) {
+    if (loginJaEnviado) return false;
+
+    sincronizarModoAba();
+    recarregarCredenciaisLogin();
+
+    var formLogin = document.getElementById('login');
+    if (!formLogin) return false;
+
+    if (!USUARIO_FINAL || !SENHA_FINAL || USUARIO_FINAL === '?' || SENHA_FINAL === '?') {
+      console.warn('[Script Caçadas] Login (' + origem + ') — credenciais ausentes no localStorage.');
+      return false;
+    }
+
+    console.log('[Script Caçadas] Tela de login — preenchendo credenciais (' + origem + ')...');
+
+    var selectServer = formLogin.querySelector('select[name="server_login"]');
+    var inputUsuario = formLogin.querySelector('#usuario');
+    var inputSenha = formLogin.querySelector('#senha');
+
+    if (selectServer) {
+      selectServer.value = '0';
+      selectServer.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (inputUsuario) {
+      inputUsuario.value = USUARIO_FINAL;
+      inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
+      inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (inputSenha) {
+      inputSenha.value = SENHA_FINAL;
+      inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
+      inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (!inputUsuario || !inputSenha) {
+      console.warn('[Script Caçadas] Login (' + origem + ') — campos #usuario / #senha nao encontrados.');
+      return false;
+    }
+
+    loginJaEnviado = true;
+
+    setTimeout(function() {
+      var btnLogin = formLogin.querySelector('input[type="submit"]');
+      if (btnLogin) {
+        btnLogin.click();
+        console.log('[Script Caçadas] Login enviado (' + origem + ').');
+      } else {
+        loginJaEnviado = false;
+        agendarReloadFalha('Botao de login nao encontrado.');
+      }
+    }, 1500);
+
+    return true;
+  }
+
+  function agendarRetentativasLogin() {
+    [500, 2000, 5000, 10000, 15000].forEach(function(ms) {
+      setTimeout(function() {
+        if (document.getElementById('login')) {
+          tentarLoginAutomatico('retry-' + ms + 'ms');
+        }
+      }, ms);
+    });
+  }
 
   // Configurações do Firebase Realtime Database
   var FIREBASE_CONFIG = {
@@ -378,6 +452,8 @@
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
+
+  agendarRetentativasLogin();
 
   // --- DETECTA USUÁRIO LOGADO NA SIDEBAR E SINCRONIZA localStorage ---
   function extrairNomeUsuarioLogado() {
@@ -427,7 +503,7 @@
   }
 
   // Nível da Caçada (Lê do localStorage ou usa '3' como padrão)
-  var NIVEL_CACADAS_DEFAULT = '3';
+  var NIVEL_CACADAS_DEFAULT = '4';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
@@ -496,7 +572,7 @@
   // --- Whitelist = nomes/clas que NAO atacar (pagina atacar) ---
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,bardo,shizuo,sora,shiroe';
   var WHITELIST_CLA_CACADAS_DEFAULT = 'akatsuki';
-  var MAX_RYOUS_CACADAS_DEFAULT = 20000000;
+  var MAX_RYOUS_CACADAS_DEFAULT = 30000000;
   var DIFF_NIVEL_CACADAS_DEFAULT = 20;
 
   function normalizarNomeCacadas(nome) {
@@ -1410,41 +1486,10 @@
 
       // Login antes de checar erro 500 — evita reload na tela de login
       if (formLogin) {
-        console.log('[Script Caçadas] Tela de login — preenchendo credenciais...');
-        var selectServer = formLogin.querySelector('select[name="server_login"]');
-        var inputUsuario = formLogin.querySelector('#usuario');
-        var inputSenha = formLogin.querySelector('#senha');
-
-        if (selectServer) {
-          selectServer.value = '0';
-          selectServer.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        if (inputUsuario) {
-          inputUsuario.value = USUARIO_FINAL;
-          inputUsuario.dispatchEvent(new Event('input', { bubbles: true }));
-          inputUsuario.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        if (inputSenha) {
-          inputSenha.value = SENHA_FINAL;
-          inputSenha.dispatchEvent(new Event('input', { bubbles: true }));
-          inputSenha.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        if (!inputUsuario || !inputSenha) {
-          agendarReloadFalha('Campos de login (#usuario / #senha) nao encontrados.');
+        if (tentarLoginAutomatico('principal')) {
           return;
         }
-
-        setTimeout(function() {
-          var btnLogin = formLogin.querySelector('input[type="submit"]');
-          if (btnLogin) {
-            btnLogin.click();
-          } else {
-            agendarReloadFalha('Botao de login nao encontrado.');
-          }
-        }, 2000);
+        agendarReloadFalha('Campos de login (#usuario / #senha) nao encontrados.');
         return;
       }
 

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      5.9
-// @description  Automação do Invasor: Trata Sessão Expirada, Limite configurável de derrotas, escuta/disparo Firebase e Discord.
+// @version      6.4
+// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), Discord e sessão.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -41,7 +41,35 @@
     return limite + ' (bot_limite_invasor=' + raw + ')';
   }
 
+  function parseMinAtaquesInvasor(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, '').replace(',', ''), 10);
+    if (isNaN(n) || n < 1) return null;
+    return n;
+  }
+
+  function gravarMinAtaquesInvasorParam(valor) {
+    var min = parseMinAtaquesInvasor(valor);
+    if (min === null) return false;
+    localStorage.setItem('BOT_MIN_ATAQUES_INVASOR', String(min));
+    return true;
+  }
+
+  function obterMinAtaquesInvasor() {
+    var min = parseMinAtaquesInvasor(localStorage.getItem('BOT_MIN_ATAQUES_INVASOR'));
+    if (min === null) return MIN_ATAQUES_INVASOR_DEFAULT;
+    return min;
+  }
+
+  function descreverMinAtaquesInvasor() {
+    var min = obterMinAtaquesInvasor();
+    var raw = localStorage.getItem('BOT_MIN_ATAQUES_INVASOR');
+    if (raw === null || raw === '') return min + ' (padrao)';
+    return min + ' (bot_min_ataques_invasor=' + raw + ')';
+  }
+
   var LIMITE_INVASOR_DEFAULT = 2000;
+  var MIN_ATAQUES_INVASOR_DEFAULT = 5;
 
   function lerModoReferrer() {
     try {
@@ -77,9 +105,11 @@
       var u = rp.get('bot_user');
       var p = rp.get('bot_pass');
       var l = rp.get('bot_limite_invasor');
+      var ma = rp.get('bot_min_ataques_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
+      if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
     } catch (e) {}
   }
 
@@ -111,12 +141,14 @@
       var u = params.get('bot_user');
       var p = params.get('bot_pass');
       var l = params.get('bot_limite_invasor');
+      var ma = params.get('bot_min_ataques_invasor');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
+      if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
       if (!u && !p) aplicarCredenciaisReferrer();
 
-      if ((u || p || l || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || l || ma || modoVeioDeQuery) && window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -143,8 +175,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '5.9';
-  var SCRIPT_ATUALIZADO = '18/08/2026 10:45';
+  var SCRIPT_VERSAO = '6.4';
+  var SCRIPT_ATUALIZADO = '19/08/2026 12:25';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -222,9 +254,14 @@
   var LIMITE_PLAYERS_DERROTADOS = obterLimitePlayersDerrotados();
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = 20000;
-  var TEMPO_RELOAD_PADRAO = 60000;          // 1 minuto
-  var TEMPO_RELOAD_GERENCIADA = 2000;        // 2 segundos
+  var TEMPO_RELOAD_PADRAO = 60000;          // 1 min — fase early com botao/cooldown 10min
+  var TEMPO_RELOAD_GERENCIADA = 2000;
+  var TEMPO_RELOAD_MONITOR = 2000;           // poll rapido — last hit / pos-limite
   var TEMPO_ESPERA_POS_COMBATE = 60000;      // 1 minuto
+  var COORD_INVASOR_PATH = '/invasor_coord.json';
+  var COMANDO_ATACAR_PATH = '/comando_atacar.json';
+  var COORD_MAX_IDADE_MS = 45 * 60 * 1000; // seguranca — evita poll 4s eterno
+  var LEGACY_COMANDO_LIMPO_KEY = 'BOT_INV_COMANDO_LEGADO_LIMPO';
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var URL_HOME = 'https://shadowofshinobi.com/';
@@ -246,11 +283,13 @@
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
+      var ma = localStorage.getItem('BOT_MIN_ATAQUES_INVASOR');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
+      if (ma !== null && ma !== '') params.set('bot_min_ataques_invasor', ma);
     } catch (err) {}
 
     var qs = params.toString();
@@ -351,16 +390,33 @@
     return false;
   }
 
-  // --- CHECA SE O INVASOR AINDA NÃO FOI DERROTADO ---
-  function checarInvasorNaoDerrotado() {
+  // --- CHECA SE O INVASOR FOI DERROTADO (somente quando explicito no DOM) ---
+  function checarInvasorDerrotadoExplicito() {
     var linhas = document.querySelectorAll('tr');
     for (var i = 0; i < linhas.length; i++) {
       var textoLinha = linhas[i].innerText || linhas[i].textContent || '';
-      if (textoLinha.indexOf('Derrotado por:') !== -1) {
-        return textoLinha.indexOf('Ainda não derrotado') !== -1;
+      if (textoLinha.indexOf('Derrotado por:') === -1) continue;
+
+      var lower = textoLinha.toLowerCase();
+      if (lower.indexOf('ainda n') !== -1 && lower.indexOf('derrotado') !== -1) {
+        return false;
       }
+      return true;
     }
     return false;
+  }
+
+  function checarInvasorDerrotadoNoCombate() {
+    var corpo = document.body ? document.body.innerText || document.body.textContent || '' : '';
+    if (/AINDA N[AÃ]O foi derrotado/i.test(corpo)) return false;
+    if (/invasor[^.\n]{0,40}foi derrotado/i.test(corpo)) return true;
+    if (/foi derrotado[^.\n]{0,40}invasor/i.test(corpo)) return true;
+    return checarInvasorDerrotadoExplicito();
+  }
+
+  // Assume invasor ativo se a pagina nao confirmar derrota (evita apagar Firebase cedo demais)
+  function checarInvasorNaoDerrotado() {
+    return !checarInvasorDerrotadoExplicito();
   }
 
   // --- EXTRAIR QUANTIDADE DE PLAYERS DERROTADOS ---
@@ -474,59 +530,312 @@
     }
   }
 
-  // --- DISPARO EM MASSA AO FIREBASE (1 IMEDIATO + 9 A CADA 10MS) ---
-  function enviarComandoAtaqueFirebase() {
-    var urlComando = FIREBASE_CONFIG.databaseURL + '/comando_atacar.json';
-    console.warn('[Firebase] Invasor ativo e sem botão/cooldown! Disparando o 1º aviso imediato e mais 9 a cada 10ms...');
-
-    var payload = JSON.stringify('atacar');
-    var headers = { 'Content-Type': 'application/json' };
-
-    fetch(urlComando, { method: 'PUT', headers: headers, body: payload });
-
-    for (var i = 1; i <= 9; i++) {
-      (function(index) {
-        setTimeout(function() {
-          fetch(urlComando, { method: 'PUT', headers: headers, body: payload });
-        }, index * 10);
-      })(i);
-    }
-
-    console.log('[Firebase] Requisições em massa disparadas! Capturando print...');
-    capturarEEnviarPrintInferiorDiscord('Ausência de Botão/Cooldown - Sinalização em Massa');
+  function urlFirebase(path) {
+    return FIREBASE_CONFIG.databaseURL + path;
   }
 
-  // --- CHECA CONDIÇÃO DA TELA E DISPARA FIREBASE SE NECESSÁRIO ---
-  function verificarGatilhoAtaque() {
-    var btnAtacar = obterBotaoAtaque();
-    var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
-    var invasorAtivo = checarInvasorNaoDerrotado();
+  function fetchCoordInvasor() {
+    return fetch(urlFirebase(COORD_INVASOR_PATH))
+      .then(function(res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function(data) {
+        if (data === null || data === undefined) return null;
+        if (typeof data !== 'object' || Array.isArray(data)) return null;
+        return data;
+      })
+      .catch(function(err) {
+        console.warn('[LastHit] Falha ao ler invasor_coord:', err);
+        return null;
+      });
+  }
 
-    var temBotao = !!btnAtacar;
-    var temTimer = elementoTimer !== null;
-
-    console.log('[Invasor Checklist]', {
-      temBotao: temBotao,
-      temTimer: temTimer,
-      invasorAtivo: invasorAtivo
+  function putCoordInvasor(data) {
+    return fetch(urlFirebase(COORD_INVASOR_PATH), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(res) {
+      if (!res.ok) {
+        throw new Error('PUT invasor_coord HTTP ' + res.status);
+      }
+      return res;
     });
+  }
 
-    if (!temBotao && !temTimer && invasorAtivo) {
-      console.warn('[Invasor] Invasor Ativo + Ausência de Botão/Cooldown! Avisando Firebase...');
-      enviarComandoAtaqueFirebase();
+  function limparCoordInvasor(motivo) {
+    return fetch(urlFirebase(COORD_INVASOR_PATH), { method: 'DELETE' })
+      .then(function(res) {
+        if (res.ok || res.status === 404) {
+          console.log('[LastHit] invasor_coord removido (' + motivo + ').');
+        } else {
+          console.warn('[LastHit] DELETE invasor_coord HTTP ' + res.status);
+        }
+      })
+      .catch(function(err) {
+        console.warn('[LastHit] Falha ao limpar invasor_coord:', err);
+      });
+  }
+
+  function limparComandoAtacar(motivo) {
+    return fetch(urlFirebase(COMANDO_ATACAR_PATH), { method: 'DELETE' })
+      .then(function(res) {
+        if (res.ok || res.status === 404) {
+          if (motivo) console.log('[LastHit] comando_atacar removido (' + motivo + ').');
+        } else {
+          console.warn('[LastHit] DELETE comando_atacar HTTP ' + res.status);
+        }
+      })
+      .catch(function(err) {
+        console.warn('[LastHit] Falha ao limpar comando_atacar:', err);
+      });
+  }
+
+  function limparAvisosMonitorSession() {
+    try {
+      var keys = [];
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (k && k.indexOf('BOT_LASTHIT_AVISO_') === 0) keys.push(k);
+      }
+      keys.forEach(function(k) { sessionStorage.removeItem(k); });
+    } catch (e) {}
+  }
+
+  function limparEstadoFirebaseInvasor(motivo) {
+    console.log('[LastHit] Limpando Firebase invasor (' + motivo + ')...');
+    return Promise.all([
+      limparCoordInvasor(motivo),
+      limparComandoAtacar(motivo)
+    ]).then(function() {
+      limparAvisosMonitorSession();
+      try { sessionStorage.removeItem(LEGACY_COMANDO_LIMPO_KEY); } catch (e) {}
+    });
+  }
+
+  function limparComandoAtacarLegadoSeNecessario() {
+    try {
+      if (sessionStorage.getItem(LEGACY_COMANDO_LIMPO_KEY) === '1') {
+        return Promise.resolve();
+      }
+      sessionStorage.setItem(LEGACY_COMANDO_LIMPO_KEY, '1');
+    } catch (e) {
+      return Promise.resolve();
+    }
+    return limparComandoAtacar('legado v5.x — comando_atacar obsoleto no v6');
+  }
+
+  function coordExpirada(coord) {
+    if (!coord || !coord.ts) return false;
+    return (Date.now() - coord.ts) > COORD_MAX_IDADE_MS;
+  }
+
+  function coordMonitorAtivo(coord) {
+    return !!(coord && coord.derrotados_base != null &&
+      (coord.fase === 'aguardando' || coord.fase === 'atacando'));
+  }
+
+  function enviarDiscordLastHitBaseline(coord) {
+    if (!DISCORD_WEBHOOK_INVASOR || !coord) return;
+
+    var conteudo = [
+      '🎯 **Janela Last Hit aberta**',
+      '**Players derrotados (base):** `' + coord.derrotados_base + '`',
+      '**Ataques minimos (delta):** `' + coord.min_delta + '`',
+      '**Alvo:** `' + (coord.derrotados_base + coord.min_delta) + ' derrotados`',
+      '**Scout:** `' + (coord.scout || '?') + '`',
+      '**Contas:** reload **2s** enquanto `invasor_coord` existir — atacam juntas em `' +
+        (coord.derrotados_base + coord.min_delta) + ' derrotados`.'
+    ].join('\n');
+
+    fetch(DISCORD_WEBHOOK_INVASOR, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: conteudo })
+    }).catch(function(err) {
+      console.warn('[Discord] Falha ao avisar last hit:', err);
+    });
+  }
+
+  function registrarJanelaLastHitSeNecessario(derrotadosAtual) {
+    return fetchCoordInvasor().then(function(coord) {
+      if (coordMonitorAtivo(coord)) {
+        console.log('[LastHit] Coord ja ativa — base=' + coord.derrotados_base + ' fase=' + coord.fase);
+        return coord;
+      }
+
+      var novo = {
+        derrotados_base: derrotadosAtual,
+        min_delta: obterMinAtaquesInvasor(),
+        fase: 'aguardando',
+        ts: Date.now(),
+        scout: USUARIO_FINAL
+      };
+
+      console.warn('[LastHit] Janela detectada! Gravando baseline=' + derrotadosAtual +
+        ' min_delta=' + novo.min_delta);
+
+      return putCoordInvasor(novo).then(function() {
+        enviarDiscordLastHitBaseline(novo);
+        capturarEEnviarPrintInferiorDiscord(
+          'Last Hit — baseline ' + derrotadosAtual + ' (+' + novo.min_delta + ')',
+          false
+        );
+        return novo;
+      });
+    });
+  }
+
+  function marcarCoordAtacando(coord) {
+    if (!coord || coord.fase === 'atacando') return Promise.resolve();
+    var atualizado = Object.assign({}, coord, {
+      fase: 'atacando',
+      ts_atacando: Date.now()
+    });
+    return putCoordInvasor(atualizado);
+  }
+
+  function avaliarLastHit(derrotadosAtual, coord) {
+    if (!coordMonitorAtivo(coord)) return { pronto: false, delta: 0, minDelta: 0 };
+
+    var minDelta = coord.min_delta || obterMinAtaquesInvasor();
+    var delta = derrotadosAtual - coord.derrotados_base;
+
+    return {
+      pronto: delta >= minDelta,
+      delta: delta,
+      minDelta: minDelta,
+      base: coord.derrotados_base,
+      fase: coord.fase
+    };
+  }
+
+  function logMonitorLastHitAtivo(coord, derrotados, temBotao, temTimer) {
+    var minDelta = coord.min_delta || obterMinAtaquesInvasor();
+    var alvo = coord.derrotados_base + minDelta;
+    var extras = [];
+    if (temTimer) extras.push('cooldown local');
+    if (temBotao) extras.push('botao visivel');
+    if (!temBotao && !temTimer) extras.push('janela aberta nesta conta');
+
+    console.warn(
+      '[LastHit] Firebase ATIVO — reload ' + (TEMPO_RELOAD_MONITOR / 1000) + 's | meta ' +
+      alvo + ' derrotados | atual ' + derrotados +
+      (extras.length ? ' (' + extras.join(', ') + ')' : '')
+    );
+  }
+
+  function avisarMonitorSeNecessario(coord, derrotados, temBotao, temTimer) {
+    if (!coordMonitorAtivo(coord)) return;
+    try {
+      var chave = 'BOT_LASTHIT_AVISO_' + coord.ts;
+      if (sessionStorage.getItem(chave) === '1') return;
+      sessionStorage.setItem(chave, '1');
+    } catch (e) {
       return;
     }
-
-    if (!invasorAtivo) {
-      console.log('[Invasor] O invasor já foi derrotado.');
-    } else if (temBotao) {
-      console.log('[Invasor] Botão de ataque presente.');
-    } else if (temTimer) {
-      console.log('[Invasor] Conta em cooldown.');
-    }
+    logMonitorLastHitAtivo(coord, derrotados, temBotao, temTimer);
   }
 
-  // --- EXECUTA ATAQUE LOCALMENTE (REDE OU COMANDO FIREBASE) ---
+  function calcularTempoReloadInvasor(coord) {
+    if (checarContaGerenciada()) return TEMPO_RELOAD_GERENCIADA;
+    // Poll rapido SOMENTE com invasor_coord ativa (aguardando derrotados)
+    if (coordMonitorAtivo(coord)) return TEMPO_RELOAD_MONITOR;
+    return TEMPO_RELOAD_PADRAO;
+  }
+
+  function processarCoordInvasor(coord, derrotados, temBotao, temTimer) {
+    if (coord && coordExpirada(coord)) {
+      console.warn('[LastHit] Coord expirada (>45min) — limpando estado.');
+      return limparEstadoFirebaseInvasor('coord expirada').then(function() {
+        return calcularTempoReloadInvasor(null);
+      });
+    }
+
+    if (coord && coord.derrotados_base != null && derrotados < coord.derrotados_base) {
+      console.warn('[LastHit] Derrotados (' + derrotados + ') < base (' +
+        coord.derrotados_base + ') — novo evento? Limpando coord.');
+      return limparEstadoFirebaseInvasor('contador derrotados regrediu').then(function() {
+        return calcularTempoReloadInvasor(null);
+      });
+    }
+
+    if (coordMonitorAtivo(coord)) {
+      avisarMonitorSeNecessario(coord, derrotados, temBotao, temTimer);
+
+      var lh = avaliarLastHit(derrotados, coord);
+      console.log('[LastHit] base=' + lh.base + ' atual=' + derrotados +
+        ' delta=' + lh.delta + '/' + lh.minDelta + ' fase=' + lh.fase);
+
+      if (lh.pronto) {
+        console.warn('[LastHit] Delta OK! Disparando ataque (' + USUARIO_FINAL + ')...');
+        return marcarCoordAtacando(coord).then(function() {
+          tentarAtacarLocalmente('Last hit (+' + lh.delta + ' derrotados, min ' + lh.minDelta + ')');
+        }).then(function() {
+          return TEMPO_RELOAD_MONITOR;
+        });
+      }
+
+      return TEMPO_RELOAD_MONITOR;
+    }
+
+    console.log('[Invasor] Players derrotados: ' + derrotados +
+      ' (limite early: ' + LIMITE_PLAYERS_DERROTADOS + ')');
+
+    if (temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS) {
+      tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
+    } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
+      console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload 60s).');
+    }
+
+    return calcularTempoReloadInvasor(coord);
+  }
+
+  function processarPaginaInvasor() {
+    return limparComandoAtacarLegadoSeNecessario().then(function() {
+      var invasorDerrotado = checarInvasorDerrotadoExplicito();
+      var derrotados = obterPlayersDerrotados();
+      var btnAtacar = obterBotaoAtaque();
+      var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
+      var temBotao = !!btnAtacar;
+      var temTimer = elementoTimer !== null;
+
+      console.log('[Invasor Checklist]', {
+        temBotao: temBotao,
+        temTimer: temTimer,
+        invasorDerrotado: invasorDerrotado,
+        derrotados: derrotados
+      });
+
+      if (invasorDerrotado) {
+        return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
+          return TEMPO_RELOAD_PADRAO;
+        });
+      }
+
+      // 1) Le Firebase primeiro — contas com cooldown entram no poll 2s assim que scout registrar
+      return fetchCoordInvasor().then(function(coord) {
+        if (coordMonitorAtivo(coord)) {
+          return processarCoordInvasor(coord, derrotados, temBotao, temTimer);
+        }
+
+        // 2) Sem coord: quem ficou sem botao/cooldown avisa todas via Firebase + Discord
+        if (!temBotao && !temTimer) {
+          console.warn('[LastHit] Sem botao/cooldown — registrando baseline no Firebase...');
+          return registrarJanelaLastHitSeNecessario(derrotados).then(function() {
+            return fetchCoordInvasor();
+          }).then(function(coordNova) {
+            return processarCoordInvasor(coordNova, derrotados, temBotao, temTimer);
+          });
+        }
+
+        return processarCoordInvasor(coord, derrotados, temBotao, temTimer);
+      });
+    });
+  }
+
+  // --- EXECUTA ATAQUE LOCALMENTE ---
   function tentarAtacarLocalmente(motivo) {
     if (jaAtacouNestaPagina) {
       console.warn('[Invasor] Ataque já disparado neste ciclo. Ignorando.');
@@ -557,60 +866,6 @@
         console.error('[Invasor] Botão de ataque não encontrado após ' + maxTentativas + ' tentativas.');
       }
     }, 200);
-  }
-
-  // --- ESCUTA COMANDOS DE ATAQUE VINDO DO FIREBASE ---
-  function iniciarEscutaFirebaseAtaque() {
-    console.log('[Firebase - Invasor] Conectando ao Realtime Database...');
-
-    function conectarEListen() {
-      if (!window.firebase || !firebase.apps.length) {
-        firebase.initializeApp(FIREBASE_CONFIG);
-      }
-
-      var database = firebase.database();
-      var campoAtaque = database.ref('comando_atacar');
-      var urlDelete = FIREBASE_CONFIG.databaseURL + '/comando_atacar.json';
-
-      fetch(urlDelete, { method: 'DELETE' })
-        .then(function() {
-          console.log('[Firebase - Invasor] Banco de comandos de ataque limpo.');
-        })
-        .finally(function() {
-          console.log('%c[Firebase - Invasor] ESCUTANDO COMANDO DE ATAQUE...', 'color: #00ff00; font-weight: bold;');
-
-          campoAtaque.off();
-          campoAtaque.on('value', function(snapshot) {
-            var valor = snapshot.val();
-
-            if (valor !== null && valor !== undefined && valor !== '') {
-              var comando = String(valor).toLowerCase().trim();
-
-              if (comando === 'atacar' || comando === '1') {
-                campoAtaque.off();
-                console.log('%c[Firebase] Ordem de ataque REMOTA recebida!', 'color: #ffff00; font-weight: bold;');
-                fetch(urlDelete, { method: 'DELETE' }).finally(function() {
-                  tentarAtacarLocalmente('Sinal Firebase Recebido');
-                });
-              }
-            }
-          });
-        });
-    }
-
-    if (window.firebase && window.firebase.database) {
-      conectarEListen();
-    } else {
-      var scriptApp = document.createElement('script');
-      scriptApp.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
-      scriptApp.onload = function() {
-        var scriptDb = document.createElement('script');
-        scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
-        scriptDb.onload = conectarEListen;
-        document.head.appendChild(scriptDb);
-      };
-      document.head.appendChild(scriptApp);
-    }
   }
 
   // --- CHECA SE É CONTA GERENCIADA ---
@@ -677,7 +932,9 @@
     window.location.href = URL_INVASOR;
   }
 
-  console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL + ' | Limite derrotados: ' + descreverLimiteInvasor());
+  console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL +
+    ' | Limite early: ' + descreverLimiteInvasor() +
+    ' | Min ataques last hit: ' + descreverMinAtaquesInvasor());
 
   setTimeout(function() {
     try {
@@ -722,32 +979,24 @@
 
       // 2. TELA DO INVASOR (PRINCIPAL)
       if (pagina.ehInvasor) {
-        iniciarEscutaFirebaseAtaque();
-        verificarGatilhoAtaque();
-
-        var qtdDerrotados = obterPlayersDerrotados();
-        console.log('[Invasor] Players derrotados atual: ' + qtdDerrotados + ' (Limite local: ' + LIMITE_PLAYERS_DERROTADOS + ')');
-
-        // Se players derrotados for MENOR ou IGUAL ao limite, tenta o ataque pelo botão local
-        if (qtdDerrotados <= LIMITE_PLAYERS_DERROTADOS) {
-          tentarAtacarLocalmente('Ataque Local Automático (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
-        } else {
-          console.warn('[Invasor] Derrotas (' + qtdDerrotados + ') > Limite (' + LIMITE_PLAYERS_DERROTADOS + '). Botão local desativado! Aguardando Firebase...');
-        }
-
-        // Agenda Refresh Padrão
-        var tempoReloadAtual = checarContaGerenciada() ? TEMPO_RELOAD_GERENCIADA : TEMPO_RELOAD_PADRAO;
-        console.log('[Script Invasor] Reload agendado para daqui a ' + (tempoReloadAtual / 1000) + 's.');
-        
-        setTimeout(function() {
-          location.reload();
-        }, tempoReloadAtual);
-
+        processarPaginaInvasor().then(function(tempoReload) {
+          var espera = typeof tempoReload === 'number' ? tempoReload : TEMPO_RELOAD_PADRAO;
+          console.log('[Script Invasor] Reload em ' + (espera / 1000) + 's.');
+          setTimeout(function() {
+            location.reload();
+          }, espera);
+        }).catch(function(err) {
+          agendarReloadFalha('Erro last hit: ' + (err && err.message ? err.message : err));
+        });
         return;
       }
 
       // 3. TELA PÓS-COMBATE
       if (pagina.ehCombate) {
+        if (checarInvasorDerrotadoNoCombate()) {
+          limparEstadoFirebaseInvasor('boss derrotado na pagina de combate');
+        }
+
         console.log('[Invasor Combate] Batalha concluída. Aguardando 1 min para retornar...');
         capturarEEnviarPrintInferiorDiscord('Relatório de Combate Concluído', DISCORD_COMBATE_SILENCIOSO);
 

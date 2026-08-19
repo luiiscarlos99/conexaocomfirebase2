@@ -240,6 +240,14 @@ function Resolve-BrowserExe {
     return $ExePath
 }
 
+function Get-ContaModoAnonimo {
+    param([hashtable]$Conta)
+
+    # Chrome sempre anonimo — evita cache de JS antigo no perfil normal
+    if ($Conta.Exe -imatch 'chrome') { return $true }
+    return [bool]$Conta.Anonimo
+}
+
 function Get-BrowserArgs {
     param(
         [hashtable]$Conta,
@@ -248,19 +256,25 @@ function Get-BrowserArgs {
     )
 
     $ehOpera = $Conta.Exe -match '(?i)opera'
+    $anonimo = Get-ContaModoAnonimo -Conta $Conta
 
     # Fase 2 anonimo Opera: --private sem --new-window → nova aba na janela privada existente
-    if ($Fase -eq 'Jogo' -and $Conta.Anonimo -and $ehOpera) {
+    if ($Fase -eq 'Jogo' -and $anonimo -and $ehOpera) {
         return @('--private')
     }
 
     # Fase 2 anonimo Chrome: nova aba na janela anonima (sem --incognito)
-    if ($Fase -eq 'Jogo' -and $Conta.Anonimo) {
+    if ($Fase -eq 'Jogo' -and $anonimo -and $Conta.Exe -imatch 'chrome') {
+        return @()
+    }
+
+    # Fase 2 anonimo (outros): nova aba na janela anonima existente
+    if ($Fase -eq 'Jogo' -and $anonimo) {
         return @()
     }
 
     $args = @()
-    if ($Conta.Anonimo) {
+    if ($anonimo) {
         if ($Conta.Exe -imatch 'chrome') {
             $args += '--incognito'
             $args += '--new-window'
@@ -321,8 +335,11 @@ function Open-NavegadorUrl {
     $modoLog = if ($Fase -eq 'Login') { 'invasor' } else { $botModo }
 
     Write-Host "  $rotulo [$($Conta.Rotulo) | bot_modo=$modoLog]" -ForegroundColor Cyan
-    if ($Fase -eq 'Jogo' -and $Conta.Anonimo -and $Conta.Exe -match '(?i)opera') {
+    if ($Fase -eq 'Jogo' -and (Get-ContaModoAnonimo -Conta $Conta) -and $Conta.Exe -match '(?i)opera') {
         Write-Host '    (fase 2 anon: --private + URL na janela privada existente)' -ForegroundColor DarkGray
+    }
+    if ($Fase -eq 'Jogo' -and (Get-ContaModoAnonimo -Conta $Conta) -and $Conta.Exe -imatch 'chrome') {
+        Write-Host '    (fase 2 anon: nova aba na janela incognito existente)' -ForegroundColor DarkGray
     }
     Write-Host "    $Url"
     if ($Conta.Exe -match '(?i)opera') {
@@ -341,6 +358,12 @@ Write-Host '=== Shadow of Shinobi - abrir contas ===' -ForegroundColor Green
 Write-Host ''
 
 $esperaLogin = if ($IntervaloAposSetup) { $IntervaloAposSetup } else { 60 }
+$esperaAntesPrimeira = if (Get-Variable -Name 'IntervaloAntesPrimeiraConta' -Scope Script -ErrorAction SilentlyContinue) {
+    [int]$IntervaloAntesPrimeiraConta
+} else { 5 }
+$esperaAposPrimeira = if (Get-Variable -Name 'IntervaloAposPrimeiraConta' -Scope Script -ErrorAction SilentlyContinue) {
+    [int]$IntervaloAposPrimeiraConta
+} else { 8 }
 $contasAbertas = @()
 $contasIgnoradas = @()
 
@@ -362,10 +385,22 @@ if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host '--- Fase 1: login (bot_modo=invasor nas 3 contas) ---' -ForegroundColor Green
     Write-Host '  Shizuo/Sora/Shiroe logam aqui; caçadas abre na fase 2.' -ForegroundColor DarkGray
     Write-Host '  Sora (Opera anon) abre antes do Opera normal — --private --new-window + launcher.exe' -ForegroundColor DarkGray
+    Write-Host '  Chrome (Shiroe) sempre anonimo — --incognito --new-window na fase 1.' -ForegroundColor DarkGray
+    if ($esperaAntesPrimeira -gt 0) {
+        Write-Host "  Aguardando ${esperaAntesPrimeira}s antes da 1ª aba..." -ForegroundColor DarkGray
+        Start-Sleep -Seconds $esperaAntesPrimeira
+    }
     $i = 0
     foreach ($conta in $contasLoginOrdenadas) {
-        if ($i -gt 0 -and $IntervaloEntreContas -gt 0) {
-            Start-Sleep -Seconds $IntervaloEntreContas
+        if ($i -gt 0) {
+            $esperaEntre = $IntervaloEntreContas
+            if ($null -eq $esperaEntre -or $esperaEntre -lt 0) { $esperaEntre = 0 }
+            if ($i -eq 1) {
+                $esperaEntre = [Math]::Max($esperaEntre, $esperaAposPrimeira)
+            }
+            if ($esperaEntre -gt 0) {
+                Start-Sleep -Seconds $esperaEntre
+            }
         }
 
         if ($conta.Anonimo -and ($conta.Senha -like 'PREENCHER*' -or [string]::IsNullOrWhiteSpace($conta.Senha))) {

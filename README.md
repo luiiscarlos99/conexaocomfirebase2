@@ -63,7 +63,7 @@ https://shadowofshinobi.com/invasor?bot_modo=invasor
 
 **Login (sessão expirada — home não redireciona antes do script)**
 ```
-https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=3
+https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA&bot_nivel=4
 https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 ```
 
@@ -113,7 +113,7 @@ Captcha → caçadas trata → volta ao invasor
 - Exige `BOT_MODO_ABA=invasor`
 - `/status` → `/invasor` | `/invasor` → ataque + reload 60s | combate → 1 min → invasor
 - Sessão expirada → home (caçadas reloga)
-- Firebase `comando_atacar` com debounce anti-burst
+- Firebase `invasor_coord` (last hit) + limpeza de `comando_atacar` legado
 - Captcha delegado ao `atkSOS.js`
 
 ---
@@ -124,7 +124,8 @@ Captcha → caçadas trata → volta ao invasor
 |---|---|
 | `comandos/{CODIGO}/imagem` | PNG do captcha (bot → painel) |
 | `comandos/{CODIGO}/resposta` | 5 dígitos (painel → bot) |
-| `comando_atacar` | Ataque remoto invasor |
+| `invasor_coord` | Last hit — baseline de players derrotados |
+| `comando_atacar` | Legado v5 (removido automaticamente no v6) |
 
 Painel: [firebase.html](https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html?codigo=SRV_XXX)
 
