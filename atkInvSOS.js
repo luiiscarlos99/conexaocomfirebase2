@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      6.7
-// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), escuta em tempo real, Discord, conta gerenciada e sessão.
+// @version      6.8
+// @description  Automação do Invasor: last hit com monitor DOM sem reload, escuta Firebase, Discord e conta gerenciada.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -256,7 +256,9 @@
   var TEMPO_RELOAD_FALHA = 20000;
   var TEMPO_RELOAD_PADRAO = 60000;          // 1 min — fase early com botao/cooldown 10min
   var TEMPO_RELOAD_GERENCIADA = 2000;
-  var TEMPO_RELOAD_MONITOR = 2000;           // poll rapido — last hit / pos-limite
+  var TEMPO_RELOAD_MONITOR = 2000;           // fallback legado — monitor usa poll DOM
+  var TEMPO_POLL_LASTHIT = 500;              // poll DOM no modo last hit
+  var TEMPO_RELOAD_MONITOR_SEGURANCA = 45000; // reload de seguranca se pagina ficar parada
   var TEMPO_ESPERA_POS_COMBATE = 60000;      // 1 minuto
   var COORD_INVASOR_PATH = '/invasor_coord.json';
   var COMANDO_ATACAR_PATH = '/comando_atacar.json';
@@ -311,6 +313,10 @@
   var reloadInvasorTimer = null;
   var escutaCoordInvasorAtiva = false;
   var escutaCoordRef = null;
+  var monitorLastHitInterval = null;
+  var monitorLastHitTimer = null;
+  var monitorLastHitCoord = null;
+  var lastHitAtaqueEmAndamento = false;
 
   // Configurações do Firebase Realtime Database
   var FIREBASE_CONFIG = {
@@ -569,17 +575,123 @@
     escutaCoordInvasorAtiva = false;
   }
 
+  function pararMonitorLastHit() {
+    if (monitorLastHitInterval) {
+      clearInterval(monitorLastHitInterval);
+      monitorLastHitInterval = null;
+    }
+    if (monitorLastHitTimer) {
+      clearTimeout(monitorLastHitTimer);
+      monitorLastHitTimer = null;
+    }
+    monitorLastHitCoord = null;
+    lastHitAtaqueEmAndamento = false;
+  }
+
+  function obterEstadoPaginaInvasor() {
+    return {
+      derrotados: obterPlayersDerrotados(),
+      temBotao: !!obterBotaoAtaque(),
+      temTimer: document.querySelector('[id^="inv_cd_timer_"]') !== null,
+      invasorDerrotado: checarInvasorDerrotadoExplicito()
+    };
+  }
+
+  function tickMonitorLastHit() {
+    if (!monitorLastHitCoord) return;
+
+    var estado = obterEstadoPaginaInvasor();
+
+    if (estado.invasorDerrotado) {
+      pararMonitorLastHit();
+      limparEstadoFirebaseInvasor('boss derrotado (monitor DOM)');
+      agendarReloadInvasor(TEMPO_RELOAD_PADRAO);
+      return;
+    }
+
+    if (coordExpirada(monitorLastHitCoord)) {
+      pararMonitorLastHit();
+      limparEstadoFirebaseInvasor('coord expirada (monitor DOM)');
+      agendarReloadInvasor(resolverTempoReloadInvasor(null));
+      return;
+    }
+
+    if (monitorLastHitCoord.derrotados_base != null &&
+        estado.derrotados < monitorLastHitCoord.derrotados_base) {
+      pararMonitorLastHit();
+      limparEstadoFirebaseInvasor('derrotados regrediu (monitor DOM)');
+      agendarReloadInvasor(resolverTempoReloadInvasor(null));
+      return;
+    }
+
+    avisarMonitorSeNecessario(
+      monitorLastHitCoord, estado.derrotados, estado.temBotao, estado.temTimer
+    );
+
+    var lh = avaliarLastHit(estado.derrotados, monitorLastHitCoord);
+    if (lh.pronto && !jaAtacouNestaPagina && !lastHitAtaqueEmAndamento) {
+      lastHitAtaqueEmAndamento = true;
+      console.warn('[LastHit] Meta atingida via poll DOM (' + estado.derrotados +
+        ', delta ' + lh.delta + '/' + lh.minDelta + ') — atacando sem reload.');
+      marcarCoordAtacando(monitorLastHitCoord).then(function() {
+        tentarAtacarLocalmente('Last hit poll DOM (+' + lh.delta + ' derrotados)');
+      }).catch(function(err) {
+        console.warn('[LastHit] Erro ao marcar atacando:', err);
+      }).then(function() {
+        lastHitAtaqueEmAndamento = false;
+      });
+    }
+  }
+
+  function iniciarMonitorLastHit(coord) {
+    if (!coordMonitorAtivo(coord)) return false;
+    if (monitorLastHitCoord && monitorLastHitCoord.ts === coord.ts && monitorLastHitInterval) {
+      return true;
+    }
+
+    pararMonitorLastHit();
+    pararEscutaCoordInvasor();
+    monitorLastHitCoord = coord;
+
+    if (reloadInvasorTimer) {
+      clearTimeout(reloadInvasorTimer);
+      reloadInvasorTimer = null;
+    }
+
+    tickMonitorLastHit();
+    monitorLastHitInterval = setInterval(tickMonitorLastHit, TEMPO_POLL_LASTHIT);
+    monitorLastHitTimer = setTimeout(function() {
+      console.log('[LastHit] Reload de seguranca do monitor (' +
+        (TEMPO_RELOAD_MONITOR_SEGURANCA / 1000) + 's)...');
+      pararMonitorLastHit();
+      location.reload();
+    }, TEMPO_RELOAD_MONITOR_SEGURANCA);
+
+    console.warn('[LastHit] Monitor DOM ativo — poll ' + TEMPO_POLL_LASTHIT +
+      'ms, meta ' + (coord.derrotados_base + (coord.min_delta || obterMinAtaquesInvasor())) +
+      ' derrotados (sem reload ate atacar).');
+    return true;
+  }
+
+  function entrarLastHitSemReload(coord, origem) {
+    console.warn('[LastHit] Entrada imediata (' + (origem || 'escuta') + ') — scout=' +
+      (coord.scout || '?') + ', base=' + coord.derrotados_base);
+    iniciarMonitorLastHit(coord);
+  }
+
   function reloadInvasorImediato(motivo) {
     if (reloadInvasorTimer) {
       clearTimeout(reloadInvasorTimer);
       reloadInvasorTimer = null;
     }
+    pararMonitorLastHit();
     pararEscutaCoordInvasor();
     console.warn('[LastHit] Reload imediato — ' + motivo);
     location.reload();
   }
 
   function agendarReloadInvasor(ms) {
+    pararMonitorLastHit();
     if (reloadInvasorTimer) clearTimeout(reloadInvasorTimer);
     reloadInvasorTimer = setTimeout(function() {
       reloadInvasorTimer = null;
@@ -606,12 +718,10 @@
         var coord = snap.val();
         if (!coordMonitorAtivo(coord)) return;
 
-        console.warn('[LastHit] invasor_coord recebida via escuta (scout=' +
-          (coord.scout || '?') + ', base=' + coord.derrotados_base + ') — entrando no last hit.');
-        reloadInvasorImediato('coord scout/last hit no Firebase');
+        entrarLastHitSemReload(coord, 'escuta Firebase');
       });
 
-      console.log('[LastHit] Escuta ativa em invasor_coord — reload imediato quando scout abrir janela.');
+      console.log('[LastHit] Escuta ativa em invasor_coord — entra no last hit sem reload.');
     });
   }
 
@@ -858,11 +968,13 @@
         return marcarCoordAtacando(coord).then(function() {
           tentarAtacarLocalmente('Last hit (+' + lh.delta + ' derrotados, min ' + lh.minDelta + ')');
         }).then(function() {
-          return resolverTempoReloadInvasor(coord);
+          iniciarMonitorLastHit(coord);
+          return null;
         });
       }
 
-      return resolverTempoReloadInvasor(coord);
+      iniciarMonitorLastHit(coord);
+      return Promise.resolve(null);
     }
 
     console.log('[Invasor] Players derrotados: ' + derrotados +
@@ -1097,6 +1209,10 @@
       // 2. TELA DO INVASOR (PRINCIPAL)
       if (pagina.ehInvasor) {
         processarPaginaInvasor().then(function(tempoReload) {
+          if (tempoReload === null) {
+            console.log('[Script Invasor] Monitor last hit ativo — poll DOM, sem reload agendado.');
+            return;
+          }
           var espera = typeof tempoReload === 'number'
             ? tempoReload
             : resolverTempoReloadInvasor(null);
