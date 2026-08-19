@@ -295,8 +295,8 @@
 
     <!-- Campo 2: resposta -->
     <div class="input-group">
-      <label for="valorComandoInput">Codigo do captcha (5 numeros)</label>
-      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840" inputmode="numeric" maxlength="5">
+      <label for="valorComandoInput">Codigo do captcha</label>
+      <input type="text" id="valorComandoInput" class="input-field" value="" placeholder="Ex: 13840">
     </div>
 
     <button type="button" id="btnOcr" class="btn-secondary" style="display:none;" onclick="executarOCR()">
@@ -484,8 +484,46 @@
       });
     }
 
+    function variantAmareloStrict(ctx, w, h) {
+      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
+        const lum = obterCinza(r, g, b);
+        const ehDigito =
+          (r > 120 && g > 95 && b < 120 && r > b + 25 && g > b + 15) ||
+          (lum > 150 && r > 110 && g > 85 && b < 100);
+        return ehDigito ? 0 : 255;
+      });
+    }
+
+    function variantOtsuDilatado(ctx, w, h) {
+      variantOtsu(ctx, w, h, false);
+      const src = ctx.getImageData(0, 0, w, h);
+      const d = src.data;
+      const out = new Uint8ClampedArray(d.length);
+      out.set(d);
+
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = (y * w + x) * 4;
+          if (d[i] === 0) continue;
+          let vizinhoPreto = false;
+          for (let dy = -1; dy <= 1 && !vizinhoPreto; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const ni = ((y + dy) * w + (x + dx)) * 4;
+              if (d[ni] === 0) { vizinhoPreto = true; break; }
+            }
+          }
+          if (vizinhoPreto) {
+            out[i] = out[i + 1] = out[i + 2] = 0;
+          }
+        }
+      }
+
+      ctx.putImageData(new ImageData(out, w, h), 0, 0);
+      return ctx.canvas;
+    }
+
     function gerarVariantesOcr(img) {
-      const scale = 4;
+      const scale = 5;
       const base = escalaImagemCaptcha(img, scale);
       const copia = function(processar) {
         const c = document.createElement('canvas');
@@ -496,30 +534,94 @@
       };
 
       return [
-        { id: 'amarelo', canvas: copia(variantAmarelo), peso: 12 },
-        { id: 'otsu', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, false); }), peso: 10 },
-        { id: 'otsu-inv', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, true); }), peso: 10 },
-        { id: 'contraste', canvas: copia(variantContraste), peso: 8 },
-        { id: 'cinza', canvas: copia(variantCinza), peso: 6 },
-        { id: 'raw', canvas: base.canvas, peso: 4 }
+        { id: 'amarelo', canvas: copia(variantAmarelo), peso: 14 },
+        { id: 'amarelo-strict', canvas: copia(variantAmareloStrict), peso: 16 },
+        { id: 'otsu', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, false); }), peso: 12 },
+        { id: 'otsu-inv', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, true); }), peso: 12 },
+        { id: 'otsu-dil', canvas: copia(variantOtsuDilatado), peso: 14 },
+        { id: 'contraste', canvas: copia(variantContraste), peso: 10 },
+        { id: 'cinza', canvas: copia(variantCinza), peso: 6 }
       ];
     }
 
-    function extrairDigitosOcr(texto) {
-      return String(texto || '').replace(/\D/g, '');
+    const MAPA_CONFUSAO_DIGITO = {
+      'O': '0', 'o': '0', 'D': '0', 'Q': '0',
+      'l': '1', 'I': '1', 'i': '1', '|': '1', '!': '1',
+      'Z': '2', 'z': '2',
+      'S': '5', 's': '5',
+      'G': '6', 'b': '6',
+      'B': '8', 'g': '9', 'q': '9'
+    };
+
+    function normalizarCharDigito(ch) {
+      if (!ch) return '';
+      if (MAPA_CONFUSAO_DIGITO[ch]) return MAPA_CONFUSAO_DIGITO[ch];
+      if (ch >= '0' && ch <= '9') return ch;
+      return '';
     }
 
-    function pontuarCandidatoOcr(digits, confidence, pesoVariante, votos) {
-      if (!digits) return -1;
+    function extrairDigitosOcr(texto) {
+      let out = '';
+      const s = String(texto || '');
+      for (let i = 0; i < s.length; i++) {
+        out += normalizarCharDigito(s[i]);
+      }
+      return out;
+    }
+
+    function repararParaCincoDigitos(digits) {
+      if (!digits) return null;
+      if (digits.length === 5) return digits;
+
+      if (digits.length > 5) {
+        let melhor = null;
+        let melhorScore = -1;
+        for (let i = 0; i <= digits.length - 5; i++) {
+          const fatia = digits.substring(i, i + 5);
+          const score = 5 - i * 0.1;
+          if (score > melhorScore) {
+            melhorScore = score;
+            melhor = fatia;
+          }
+        }
+        return melhor;
+      }
+
+      return null;
+    }
+
+    function segmentarCincoDigitos(canvas) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const margem = Math.max(1, Math.floor(w * 0.02));
+      const areaW = w - margem * 2;
+      const sliceW = Math.floor(areaW / 5);
+      const segmentos = [];
+
+      for (let i = 0; i < 5; i++) {
+        const seg = document.createElement('canvas');
+        seg.width = sliceW;
+        seg.height = h;
+        const ctx = seg.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, sliceW, h);
+        ctx.drawImage(
+          canvas,
+          margem + i * sliceW, 0, sliceW, h,
+          0, 0, sliceW, h
+        );
+        segmentos.push(seg);
+      }
+
+      return segmentos;
+    }
+
+    function pontuarCandidatoOcr(digits, confidence, pesoVariante, votos, metodo) {
+      if (!digits || digits.length !== 5) return -1;
       const conf = typeof confidence === 'number' ? confidence : 0;
-      const bonusVoto = (votos - 1) * 120;
-      if (digits.length === 5) {
-        return 2000 + conf + pesoVariante + bonusVoto;
-      }
-      if (digits.length === 4) {
-        return 400 + conf * 0.5 + pesoVariante;
-      }
-      return digits.length * 40 + conf * 0.2;
+      const bonusVoto = (votos - 1) * 200;
+      const bonusSeg = metodo === 'segmentado' ? 350 : 0;
+      return 3000 + conf + pesoVariante + bonusVoto + bonusSeg;
     }
 
     async function reconhecerCanvas(canvas, psm) {
@@ -534,28 +636,124 @@
       };
     }
 
-    async function ocrVariante(variante) {
-      const psms = ['7', '8', '13'];
-      const melhores = [];
+    async function ocrSegmentadoCinco(canvas, variantId, peso) {
+      const segmentos = segmentarCincoDigitos(canvas);
 
+      const porPosicao = await Promise.all(segmentos.map(async function(seg) {
+        let melhorChar = '';
+        let melhorConf = -1;
+        const psms = ['10', '8'];
+
+        for (let p = 0; p < psms.length; p++) {
+          try {
+            const parsed = await reconhecerCanvas(seg, psms[p]);
+            const chars = extrairDigitosOcr(parsed.digits);
+            if (chars.length >= 1 && parsed.confidence >= melhorConf) {
+              melhorConf = parsed.confidence;
+              melhorChar = chars.charAt(0);
+            }
+          } catch (err) {
+            console.warn('[OCR seg]', variantId, err);
+          }
+        }
+
+        return { char: melhorChar, conf: melhorConf };
+      }));
+
+      let codigo = '';
+      let confTotal = 0;
+
+      for (let i = 0; i < porPosicao.length; i++) {
+        if (!porPosicao[i].char) return null;
+        codigo += porPosicao[i].char;
+        confTotal += porPosicao[i].conf;
+      }
+
+      if (codigo.length !== 5) return null;
+
+      return {
+        digits: codigo,
+        confidence: confTotal / 5,
+        psm: 'seg',
+        variantId: variantId,
+        peso: peso,
+        metodo: 'segmentado'
+      };
+    }
+
+    async function ocrVariante(variante) {
+      const resultados = [];
+
+      try {
+        const seg = await ocrSegmentadoCinco(variante.canvas, variante.id, variante.peso);
+        if (seg) resultados.push(seg);
+      } catch (err) {
+        console.warn('[OCR] segmentado', variante.id, err);
+      }
+
+      const psms = ['7', '8', '13'];
       for (let i = 0; i < psms.length; i++) {
         try {
           const parsed = await reconhecerCanvas(variante.canvas, psms[i]);
-          melhores.push({
-            digits: parsed.digits,
-            confidence: parsed.confidence,
-            psm: psms[i],
-            variantId: variante.id
-          });
-          if (parsed.digits.length === 5 && parsed.confidence >= 82) {
-            break;
+          const reparado = repararParaCincoDigitos(parsed.digits);
+          if (reparado) {
+            resultados.push({
+              digits: reparado,
+              confidence: parsed.confidence,
+              psm: psms[i],
+              variantId: variante.id,
+              peso: variante.peso,
+              metodo: 'linha'
+            });
           }
+          if (reparado && parsed.confidence >= 85) break;
         } catch (err) {
           console.warn('[OCR]', variante.id, psms[i], err);
         }
       }
 
-      return melhores;
+      return resultados;
+    }
+
+    function consensoPosicionalSegmentado(todos) {
+      const segmentados = todos.filter(function(item) {
+        return item.metodo === 'segmentado' && item.digits && item.digits.length === 5;
+      });
+      if (segmentados.length < 2) return null;
+
+      let codigo = '';
+      let confTotal = 0;
+
+      for (let pos = 0; pos < 5; pos++) {
+        const votos = {};
+        for (let i = 0; i < segmentados.length; i++) {
+          const ch = segmentados[i].digits.charAt(pos);
+          if (!ch) continue;
+          votos[ch] = (votos[ch] || 0) + 1;
+        }
+
+        let melhorChar = '';
+        let melhorVotos = 0;
+        for (const ch in votos) {
+          if (votos[ch] > melhorVotos) {
+            melhorVotos = votos[ch];
+            melhorChar = ch;
+          }
+        }
+
+        if (!melhorChar) return null;
+        codigo += melhorChar;
+        confTotal += melhorVotos / segmentados.length * 100;
+      }
+
+      return {
+        digits: codigo,
+        confidence: confTotal / 5,
+        variantId: 'consenso-pos',
+        peso: 20,
+        metodo: 'segmentado',
+        votosSegmentados: segmentados.length
+      };
     }
 
     let ocrEmAndamento = false;
@@ -588,9 +786,12 @@
             status.textContent = 'OCR ' + (i + 1) + '/' + variantes.length + ' (' + variantes[i].id + ')...';
             const parciais = await ocrVariante(variantes[i]);
             for (let j = 0; j < parciais.length; j++) {
-              todos.push(Object.assign({}, parciais[j], { peso: variantes[i].peso }));
+              todos.push(parciais[j]);
             }
           }
+
+          const consenso = consensoPosicionalSegmentado(todos);
+          if (consenso) todos.push(consenso);
 
           const contagem = {};
           for (let k = 0; k < todos.length; k++) {
@@ -605,23 +806,37 @@
 
           for (let m = 0; m < todos.length; m++) {
             const item = todos[m];
+            if (!item.digits || item.digits.length !== 5) continue;
             const votos = contagem[item.digits] || 0;
-            const pontos = pontuarCandidatoOcr(item.digits, item.confidence, item.peso, votos);
+            const pontos = pontuarCandidatoOcr(
+              item.digits, item.confidence, item.peso, votos, item.metodo
+            );
             if (pontos > melhorPontuacao) {
               melhorPontuacao = pontos;
               escolhido = item;
             }
           }
 
-          if (escolhido && escolhido.digits.length === 5) {
+          const votosEscolhido = escolhido ? (contagem[escolhido.digits] || 0) : 0;
+          const confOk = escolhido && (
+            escolhido.metodo === 'segmentado' ||
+            votosEscolhido >= 2 ||
+            escolhido.confidence >= 72
+          );
+
+          if (escolhido && confOk) {
             valorInput.value = escolhido.digits;
             status.textContent = 'OCR: ' + escolhido.digits +
-              ' (' + escolhido.variantId + ', conf. ' + Math.round(escolhido.confidence) + ') — confira e ENVIAR';
-          } else if (escolhido && escolhido.digits.length > 0) {
-            valorInput.value = escolhido.digits.substring(0, 5);
-            status.textContent = 'OCR parcial: ' + escolhido.digits + ' — complete manualmente';
+              ' (' + escolhido.variantId + '/' + escolhido.metodo +
+              ', conf. ' + Math.round(escolhido.confidence) +
+              (votosEscolhido > 1 ? ', ' + votosEscolhido + ' votos' : '') +
+              ') — confira e ENVIAR';
+          } else if (escolhido) {
+            valorInput.value = escolhido.digits;
+            status.textContent = 'OCR incerto: ' + escolhido.digits +
+              ' — confira manualmente (precisa 5 digitos corretos)';
           } else {
-            status.textContent = 'OCR nao leu — digite manualmente';
+            status.textContent = 'OCR nao obteve 5 digitos — digite manualmente';
           }
         } catch (err) {
           console.error(err);
@@ -755,7 +970,7 @@
       valorInput.classList.remove('input-error');
 
       const nomeComando = obterChaveFirebase();
-      const valorComando = valorInput.value.trim().replace(/\D/g, '');
+      const valorComando = valorInput.value.trim();
 
       if (!nomeComando || nomeComando.length < 1) {
         destacarErroCampo(nomeInput);
@@ -763,13 +978,11 @@
         return;
       }
 
-      if (!valorComando || valorComando.length !== 5) {
+      if (!valorComando) {
         destacarErroCampo(valorInput);
-        exibirNotificacao('⚠️ O captcha deve ter exatamente 5 numeros!', true);
+        exibirNotificacao('⚠️ Informe o codigo do captcha!', true);
         return;
       }
-
-      valorInput.value = valorComando;
       nomeInput.value = nomeComando;
 
       const btn = document.getElementById('btnEnviar');
