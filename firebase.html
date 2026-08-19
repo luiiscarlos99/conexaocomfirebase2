@@ -302,8 +302,6 @@
     <button type="button" id="btnOcr" class="btn-secondary" style="display:none;" onclick="executarOCR()">
       🔍 Ler numeros (OCR)
     </button>
-
-    <!-- Botão de Disparo -->
     <button id="btnEnviar" class="btn-action" onclick="enviarComando()">
       ⚡ ENVIAR AO BOT
     </button>
@@ -494,6 +492,58 @@
       });
     }
 
+    function variantOtsuErosion(ctx, w, h) {
+      variantOtsu(ctx, w, h, false);
+      const src = ctx.getImageData(0, 0, w, h);
+      const d = src.data;
+      const out = new Uint8ClampedArray(d.length);
+      out.set(d);
+
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = (y * w + x) * 4;
+          if (d[i] !== 0) continue;
+          let todosPretos = true;
+          for (let dy = -1; dy <= 1 && todosPretos; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const ni = ((y + dy) * w + (x + dx)) * 4;
+              if (d[ni] !== 0) { todosPretos = false; break; }
+            }
+          }
+          if (!todosPretos) {
+            out[i] = out[i + 1] = out[i + 2] = 255;
+          }
+        }
+      }
+
+      ctx.putImageData(new ImageData(out, w, h), 0, 0);
+      return ctx.canvas;
+    }
+
+    function variantLimiarFixo(ctx, w, h, limiar) {
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const c = obterCinza(d[i], d[i + 1], d[i + 2]);
+        const v = c <= limiar ? 0 : 255;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      return ctx.canvas;
+    }
+
+    function variantAmareloSuave(ctx, w, h) {
+      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
+        const lum = obterCinza(r, g, b);
+        const ehDigito =
+          (r > 85 && g > 60 && b < 155 && r > b * 0.8) ||
+          (lum > 120 && r > 80 && g > 60) ||
+          (r + g > 220 && b < 140);
+        return ehDigito ? 0 : 255;
+      });
+    }
+
     function variantOtsuDilatado(ctx, w, h) {
       variantOtsu(ctx, w, h, false);
       const src = ctx.getImageData(0, 0, w, h);
@@ -522,8 +572,26 @@
       return ctx.canvas;
     }
 
-    function gerarVariantesOcr(img) {
-      const scale = 5;
+    function obterConfigOcr(tentativa) {
+      const perfis = [
+        { scale: 5, margemSeg: 0.02, id: 'padrao' },
+        { scale: 6, margemSeg: 0.035, id: 'retry-amplo' },
+        { scale: 4, margemSeg: 0.01, id: 'retry-fino' },
+        { scale: 6, margemSeg: 0.05, id: 'retry-desloc' }
+      ];
+      const perfil = perfis[tentativa % perfis.length];
+      return {
+        tentativa: tentativa,
+        scale: perfil.scale,
+        margemSeg: perfil.margemSeg,
+        perfilId: perfil.id,
+        ehRetry: tentativa > 0
+      };
+    }
+
+    function gerarVariantesOcr(img, config) {
+      const cfg = config || obterConfigOcr(0);
+      const scale = cfg.scale;
       const base = escalaImagemCaptcha(img, scale);
       const copia = function(processar) {
         const c = document.createElement('canvas');
@@ -533,15 +601,27 @@
         return processar(c.getContext('2d'), base.w, base.h);
       };
 
-      return [
+      const variantes = [
         { id: 'amarelo', canvas: copia(variantAmarelo), peso: 14 },
         { id: 'amarelo-strict', canvas: copia(variantAmareloStrict), peso: 16 },
+        { id: 'amarelo-suave', canvas: copia(variantAmareloSuave), peso: 12 },
         { id: 'otsu', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, false); }), peso: 12 },
         { id: 'otsu-inv', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, true); }), peso: 12 },
         { id: 'otsu-dil', canvas: copia(variantOtsuDilatado), peso: 14 },
+        { id: 'otsu-ero', canvas: copia(variantOtsuErosion), peso: 13 },
         { id: 'contraste', canvas: copia(variantContraste), peso: 10 },
+        { id: 'limiar-100', canvas: copia(function(ctx, w, h) { return variantLimiarFixo(ctx, w, h, 100); }), peso: 9 },
+        { id: 'limiar-140', canvas: copia(function(ctx, w, h) { return variantLimiarFixo(ctx, w, h, 140); }), peso: 9 },
         { id: 'cinza', canvas: copia(variantCinza), peso: 6 }
       ];
+
+      if (cfg.ehRetry) {
+        for (let i = 0; i < variantes.length; i++) {
+          variantes[i].peso += 2;
+        }
+      }
+
+      return variantes;
     }
 
     const MAPA_CONFUSAO_DIGITO = {
@@ -590,10 +670,10 @@
       return null;
     }
 
-    function segmentarCincoDigitos(canvas) {
+    function segmentarCincoDigitos(canvas, margemPct) {
       const w = canvas.width;
       const h = canvas.height;
-      const margem = Math.max(1, Math.floor(w * 0.02));
+      const margem = Math.max(1, Math.floor(w * (margemPct != null ? margemPct : 0.02)));
       const areaW = w - margem * 2;
       const sliceW = Math.floor(areaW / 5);
       const segmentos = [];
@@ -616,6 +696,178 @@
       return segmentos;
     }
 
+    function segmentarDigitoUnico(canvas, indice, margemPct, deslocPct) {
+      const w = canvas.width;
+      const h = canvas.height;
+      const margem = Math.max(1, Math.floor(w * (margemPct != null ? margemPct : 0.02)));
+      const desloc = Math.round(w * (deslocPct || 0));
+      const areaW = w - margem * 2;
+      const sliceW = Math.floor(areaW / 5);
+      const sx = Math.max(0, Math.min(w - sliceW, margem + indice * sliceW + desloc));
+
+      const seg = document.createElement('canvas');
+      seg.width = sliceW;
+      seg.height = h;
+      const ctx = seg.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, sliceW, h);
+      ctx.drawImage(canvas, sx, 0, sliceW, h, 0, 0, sliceW, h);
+      return seg;
+    }
+
+    function distanciaHamming(a, b) {
+      if (!a || !b || a.length !== b.length) return 99;
+      let d = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (a.charAt(i) !== b.charAt(i)) d++;
+      }
+      return d;
+    }
+
+    function acumularMatrizPosicional(resultados) {
+      const matriz = [{}, {}, {}, {}, {}];
+
+      for (let r = 0; r < resultados.length; r++) {
+        const item = resultados[r];
+        if (!item.digits || item.digits.length !== 5) continue;
+
+        const pesoBase = (item.peso || 10) * (item.metodo === 'segmentado' ? 2.2 : 1);
+        const bonusRetry = item.tentativa > 0 ? 1.35 : 1;
+        const bonusAlvo = item.posicaoAlvo != null ? 1.5 : 1;
+        const peso = pesoBase * bonusRetry * bonusAlvo;
+
+        if (item.parcial && item.posicaoAlvo != null) {
+          const pos = item.posicaoAlvo;
+          const ch = item.digits.charAt(pos);
+          if (ch && ch !== '?') {
+            matriz[pos][ch] = (matriz[pos][ch] || 0) + peso;
+            if (item.confidence) matriz[pos][ch] += item.confidence * 0.08;
+          }
+          if (item.posicoes && item.posicoes[0]) {
+            const alt = item.posicoes[0].alternativas || [];
+            for (let a = 0; a < alt.length; a++) {
+              if (!alt[a].char) continue;
+              matriz[pos][alt[a].char] = (matriz[pos][alt[a].char] || 0) + peso * 0.5;
+            }
+          }
+          continue;
+        }
+
+        for (let pos = 0; pos < 5; pos++) {
+          const ch = item.digits.charAt(pos);
+          if (!ch) continue;
+          matriz[pos][ch] = (matriz[pos][ch] || 0) + peso;
+          if (item.confidence) {
+            matriz[pos][ch] += item.confidence * 0.05;
+          }
+        }
+
+        if (item.posicoes && item.posicoes.length === 5) {
+          for (let pos = 0; pos < 5; pos++) {
+            const alt = item.posicoes[pos].alternativas || [];
+            for (let a = 0; a < alt.length; a++) {
+              if (!alt[a].char) continue;
+              matriz[pos][alt[a].char] = (matriz[pos][alt[a].char] || 0) + peso * 0.45;
+            }
+          }
+        }
+      }
+
+      return matriz;
+    }
+
+    function detectarPosicoesDuvidosas(matriz) {
+      const duvidosas = [];
+
+      for (let pos = 0; pos < 5; pos++) {
+        const votos = matriz[pos];
+        const ordenado = Object.keys(votos).map(function(ch) {
+          return { char: ch, peso: votos[ch] };
+        }).sort(function(a, b) { return b.peso - a.peso; });
+
+        if (ordenado.length < 2) continue;
+
+        const margem = ordenado[0].peso - ordenado[1].peso;
+        const ratio = ordenado[1].peso / Math.max(ordenado[0].peso, 0.01);
+
+        if (margem < 4 || ratio > 0.55) {
+          duvidosas.push({
+            pos: pos,
+            opcoes: ordenado.slice(0, 3).map(function(o) { return o.char; }),
+            margem: margem,
+            lider: ordenado[0].char,
+            segundo: ordenado[1].char
+          });
+        }
+      }
+
+      return duvidosas;
+    }
+
+    function montarCodigoDaMatriz(matriz) {
+      let codigo = '';
+      for (let pos = 0; pos < 5; pos++) {
+        const votos = matriz[pos];
+        let melhorChar = '';
+        let melhorPeso = -1;
+        for (const ch in votos) {
+          if (votos[ch] > melhorPeso) {
+            melhorPeso = votos[ch];
+            melhorChar = ch;
+          }
+        }
+        if (!melhorChar) return null;
+        codigo += melhorChar;
+      }
+      return codigo.length === 5 ? codigo : null;
+    }
+
+    function mesclarCodigoComEstaveis(codigoAnterior, matriz, duvidosas) {
+      const codigoMatriz = montarCodigoDaMatriz(matriz);
+      if (!codigoMatriz) return codigoAnterior || null;
+      if (!codigoAnterior || codigoAnterior.length !== 5 || !duvidosas || !duvidosas.length) {
+        return codigoMatriz;
+      }
+
+      const posDuvida = {};
+      for (let i = 0; i < duvidosas.length; i++) {
+        posDuvida[duvidosas[i].pos] = true;
+      }
+
+      let mesclado = '';
+      for (let pos = 0; pos < 5; pos++) {
+        if (posDuvida[pos]) {
+          mesclado += codigoMatriz.charAt(pos);
+        } else {
+          mesclado += codigoAnterior.charAt(pos);
+        }
+      }
+      return mesclado;
+    }
+
+    function resolverClusterHamming1(contagem, matriz) {
+      const codigos = Object.keys(contagem).sort(function(a, b) {
+        return contagem[b] - contagem[a];
+      });
+      if (codigos.length < 2) return null;
+
+      const top = codigos.slice(0, 4);
+      for (let i = 0; i < top.length; i++) {
+        for (let j = i + 1; j < top.length; j++) {
+          if (distanciaHamming(top[i], top[j]) === 1) {
+            const reconstruido = montarCodigoDaMatriz(matriz);
+            if (reconstruido && reconstruido !== top[i] && reconstruido !== top[j]) {
+              return reconstruido;
+            }
+            if (reconstruido && (reconstruido === top[i] || reconstruido === top[j])) {
+              return reconstruido;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
     function pontuarCandidatoOcr(digits, confidence, pesoVariante, votos, metodo) {
       if (!digits || digits.length !== 5) return -1;
       const conf = typeof confidence === 'number' ? confidence : 0;
@@ -636,28 +888,37 @@
       };
     }
 
-    async function ocrSegmentadoCinco(canvas, variantId, peso) {
-      const segmentos = segmentarCincoDigitos(canvas);
+    async function ocrSegmentadoCinco(canvas, variantId, peso, margemSeg) {
+      const segmentos = segmentarCincoDigitos(canvas, margemSeg);
 
       const porPosicao = await Promise.all(segmentos.map(async function(seg) {
-        let melhorChar = '';
-        let melhorConf = -1;
-        const psms = ['10', '8'];
+        const candidatos = {};
+        const psms = ['10', '8', '13'];
 
         for (let p = 0; p < psms.length; p++) {
           try {
             const parsed = await reconhecerCanvas(seg, psms[p]);
             const chars = extrairDigitosOcr(parsed.digits);
-            if (chars.length >= 1 && parsed.confidence >= melhorConf) {
-              melhorConf = parsed.confidence;
-              melhorChar = chars.charAt(0);
+            if (chars.length >= 1) {
+              const ch = chars.charAt(0);
+              if (!candidatos[ch] || parsed.confidence > candidatos[ch]) {
+                candidatos[ch] = parsed.confidence;
+              }
             }
           } catch (err) {
             console.warn('[OCR seg]', variantId, err);
           }
         }
 
-        return { char: melhorChar, conf: melhorConf };
+        const ranking = Object.keys(candidatos).map(function(ch) {
+          return { char: ch, conf: candidatos[ch] };
+        }).sort(function(a, b) { return b.conf - a.conf; });
+
+        return {
+          char: ranking.length ? ranking[0].char : '',
+          conf: ranking.length ? ranking[0].conf : -1,
+          alternativas: ranking.slice(1, 3)
+        };
       }));
 
       let codigo = '';
@@ -674,6 +935,7 @@
       return {
         digits: codigo,
         confidence: confTotal / 5,
+        posicoes: porPosicao,
         psm: 'seg',
         variantId: variantId,
         peso: peso,
@@ -681,11 +943,108 @@
       };
     }
 
-    async function ocrVariante(variante) {
+    async function ocrDigitoComVariantes(canvas, indicePos, variantId, peso, config) {
+      const margens = config.ehRetry
+        ? [config.margemSeg, config.margemSeg + 0.015, config.margemSeg - 0.01]
+        : [config.margemSeg];
+      const deslocs = config.ehRetry ? [0, 0.008, -0.008] : [0];
+      const candidatos = {};
+
+      for (let m = 0; m < margens.length; m++) {
+        for (let d = 0; d < deslocs.length; d++) {
+          const seg = segmentarDigitoUnico(canvas, indicePos, margens[m], deslocs[d]);
+          const psms = ['10', '8', '13'];
+          for (let p = 0; p < psms.length; p++) {
+            try {
+              const parsed = await reconhecerCanvas(seg, psms[p]);
+              const chars = extrairDigitosOcr(parsed.digits);
+              if (chars.length >= 1) {
+                const ch = chars.charAt(0);
+                const score = parsed.confidence + (config.ehRetry ? 5 : 0);
+                if (!candidatos[ch] || score > candidatos[ch]) {
+                  candidatos[ch] = score;
+                }
+              }
+            } catch (err) {
+              console.warn('[OCR alvo]', variantId, indicePos, err);
+            }
+          }
+        }
+      }
+
+      const ranking = Object.keys(candidatos).map(function(ch) {
+        return { char: ch, conf: candidatos[ch] };
+      }).sort(function(a, b) { return b.conf - a.conf; });
+
+      if (!ranking.length) return null;
+
+      const posicoes = [{ char: '', conf: -1, alternativas: [] }];
+      posicoes[0] = {
+        char: ranking[0].char,
+        conf: ranking[0].conf,
+        alternativas: ranking.slice(1, 3)
+      };
+
+      const digitsArr = ['?', '?', '?', '?', '?'];
+      digitsArr[indicePos] = ranking[0].char;
+
+      return {
+        digits: digitsArr.join(''),
+        confidence: ranking[0].conf,
+        posicoes: posicoes,
+        posicaoAlvo: indicePos,
+        variantId: variantId + '-pos' + indicePos,
+        peso: peso + 8,
+        metodo: 'segmentado',
+        parcial: true
+      };
+    }
+
+    async function ocrPosicoesDuvidosas(img, duvidosas, config) {
+      if (!duvidosas || !duvidosas.length) return [];
+
+      const base = escalaImagemCaptcha(img, config.scale);
+      const processadores = [
+        { fn: variantAmareloStrict, id: 'strict', peso: 20 },
+        { fn: variantOtsuDilatado, id: 'dil', peso: 18 },
+        { fn: variantOtsuErosion, id: 'ero', peso: 18 },
+        { fn: function(ctx, w, h) { return variantLimiarFixo(ctx, w, h, 120); }, id: 'lim120', peso: 16 }
+      ];
+
       const resultados = [];
 
+      for (let d = 0; d < duvidosas.length; d++) {
+        const alvo = duvidosas[d].pos;
+
+        for (let v = 0; v < processadores.length; v++) {
+          const c = document.createElement('canvas');
+          c.width = base.w;
+          c.height = base.h;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(base.canvas, 0, 0);
+          processadores[v].fn(ctx, base.w, base.h);
+
+          const parcial = await ocrDigitoComVariantes(
+            c, alvo, processadores[v].id, processadores[v].peso, config
+          );
+          if (parcial) {
+            parcial.tentativa = config.tentativa;
+            resultados.push(parcial);
+          }
+        }
+      }
+
+      return resultados;
+    }
+
+    async function ocrVariante(variante, config) {
+      const resultados = [];
+      const margemSeg = config ? config.margemSeg : 0.02;
+
       try {
-        const seg = await ocrSegmentadoCinco(variante.canvas, variante.id, variante.peso);
+        const seg = await ocrSegmentadoCinco(
+          variante.canvas, variante.id, variante.peso, margemSeg
+        );
         if (seg) resultados.push(seg);
       } catch (err) {
         console.warn('[OCR] segmentado', variante.id, err);
@@ -757,6 +1116,24 @@
     }
 
     let ocrEmAndamento = false;
+    let ocrTentativaNum = 0;
+    let ocrHistoricoTodos = [];
+    let ocrUltimoResultado = null;
+
+    function resetarEstadoOcr() {
+      ocrTentativaNum = 0;
+      ocrHistoricoTodos = [];
+      ocrUltimoResultado = null;
+      const btnOcr = document.getElementById('btnOcr');
+      if (btnOcr) btnOcr.textContent = '🔍 Ler numeros (OCR)';
+    }
+
+    function formatarPosicoesDuvidosas(duvidosas) {
+      if (!duvidosas || !duvidosas.length) return '';
+      return duvidosas.map(function(d) {
+        return 'pos' + (d.pos + 1) + ':' + d.lider + '/' + d.segundo;
+      }).join(', ');
+    }
 
     async function executarOCR() {
       const status = document.getElementById('ocrStatus');
@@ -772,31 +1149,64 @@
       if (ocrEmAndamento) return;
       ocrEmAndamento = true;
       if (btnOcr) btnOcr.disabled = true;
-      status.textContent = 'Lendo numeros (OCR multiplo)...';
+
+      const config = obterConfigOcr(ocrTentativaNum);
+      const ehRetry = config.ehRetry;
+
+      status.textContent = ehRetry
+        ? 'Relendo captcha (tentativa ' + (ocrTentativaNum + 1) + ', perfil ' + config.perfilId + ')...'
+        : 'Lendo numeros (OCR multiplo)...';
 
       const img = new Image();
       img.crossOrigin = 'anonymous';
 
       img.onload = async function() {
         try {
-          const variantes = gerarVariantesOcr(img);
           const todos = [];
+          const posicoesAlvoRetry = ehRetry && ocrUltimoResultado
+            ? ocrUltimoResultado.posicoesDuvidosas
+            : [];
+
+          if (ehRetry && posicoesAlvoRetry.length) {
+            status.textContent = 'Refocando digitos em duvida (' +
+              formatarPosicoesDuvidosas(posicoesAlvoRetry) + ')...';
+            const extras = await ocrPosicoesDuvidosas(
+              img, posicoesAlvoRetry, config
+            );
+            for (let e = 0; e < extras.length; e++) {
+              extras[e].tentativa = config.tentativa;
+              todos.push(extras[e]);
+            }
+          }
+
+          const variantes = gerarVariantesOcr(img, config);
 
           for (let i = 0; i < variantes.length; i++) {
-            status.textContent = 'OCR ' + (i + 1) + '/' + variantes.length + ' (' + variantes[i].id + ')...';
-            const parciais = await ocrVariante(variantes[i]);
+            status.textContent = (ehRetry ? 'Retry ' : 'OCR ') + (i + 1) + '/' +
+              variantes.length + ' (' + variantes[i].id + ')...';
+            const parciais = await ocrVariante(variantes[i], config);
             for (let j = 0; j < parciais.length; j++) {
+              parciais[j].tentativa = config.tentativa;
               todos.push(parciais[j]);
             }
           }
 
           const consenso = consensoPosicionalSegmentado(todos);
-          if (consenso) todos.push(consenso);
+          if (consenso) {
+            consenso.tentativa = config.tentativa;
+            todos.push(consenso);
+          }
+
+          ocrHistoricoTodos = ocrHistoricoTodos.concat(todos);
+          ocrTentativaNum++;
+
+          const matriz = acumularMatrizPosicional(ocrHistoricoTodos);
+          const posicoesDuvidosas = detectarPosicoesDuvidosas(matriz);
 
           const contagem = {};
-          for (let k = 0; k < todos.length; k++) {
-            const d = todos[k].digits;
-            if (d && d.length === 5) {
+          for (let k = 0; k < ocrHistoricoTodos.length; k++) {
+            const d = ocrHistoricoTodos[k].digits;
+            if (d && d.length === 5 && d.indexOf('?') === -1) {
               contagem[d] = (contagem[d] || 0) + 1;
             }
           }
@@ -804,9 +1214,9 @@
           let escolhido = null;
           let melhorPontuacao = -1;
 
-          for (let m = 0; m < todos.length; m++) {
-            const item = todos[m];
-            if (!item.digits || item.digits.length !== 5) continue;
+          for (let m = 0; m < ocrHistoricoTodos.length; m++) {
+            const item = ocrHistoricoTodos[m];
+            if (!item.digits || item.digits.length !== 5 || item.digits.indexOf('?') !== -1) continue;
             const votos = contagem[item.digits] || 0;
             const pontos = pontuarCandidatoOcr(
               item.digits, item.confidence, item.peso, votos, item.metodo
@@ -817,30 +1227,58 @@
             }
           }
 
-          const votosEscolhido = escolhido ? (contagem[escolhido.digits] || 0) : 0;
-          const confOk = escolhido && (
-            escolhido.metodo === 'segmentado' ||
-            votosEscolhido >= 2 ||
-            escolhido.confidence >= 72
+          const cluster = resolverClusterHamming1(contagem, matriz);
+          const codigoAnterior = ocrUltimoResultado && ehRetry
+            ? ocrUltimoResultado.digits
+            : null;
+          const posicoesMescla = ehRetry && posicoesAlvoRetry.length
+            ? posicoesAlvoRetry
+            : posicoesDuvidosas;
+          let codigoFinal = mesclarCodigoComEstaveis(codigoAnterior, matriz, posicoesMescla);
+
+          if (cluster) {
+            codigoFinal = cluster;
+          } else if (!codigoFinal && escolhido) {
+            codigoFinal = escolhido.digits;
+          }
+
+          ocrUltimoResultado = {
+            digits: codigoFinal,
+            posicoesDuvidosas: posicoesDuvidosas,
+            matriz: matriz,
+            tentativa: ocrTentativaNum
+          };
+
+          const votosFinal = codigoFinal ? (contagem[codigoFinal] || 0) : 0;
+          const confOk = codigoFinal && (
+            posicoesDuvidosas.length === 0 ||
+            votosFinal >= 2 ||
+            ocrTentativaNum >= 2 ||
+            (escolhido && escolhido.metodo === 'segmentado')
           );
 
-          if (escolhido && confOk) {
-            valorInput.value = escolhido.digits;
-            status.textContent = 'OCR: ' + escolhido.digits +
-              ' (' + escolhido.variantId + '/' + escolhido.metodo +
-              ', conf. ' + Math.round(escolhido.confidence) +
-              (votosEscolhido > 1 ? ', ' + votosEscolhido + ' votos' : '') +
-              ') — confira e ENVIAR';
-          } else if (escolhido) {
-            valorInput.value = escolhido.digits;
-            status.textContent = 'OCR incerto: ' + escolhido.digits +
-              ' — confira manualmente (precisa 5 digitos corretos)';
+          if (btnOcr) {
+            btnOcr.textContent = '🔍 Ler novamente (ajustar digitos em duvida)';
+          }
+
+          if (codigoFinal && confOk) {
+            valorInput.value = codigoFinal;
+            status.textContent = 'OCR: ' + codigoFinal +
+              (ehRetry ? ' [retry ' + config.perfilId + ']' : '') +
+              (posicoesDuvidosas.length
+                ? ' — ainda em duvida: ' + formatarPosicoesDuvidosas(posicoesDuvidosas)
+                : ' — confira e ENVIAR');
+          } else if (codigoFinal) {
+            valorInput.value = codigoFinal;
+            status.textContent = 'OCR incerto: ' + codigoFinal +
+              ' — clique LER NOVAMENTE (' +
+              formatarPosicoesDuvidosas(posicoesDuvidosas) + ')';
           } else {
-            status.textContent = 'OCR nao obteve 5 digitos — digite manualmente';
+            status.textContent = 'OCR nao obteve 5 digitos — clique LER NOVAMENTE ou digite manualmente';
           }
         } catch (err) {
           console.error(err);
-          status.textContent = 'Erro no OCR — digite manualmente';
+          status.textContent = 'Erro no OCR — digite manualmente ou clique LER NOVAMENTE';
         } finally {
           ocrEmAndamento = false;
           if (btnOcr) btnOcr.disabled = false;
@@ -873,6 +1311,7 @@
         }
         if (captchaDataUrlAtual === val) return;
         captchaDataUrlAtual = val;
+        resetarEstadoOcr();
         imgEl.src = val;
         preview.style.display = 'block';
         btnOcr.style.display = 'block';
