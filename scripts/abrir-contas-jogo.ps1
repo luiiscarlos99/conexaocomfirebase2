@@ -202,7 +202,6 @@ function Get-UrlJogo {
     }
 
     $root = $Base.TrimEnd('/')
-    # Fase 2: home com params completos (mais seguro que /cacadas direto se der 500)
     $q = [ordered]@{
         bot_modo = $BotModo
         bot_user = $Usuario
@@ -213,8 +212,15 @@ function Get-UrlJogo {
     $pairs = foreach ($key in $q.Keys) {
         '{0}={1}' -f $key, [uri]::EscapeDataString([string]$q[$key])
     }
+    $qs = $pairs -join '&'
 
-    return '{0}/?{1}' -f $root, ($pairs -join '&')
+    # Fase 2 cacadas: /cacadas com params — garante bot_modo=cacadas (nao herda invasor da fase 1)
+    if ($BotModo -eq 'cacadas') {
+        return '{0}/cacadas?{1}' -f $root, $qs
+    }
+
+    # Invasor: home com params (login/redirect seguro)
+    return '{0}/?{1}' -f $root, $qs
 }
 
 function Get-UrlInvasor {
@@ -263,9 +269,9 @@ function Get-BrowserArgs {
         return @('--private')
     }
 
-    # Fase 2 anonimo Chrome: nova aba na janela anonima (sem --incognito)
+    # Fase 2 Chrome anonimo: --incognito obrigatorio (args vazios abriam perfil normal)
     if ($Fase -eq 'Jogo' -and $anonimo -and $Conta.Exe -imatch 'chrome') {
-        return @()
+        return @('--incognito')
     }
 
     # Fase 2 anonimo (outros): nova aba na janela anonima existente
@@ -339,7 +345,7 @@ function Open-NavegadorUrl {
         Write-Host '    (fase 2 anon: --private + URL na janela privada existente)' -ForegroundColor DarkGray
     }
     if ($Fase -eq 'Jogo' -and (Get-ContaModoAnonimo -Conta $Conta) -and $Conta.Exe -imatch 'chrome') {
-        Write-Host '    (fase 2 anon: nova aba na janela incognito existente)' -ForegroundColor DarkGray
+        Write-Host '    (fase 2 anon: --incognito + URL na sessao incognito)' -ForegroundColor DarkGray
     }
     Write-Host "    $Url"
     if ($Conta.Exe -match '(?i)opera') {
@@ -443,8 +449,9 @@ $contasFase2 = @($contasFase2Lista | Where-Object {
 })
 
 if ($contasFase2.Count -gt 0) {
-    Write-Host '--- Fase 2: caçadas (3 contas) ---' -ForegroundColor Green
-    Write-Host '  Sora (anon) abre caçadas primeiro — --private na mesma janela privada' -ForegroundColor DarkGray
+    Write-Host '--- Fase 2: jogo (BotModo de cada conta) ---' -ForegroundColor Green
+    Write-Host '  Chrome fase 2: --incognito + /cacadas?bot_modo=cacadas&...' -ForegroundColor DarkGray
+    Write-Host '  Opera anon: --private na janela privada existente' -ForegroundColor DarkGray
 
     $i = 0
     foreach ($conta in $contasFase2) {
