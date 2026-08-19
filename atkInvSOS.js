@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      6.6
-// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), Discord, conta gerenciada e sessão.
+// @version      6.7
+// @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), escuta em tempo real, Discord, conta gerenciada e sessão.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -308,6 +308,9 @@
 
   var reloadAgendado = false;
   var jaAtacouNestaPagina = false;
+  var reloadInvasorTimer = null;
+  var escutaCoordInvasorAtiva = false;
+  var escutaCoordRef = null;
 
   // Configurações do Firebase Realtime Database
   var FIREBASE_CONFIG = {
@@ -532,6 +535,84 @@
 
   function urlFirebase(path) {
     return FIREBASE_CONFIG.databaseURL + path;
+  }
+
+  function garantirFirebaseDatabase(callback) {
+    function conectar() {
+      if (!window.firebase.apps.length) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+      }
+      callback(firebase.database());
+    }
+
+    if (window.firebase && window.firebase.database) {
+      conectar();
+      return;
+    }
+
+    var scriptApp = document.createElement('script');
+    scriptApp.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
+    scriptApp.onload = function() {
+      var scriptDb = document.createElement('script');
+      scriptDb.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
+      scriptDb.onload = conectar;
+      document.head.appendChild(scriptDb);
+    };
+    document.head.appendChild(scriptApp);
+  }
+
+  function pararEscutaCoordInvasor() {
+    if (escutaCoordRef) {
+      try { escutaCoordRef.off(); } catch (e) {}
+      escutaCoordRef = null;
+    }
+    escutaCoordInvasorAtiva = false;
+  }
+
+  function reloadInvasorImediato(motivo) {
+    if (reloadInvasorTimer) {
+      clearTimeout(reloadInvasorTimer);
+      reloadInvasorTimer = null;
+    }
+    pararEscutaCoordInvasor();
+    console.warn('[LastHit] Reload imediato — ' + motivo);
+    location.reload();
+  }
+
+  function agendarReloadInvasor(ms) {
+    if (reloadInvasorTimer) clearTimeout(reloadInvasorTimer);
+    reloadInvasorTimer = setTimeout(function() {
+      reloadInvasorTimer = null;
+      pararEscutaCoordInvasor();
+      location.reload();
+    }, ms);
+  }
+
+  function deveEscutarCoordScout(coord, derrotados) {
+    if (checarContaGerenciada()) return false;
+    if (coordMonitorAtivo(coord)) return false;
+    return derrotados > LIMITE_PLAYERS_DERROTADOS;
+  }
+
+  function iniciarEscutaCoordInvasor() {
+    if (escutaCoordInvasorAtiva) return;
+    escutaCoordInvasorAtiva = true;
+
+    garantirFirebaseDatabase(function(db) {
+      if (!escutaCoordInvasorAtiva) return;
+
+      escutaCoordRef = db.ref('invasor_coord');
+      escutaCoordRef.on('value', function(snap) {
+        var coord = snap.val();
+        if (!coordMonitorAtivo(coord)) return;
+
+        console.warn('[LastHit] invasor_coord recebida via escuta (scout=' +
+          (coord.scout || '?') + ', base=' + coord.derrotados_base + ') — entrando no last hit.');
+        reloadInvasorImediato('coord scout/last hit no Firebase');
+      });
+
+      console.log('[LastHit] Escuta ativa em invasor_coord — reload imediato quando scout abrir janela.');
+    });
   }
 
   function fetchCoordInvasor() {
@@ -793,6 +874,9 @@
       var tempoPosLimite = resolverTempoReloadInvasor(coord);
       console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload ' +
         descreverTempoReload(tempoPosLimite) + ').');
+      if (deveEscutarCoordScout(coord, derrotados)) {
+        iniciarEscutaCoordInvasor();
+      }
     }
 
     return resolverTempoReloadInvasor(coord);
@@ -1017,9 +1101,7 @@
             ? tempoReload
             : resolverTempoReloadInvasor(null);
           console.log('[Script Invasor] Reload em ' + descreverTempoReload(espera) + '.');
-          setTimeout(function() {
-            location.reload();
-          }, espera);
+          agendarReloadInvasor(espera);
         }).catch(function(err) {
           agendarReloadFalha('Erro last hit: ' + (err && err.message ? err.message : err));
         });
