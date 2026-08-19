@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.51
-// @description  Automação do Caçadas/Atacar com digitação simulada de Captcha, atraso aleatório, timeout de Captcha (10min) e Firebase.
+// @version      2.52
+// @description  Automação do Caçadas/Atacar com portão via relatórios de ataque, digitação simulada de Captcha, timeout de Captcha (10min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.51';
-  var SCRIPT_ATUALIZADO = '19/08/2026 11:52';
+  var SCRIPT_VERSAO = '2.52';
+  var SCRIPT_ATUALIZADO = '19/08/2026 15:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -350,7 +350,9 @@
   var TEMPO_RELOAD_FALHA = TEMPO_RECUPERACAO_FALHA;
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
+  var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
+  var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
   var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
@@ -361,6 +363,7 @@
   var timerCaptchaTimeout = null;
   var captchaRespostaProcessando = false;
   var loginJaEnviado = false;
+  var portaoRelatoriosAgendado = false;
 
   function recarregarCredenciaisLogin() {
     USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
@@ -506,14 +509,17 @@
   var NIVEL_CACADAS_DEFAULT = '4';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
-  // Espera antes de clicar "Caçar" — bot_espera_cacadas (minutos) via URL ou localStorage
-  // Padrao sem config: madrugada (2h-9h) = 8-15min; comercial = 3-12min
+  // Intervalo apos ultimo ataque (relatorios) — bot_espera_cacadas (minutos) via URL ou localStorage
+  // Padrao: comercial 4-8min (teto ocioso 8); madrugada 8-15min (teto ocioso 15, jogo permite ~30)
   var ESPERA_CACADAS_MADRUGADA_MIN_MS = 480000;   // 8 min
-  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 900000;    // 15 min
-  var ESPERA_CACADAS_COMERCIAL_MIN_MS = 180000;    // 3 min
-  var ESPERA_CACADAS_COMERCIAL_MAX_MS = 720000;    // 12 min
-  var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;        // 02:00
-  var ESPERA_CACADAS_HORA_FIM_LENTA = 9;           // ate 08:59
+  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 900000;   // 15 min
+  var ESPERA_CACADAS_COMERCIAL_MIN_MS = 240000;   // 4 min
+  var ESPERA_CACADAS_COMERCIAL_MAX_MS = 480000;   // 8 min
+  var TETO_OCIOSO_COMERCIAL_MS = 480000;          // 8 min
+  var TETO_OCIOSO_MADRUGADA_MS = 900000;          // 15 min
+  var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;       // 02:00
+  var ESPERA_CACADAS_HORA_FIM_LENTA = 9;          // ate 08:59
+  var GATE_CACADAS_VALIDADE_MS = 60000;
 
   function estaNoHorarioEsperaCacadasLenta() {
     var hora = new Date().getHours();
@@ -521,52 +527,251 @@
   }
 
   function calcularIntervaloEsperaCacadas() {
+    var madrugada = estaNoHorarioEsperaCacadasLenta();
+    var tetoOciosoMs = madrugada ? TETO_OCIOSO_MADRUGADA_MS : TETO_OCIOSO_COMERCIAL_MS;
     var minutos = parseEsperaCacadasMinutos(localStorage.getItem('BOT_ESPERA_CACADAS'));
 
     if (minutos === null) {
-      if (estaNoHorarioEsperaCacadasLenta()) {
+      if (madrugada) {
         return {
           minMs: ESPERA_CACADAS_MADRUGADA_MIN_MS,
           maxMs: ESPERA_CACADAS_MADRUGADA_MAX_MS,
+          tetoOciosoMs: tetoOciosoMs,
           origem: 'padrao-madrugada'
         };
       }
       return {
         minMs: ESPERA_CACADAS_COMERCIAL_MIN_MS,
         maxMs: ESPERA_CACADAS_COMERCIAL_MAX_MS,
+        tetoOciosoMs: tetoOciosoMs,
         origem: 'padrao-comercial'
       };
     }
 
     if (minutos < 2) {
-      return { minMs: 0, maxMs: 120000, origem: 'config', minutos: minutos };
+      return {
+        minMs: 0,
+        maxMs: 120000,
+        tetoOciosoMs: tetoOciosoMs,
+        origem: 'config',
+        minutos: minutos
+      };
     }
 
     return {
       minMs: Math.round((minutos - 2) * 60000),
       maxMs: Math.round(minutos * 60000),
+      tetoOciosoMs: tetoOciosoMs,
       origem: 'config',
       minutos: minutos
     };
   }
 
-  function sortearTempoEsperaCacadas() {
-    var iv = calcularIntervaloEsperaCacadas();
-    if (iv.minMs >= iv.maxMs) return iv.maxMs;
-    return Math.floor(Math.random() * (iv.maxMs - iv.minMs + 1)) + iv.minMs;
+  function sortearTargetEsperaCacadas(iv) {
+    var intervalo = iv || calcularIntervaloEsperaCacadas();
+    if (intervalo.minMs >= intervalo.maxMs) return intervalo.maxMs;
+    return Math.floor(Math.random() * (intervalo.maxMs - intervalo.minMs + 1)) + intervalo.minMs;
   }
 
   function descreverEsperaCacadas() {
     var iv = calcularIntervaloEsperaCacadas();
+    var tetoMin = Math.round(iv.tetoOciosoMs / 60000);
     if (iv.origem === 'padrao-madrugada') {
-      return '8-15min (madrugada 2h-9h)';
+      return '8-15min apos ultimo ataque (madrugada, teto ' + tetoMin + 'min)';
     }
     if (iv.origem === 'padrao-comercial') {
-      return '3-12min (horario comercial)';
+      return '4-8min apos ultimo ataque (comercial, teto ' + tetoMin + 'min)';
     }
     var minMin = Math.round(iv.minMs / 60000);
     var maxMin = Math.round(iv.maxMs / 60000);
-    return minMin + '-' + maxMin + 'min (bot_espera_cacadas=' + iv.minutos + ')';
+    return minMin + '-' + maxMin + 'min apos ultimo ataque (bot_espera_cacadas=' + iv.minutos +
+      ', teto ' + tetoMin + 'min)';
+  }
+
+  function parseDataHoraRelatorioAtaque(texto) {
+    var m = String(texto || '').trim().match(/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+    if (!m) return null;
+
+    var dia = parseInt(m[1], 10);
+    var mes = parseInt(m[2], 10) - 1;
+    var hora = parseInt(m[3], 10);
+    var minuto = parseInt(m[4], 10);
+    var agora = new Date();
+    var ano = agora.getFullYear();
+    var dt = new Date(ano, mes, dia, hora, minuto, 0, 0);
+
+    if (dt.getTime() > agora.getTime() + 86400000) {
+      dt = new Date(ano - 1, mes, dia, hora, minuto, 0, 0);
+    }
+    if (dt.getTime() > agora.getTime() + 3600000) {
+      dt.setDate(dt.getDate() - 1);
+    }
+
+    return dt.getTime();
+  }
+
+  function extrairUltimoAtaqueRelatorios() {
+    var col = document.getElementById('col_direita') || document;
+    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
+
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || '';
+      if (href.indexOf('ver=') === -1) continue;
+
+      var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
+      var textoNorm = normalizarTextoCombate(texto);
+      if (textoNorm.indexOf('voce atacou') === -1) continue;
+
+      var matchData = texto.match(/(\d{2}\/\d{2}\s+\d{2}:\d{2})/);
+      if (!matchData) continue;
+
+      var ts = parseDataHoraRelatorioAtaque(matchData[1]);
+      if (ts === null) continue;
+
+      return {
+        ts: ts,
+        dataTexto: matchData[1],
+        resumo: texto
+      };
+    }
+
+    return null;
+  }
+
+  function calcularEsperaAposUltimoAtaque(ultimoAtaqueMs) {
+    var iv = calcularIntervaloEsperaCacadas();
+    var agora = Date.now();
+
+    if (ultimoAtaqueMs === null || ultimoAtaqueMs === undefined || isNaN(ultimoAtaqueMs)) {
+      return {
+        waitMs: 0,
+        motivo: 'sem historico de ataque — caçada imediata',
+        iv: iv
+      };
+    }
+
+    var elapsedMs = agora - ultimoAtaqueMs;
+    if (elapsedMs < 0) elapsedMs = 0;
+
+    var targetMs = sortearTargetEsperaCacadas(iv);
+    var tetoMs = iv.tetoOciosoMs;
+    var elapsedMin = (elapsedMs / 60000).toFixed(1);
+    var targetMin = (targetMs / 60000).toFixed(1);
+    var tetoMin = (tetoMs / 60000).toFixed(0);
+
+    if (elapsedMs >= tetoMs) {
+      return {
+        waitMs: 0,
+        motivo: 'teto ocioso atingido (' + elapsedMin + 'min >= ' + tetoMin + 'min)',
+        elapsedMs: elapsedMs,
+        targetMs: targetMs,
+        tetoMs: tetoMs,
+        iv: iv
+      };
+    }
+
+    if (elapsedMs >= targetMs) {
+      return {
+        waitMs: 0,
+        motivo: 'intervalo alvo atingido (' + elapsedMin + 'min >= ' + targetMin + 'min)',
+        elapsedMs: elapsedMs,
+        targetMs: targetMs,
+        tetoMs: tetoMs,
+        iv: iv
+      };
+    }
+
+    var waitBrutoMs = targetMs - elapsedMs;
+    var waitMaxMs = tetoMs - elapsedMs;
+    var waitMs = Math.min(waitBrutoMs, waitMaxMs);
+
+    if (waitMs <= 0) {
+      return {
+        waitMs: 0,
+        motivo: 'espera zero — caçada imediata',
+        elapsedMs: elapsedMs,
+        targetMs: targetMs,
+        tetoMs: tetoMs,
+        iv: iv
+      };
+    }
+
+    return {
+      waitMs: waitMs,
+      motivo: 'aguardando ' + Math.round(waitMs / 1000) + 's (' +
+        elapsedMin + 'min desde ultimo, alvo ' + targetMin + 'min, teto ' + tetoMin + 'min)',
+      elapsedMs: elapsedMs,
+      targetMs: targetMs,
+      tetoMs: tetoMs,
+      iv: iv
+    };
+  }
+
+  function liberarGateCacadas() {
+    try { sessionStorage.setItem(BOT_CACADAS_GATE_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  function gateCacadasLiberado() {
+    try {
+      var raw = sessionStorage.getItem(BOT_CACADAS_GATE_KEY);
+      if (!raw) return false;
+      var ts = parseInt(raw, 10);
+      if (isNaN(ts) || Date.now() - ts > GATE_CACADAS_VALIDADE_MS) {
+        sessionStorage.removeItem(BOT_CACADAS_GATE_KEY);
+        return false;
+      }
+      return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function consumirGateCacadas() {
+    try { sessionStorage.removeItem(BOT_CACADAS_GATE_KEY); } catch (e) {}
+  }
+
+  function irParaCacadasLiberado(motivo) {
+    console.log('[Caçadas] ' + motivo + ' — redirecionando para caçadas.');
+    liberarGateCacadas();
+    window.location.href = URL_CACADAS;
+  }
+
+  function irParaPortaoRelatorios(motivo) {
+    console.log('[Caçadas] ' + motivo + ' — portao relatorios de ataque...');
+    consumirGateCacadas();
+    portaoRelatoriosAgendado = false;
+    setTimeout(function() {
+      window.location.href = URL_RELATORIOS_ATAQUE;
+    }, 1500);
+  }
+
+  function processarPortaoRelatoriosAtaque() {
+    if (portaoRelatoriosAgendado) return true;
+
+    var ultimo = extrairUltimoAtaqueRelatorios();
+    var decisao = calcularEsperaAposUltimoAtaque(ultimo ? ultimo.ts : null);
+
+    if (ultimo) {
+      console.log('[Caçadas] Ultimo ataque: ' + ultimo.dataTexto + ' — ' + ultimo.resumo);
+    } else {
+      console.warn('[Caçadas] Nenhum relatorio "Voce atacou" encontrado.');
+    }
+
+    console.log('[Caçadas] Portao — ' + decisao.motivo);
+
+    if (decisao.waitMs <= 0) {
+      irParaCacadasLiberado('portao-imediato');
+      return true;
+    }
+
+    portaoRelatoriosAgendado = true;
+    var segundos = Math.round(decisao.waitMs / 1000);
+    console.log('[Caçadas] Portao — aguardando ' + segundos + 's nesta pagina...');
+
+    setTimeout(function() {
+      irParaCacadasLiberado('portao-pos-espera (' + segundos + 's)');
+    }, decisao.waitMs);
+
+    return true;
   }
 
   // --- Whitelist = nomes/clas que NAO atacar (pagina atacar) ---
@@ -842,9 +1047,7 @@
 
   function avisarDiscordEVoltarCacadas(mensagem) {
     enviarDiscordTexto(mensagem).finally(function() {
-      setTimeout(function() {
-        window.location.href = URL_CACADAS;
-      }, 1500);
+      irParaPortaoRelatorios('Alvo ignorado');
     });
   }
 
@@ -1044,10 +1247,7 @@
   }
 
   function irParaCacadasAposCombate(motivo) {
-    console.log('[Combate] ' + motivo + ' — redirecionando para caçadas...');
-    setTimeout(function() {
-      window.location.href = URL_CACADAS;
-    }, 1500);
+    irParaPortaoRelatorios(motivo);
   }
 
   function processarPaginaCombate() {
@@ -1417,6 +1617,10 @@
 
   function redirecionarParaCacadas(motivo) {
     console.warn('[Script] PÁGINA NÃO MAPEADA (' + motivo + '). Redirecionando...');
+    if (obterModoAba() === 'cacadas') {
+      irParaPortaoRelatorios('Pagina nao mapeada');
+      return;
+    }
     window.location.href = URL_CACADAS;
   }
 
@@ -1443,7 +1647,8 @@
   }
 
   function urlAposCaptcha() {
-    return obterModoAba() === 'invasor' ? URL_INVASOR : URL_CACADAS;
+    if (obterModoAba() === 'invasor') return URL_INVASOR;
+    return URL_RELATORIOS_ATAQUE;
   }
 
   console.log(
@@ -1506,10 +1711,10 @@
         return;
       }
 
-      // Modo cacadas: /status → caçadas
+      // Modo cacadas: /status → portao relatorios
       if (obterModoAba() === 'cacadas' && urlAtual.indexOf('status') !== -1) {
-        console.log('[Script Caçadas] Status — redirecionando para caçadas...');
-        window.location.href = URL_CACADAS;
+        console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
+        window.location.href = URL_RELATORIOS_ATAQUE;
         return;
       }
 
@@ -1554,9 +1759,27 @@
           }
         },
         {
+          id: 'relatorios_ataque',
+          checar: function() {
+            if (obterModoAba() !== 'cacadas') return false;
+            if (urlAtual.indexOf('relatorios_ataque') !== -1) return true;
+            return !!document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]');
+          },
+          executar: function() {
+            return processarPortaoRelatoriosAtaque();
+          }
+        },
+        {
           id: 'cacadas',
           checar: function() { return urlAtual.indexOf('cacadas') !== -1; },
           executar: function() {
+            if (!gateCacadasLiberado()) {
+              console.log('[Caçadas] Gate nao liberado — redirecionando ao portao...');
+              window.location.href = URL_RELATORIOS_ATAQUE;
+              return true;
+            }
+            consumirGateCacadas();
+
             var selectNivel = document.getElementById('por_nivel');
 
             if (selectNivel) {
@@ -1567,20 +1790,8 @@
               if (formNivel) {
                 var btnSubmit = formNivel.querySelector('input[type="submit"]');
                 if (btnSubmit) {
-                  var ivEspera = calcularIntervaloEsperaCacadas();
-                  var tempoAleatorio = sortearTempoEsperaCacadas();
-                  var segundos = Math.round(tempoAleatorio / 1000);
-
-                  console.log(
-                    '[Caçadas] Nivel selecionado (' + NIVEL_CACADAS_FINAL + '). Aguardando ' + segundos +
-                    's (faixa ' + Math.round(ivEspera.minMs / 1000) + '-' + Math.round(ivEspera.maxMs / 1000) + 's)...'
-                  );
-
-                  setTimeout(function() {
-                    console.log('[Caçadas] Tempo concluído. Clicando no botão para iniciar caçada...');
-                    btnSubmit.click();
-                  }, tempoAleatorio);
-
+                  console.log('[Caçadas] Gate OK — nivel ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
+                  btnSubmit.click();
                   return true;
                 }
               }
