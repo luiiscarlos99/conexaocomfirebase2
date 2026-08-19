@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.52
-// @description  Automação do Caçadas/Atacar com portão via relatórios de ataque, digitação simulada de Captcha, timeout de Captcha (10min) e Firebase.
+// @version      2.53
+// @description  Automação do Caçadas/Atacar com portão via relatórios de ataque (5min cooldown + faixa), Captcha e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.52';
-  var SCRIPT_ATUALIZADO = '19/08/2026 15:45';
+  var SCRIPT_VERSAO = '2.53';
+  var SCRIPT_ATUALIZADO = '19/08/2026 15:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -510,13 +510,12 @@
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Intervalo apos ultimo ataque (relatorios) — bot_espera_cacadas (minutos) via URL ou localStorage
-  // Padrao: comercial 4-8min (teto ocioso 8); madrugada 8-15min (teto ocioso 15, jogo permite ~30)
-  var ESPERA_CACADAS_MADRUGADA_MIN_MS = 480000;   // 8 min
-  var ESPERA_CACADAS_MADRUGADA_MAX_MS = 900000;   // 15 min
-  var ESPERA_CACADAS_COMERCIAL_MIN_MS = 240000;   // 4 min
-  var ESPERA_CACADAS_COMERCIAL_MAX_MS = 480000;   // 8 min
-  var TETO_OCIOSO_COMERCIAL_MS = 480000;          // 8 min
-  var TETO_OCIOSO_MADRUGADA_MS = 900000;          // 15 min
+  // Penalidade fixa 5min pos-ataque + extra aleatorio: comercial +2-4 (7-9 total); madrugada +8-15 (13-20 total)
+  var COOLDOWN_PENALIDADE_CACADAS_MS = 300000;    // 5 min obrigatorio pos-ataque
+  var EXTRA_CACADAS_COMERCIAL_MIN_MS = 120000;    // +2 min
+  var EXTRA_CACADAS_COMERCIAL_MAX_MS = 240000;    // +4 min
+  var EXTRA_CACADAS_MADRUGADA_MIN_MS = 480000;    // +8 min
+  var EXTRA_CACADAS_MADRUGADA_MAX_MS = 900000;    // +15 min
   var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;       // 02:00
   var ESPERA_CACADAS_HORA_FIM_LENTA = 9;          // ate 08:59
   var GATE_CACADAS_VALIDADE_MS = 60000;
@@ -528,40 +527,51 @@
 
   function calcularIntervaloEsperaCacadas() {
     var madrugada = estaNoHorarioEsperaCacadasLenta();
-    var tetoOciosoMs = madrugada ? TETO_OCIOSO_MADRUGADA_MS : TETO_OCIOSO_COMERCIAL_MS;
+    var penMs = COOLDOWN_PENALIDADE_CACADAS_MS;
     var minutos = parseEsperaCacadasMinutos(localStorage.getItem('BOT_ESPERA_CACADAS'));
 
     if (minutos === null) {
       if (madrugada) {
+        var minMad = penMs + EXTRA_CACADAS_MADRUGADA_MIN_MS;
+        var maxMad = penMs + EXTRA_CACADAS_MADRUGADA_MAX_MS;
         return {
-          minMs: ESPERA_CACADAS_MADRUGADA_MIN_MS,
-          maxMs: ESPERA_CACADAS_MADRUGADA_MAX_MS,
-          tetoOciosoMs: tetoOciosoMs,
+          minMs: minMad,
+          maxMs: maxMad,
+          tetoOciosoMs: maxMad,
+          penMs: penMs,
           origem: 'padrao-madrugada'
         };
       }
+      var minCom = penMs + EXTRA_CACADAS_COMERCIAL_MIN_MS;
+      var maxCom = penMs + EXTRA_CACADAS_COMERCIAL_MAX_MS;
       return {
-        minMs: ESPERA_CACADAS_COMERCIAL_MIN_MS,
-        maxMs: ESPERA_CACADAS_COMERCIAL_MAX_MS,
-        tetoOciosoMs: tetoOciosoMs,
+        minMs: minCom,
+        maxMs: maxCom,
+        tetoOciosoMs: maxCom,
+        penMs: penMs,
         origem: 'padrao-comercial'
       };
     }
 
     if (minutos < 2) {
+      var maxCfgCurto = penMs + 120000;
       return {
-        minMs: 0,
-        maxMs: 120000,
-        tetoOciosoMs: tetoOciosoMs,
+        minMs: penMs,
+        maxMs: maxCfgCurto,
+        tetoOciosoMs: maxCfgCurto,
+        penMs: penMs,
         origem: 'config',
         minutos: minutos
       };
     }
 
+    var minCfg = penMs + Math.round((minutos - 2) * 60000);
+    var maxCfg = penMs + Math.round(minutos * 60000);
     return {
-      minMs: Math.round((minutos - 2) * 60000),
-      maxMs: Math.round(minutos * 60000),
-      tetoOciosoMs: tetoOciosoMs,
+      minMs: minCfg,
+      maxMs: maxCfg,
+      tetoOciosoMs: maxCfg,
+      penMs: penMs,
       origem: 'config',
       minutos: minutos
     };
@@ -575,17 +585,17 @@
 
   function descreverEsperaCacadas() {
     var iv = calcularIntervaloEsperaCacadas();
-    var tetoMin = Math.round(iv.tetoOciosoMs / 60000);
-    if (iv.origem === 'padrao-madrugada') {
-      return '8-15min apos ultimo ataque (madrugada, teto ' + tetoMin + 'min)';
-    }
-    if (iv.origem === 'padrao-comercial') {
-      return '4-8min apos ultimo ataque (comercial, teto ' + tetoMin + 'min)';
-    }
+    var penMin = Math.round(iv.penMs / 60000);
     var minMin = Math.round(iv.minMs / 60000);
     var maxMin = Math.round(iv.maxMs / 60000);
-    return minMin + '-' + maxMin + 'min apos ultimo ataque (bot_espera_cacadas=' + iv.minutos +
-      ', teto ' + tetoMin + 'min)';
+    if (iv.origem === 'padrao-madrugada') {
+      return penMin + 'min cooldown + 8-15min (' + minMin + '-' + maxMin + ' total, madrugada)';
+    }
+    if (iv.origem === 'padrao-comercial') {
+      return penMin + 'min cooldown + 2-4min (' + minMin + '-' + maxMin + ' total, comercial)';
+    }
+    return penMin + 'min cooldown + extra (' + minMin + '-' + maxMin + ' total, bot_espera_cacadas=' +
+      iv.minutos + ')';
   }
 
   function parseDataHoraRelatorioAtaque(texto) {
