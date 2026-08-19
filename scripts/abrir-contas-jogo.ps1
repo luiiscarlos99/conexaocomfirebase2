@@ -179,10 +179,17 @@ function Get-UrlLogin {
     return '{0}/?{1}' -f $root, ($pairs -join '&')
 }
 
+function Get-UrlPortaoCacadas {
+    param([string]$Base)
+
+    # Portao de timing (ultimo ataque) — bot redireciona para /cacadas quando liberado
+    return '{0}/mensagens?tab=relatorios_ataque&bot_modo=cacadas' -f $Base.TrimEnd('/')
+}
+
 function Get-UrlCacadas {
     param([string]$Base)
 
-    return '{0}/cacadas?bot_modo=cacadas' -f $Base.TrimEnd('/')
+    return Get-UrlPortaoCacadas -Base $Base
 }
 
 function Get-UrlJogo {
@@ -214,9 +221,9 @@ function Get-UrlJogo {
     }
     $qs = $pairs -join '&'
 
-    # Fase 2 cacadas: /cacadas com params — garante bot_modo=cacadas (nao herda invasor da fase 1)
+    # Fase 2 cacadas: portao relatorios_ataque — valida ultimo ataque antes de /cacadas
     if ($BotModo -eq 'cacadas') {
-        return '{0}/cacadas?{1}' -f $root, $qs
+        return '{0}/mensagens?tab=relatorios_ataque&{1}' -f $root, $qs
     }
 
     # Invasor: home com params (login/redirect seguro)
@@ -450,7 +457,7 @@ $contasFase2 = @($contasFase2Lista | Where-Object {
 
 if ($contasFase2.Count -gt 0) {
     Write-Host '--- Fase 2: jogo (BotModo de cada conta) ---' -ForegroundColor Green
-    Write-Host '  Chrome fase 2: --incognito + /cacadas?bot_modo=cacadas&...' -ForegroundColor DarkGray
+    Write-Host '  Chrome fase 2: --incognito + /mensagens?tab=relatorios_ataque&bot_modo=cacadas&...' -ForegroundColor DarkGray
     Write-Host '  Opera anon: --private na janela privada existente' -ForegroundColor DarkGray
 
     $i = 0
@@ -482,6 +489,6 @@ if ($contasFase2.Count -gt 0) {
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = caçadas (Sora, Shizuo, Shiroe).' -ForegroundColor Green
+Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = portao caçadas (relatorios_ataque) → caçadas.' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''

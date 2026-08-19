@@ -53,7 +53,7 @@ Injetar **nesta ordem** (auto-run ON em todos):
 
 **Shiroe (caçadas)**
 ```
-https://shadowofshinobi.com/cacadas?bot_modo=cacadas
+https://shadowofshinobi.com/mensagens?tab=relatorios_ataque&bot_modo=cacadas
 ```
 
 **Shizuo / Sora (invasor)**
@@ -85,7 +85,7 @@ https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 
 ### Aba `cacadas`
 ```
-Login → /status → /cacadas → atacar → (captcha → painel Firebase)
+Login → portão /mensagens?tab=relatorios_ataque → (espera se necessário) → /cacadas → atacar → (captcha → painel Firebase)
 ```
 
 ### Aba `invasor`
@@ -143,7 +143,7 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 |---|---|
 | **1 — Login** | `/?bot_modo=invasor&bot_user=...` nas **3 contas** (Shiroe inclui `bot_nivel`) |
 | **Espera** | 60s — Shizuo/Sora vão para `/invasor` sozinhos |
-| **2 — Jogo** | Sora (anon invasor) → Shizuo (invasor) → Shiroe (caçadas) |
+| **2 — Jogo** | Sora → Shizuo (`/invasor`) → Shiroe (`/mensagens?tab=relatorios_ataque`, portão caçadas) |
 
 **Fase 2 anon (Sora):** `--private` **sem** `--new-window` → nova aba `/invasor?bot_modo=invasor` na janela privada do login (Sora abre **antes** do Shizuo).
 
