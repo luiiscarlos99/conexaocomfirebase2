@@ -8,6 +8,11 @@ $OperaExe  = "C:\Users\SEU_USUARIO\AppData\Local\Programs\Opera GX\opera.exe"
 $UrlBase = 'https://shadowofshinobi.com'
 $NivelCacadas = '4'
 
+# Favoritos manuais no navegador (se nao usar o launcher):
+#   Caçadas:  $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas
+#   Invasor:  $UrlBase/invasor?bot_modo=invasor
+# Nao use /cacadas direto — o bot exige passar pelo portao de relatorios primeiro.
+
 # Intervalo entre abrir cada navegador (segundos)
 $IntervaloEntreContas = 3
 

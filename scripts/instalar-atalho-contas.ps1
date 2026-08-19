@@ -53,7 +53,7 @@ New-Atalho `
     -Alvo $launcherBat `
     -Argumentos '' `
     -Diretorio $scriptDir `
-    -Descricao 'Abre Chrome e Opera com as 3 contas (cacadas + invasor)'
+    -Descricao 'Abre Chrome e Opera com as 3 contas (portao caçadas + invasor)'
 
 Write-Host "Atalho criado na Area de Trabalho:" -ForegroundColor Cyan
 Write-Host "  $atalhoPath"

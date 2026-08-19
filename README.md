@@ -151,6 +151,15 @@ Por conta no `contas-jogo.config.ps1` — **duas fases**:
 
 **Modo na tela:** `#serverID` mostra `| Bot: invasor`, `cacadas` ou `manual`.
 
+### Atalhos
+
+| Tipo | Precisa mudar? | Observação |
+|---|---|---|
+| **Área de trabalho** (`Shadow of Shinobi - Contas.lnk`) | **Não** | Só executa `abrir-contas-jogo.ps1` — URLs montadas na hora |
+| **Auto-start Windows** (tarefa agendada) | **Não** | Mesmo script da fase 2 |
+| **Favoritos do navegador** | **Sim** (caçadas) | Trocar `/cacadas?bot_modo=cacadas` → `/mensagens?tab=relatorios_ataque&bot_modo=cacadas` |
+| **Favorito invasor** | Não | `/invasor?bot_modo=invasor` continua igual |
+
 Atalho + auto-start: `scripts/instalar-atalho-contas.ps1`
 
 ---

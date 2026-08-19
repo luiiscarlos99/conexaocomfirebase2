@@ -338,7 +338,7 @@
   var modoInicial = obterModoAba();
   if (!modoInicial) {
     logDiagnosticoModo('cacadas');
-    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /cacadas?bot_modo=cacadas ou /invasor?bot_modo=invasor.');
+    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
     return;
   }
 
