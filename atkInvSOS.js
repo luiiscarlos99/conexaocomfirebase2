@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      6.5
+// @version      6.6
 // @description  Automação do Invasor: last hit coordenado via Firebase (baseline derrotados), Discord, conta gerenciada e sessão.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -68,7 +68,7 @@
     return min + ' (bot_min_ataques_invasor=' + raw + ')';
   }
 
-  var LIMITE_INVASOR_DEFAULT = 2000;
+  var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
 
   function lerModoReferrer() {
