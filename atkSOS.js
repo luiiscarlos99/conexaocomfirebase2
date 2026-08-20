@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.58
+// @version      2.59
 // @description  Automação do Caçadas/Atacar com portão via relatórios, OCR auto captcha (5min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.58';
-  var SCRIPT_ATUALIZADO = '19/08/2026 23:32';
+  var SCRIPT_VERSAO = '2.59';
+  var SCRIPT_ATUALIZADO = '19/08/2026 23:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -353,6 +353,7 @@
   var CAPTCHA_OCR_AUTO_INTERVALO_MS = 120000; // 2 min entre tentativas
   var CAPTCHA_OCR_AUTO_MAX_TENTATIVAS = 3;
   var BOT_CAPTCHA_OCR_AUTO_KEY = 'BOT_CAPTCHA_OCR_AUTO_TENTATIVAS';
+  var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
@@ -1378,25 +1379,24 @@
     return n;
   }
 
-  function zerarTentativasOcrAutoCaptcha(motivo) {
-    try { sessionStorage.removeItem(BOT_CAPTCHA_OCR_AUTO_KEY); } catch (e) {}
-    logStatusOcrAutoCaptcha(motivo || 'contador zerado');
-  }
-
-  function logStatusOcrAutoCaptcha(origem) {
+  function logOcrAutoNoConsole(origem) {
     var feitas = lerTentativasOcrAutoCaptcha();
     var max = CAPTCHA_OCR_AUTO_MAX_TENTATIVAS;
     var restantes = Math.max(0, max - feitas);
-    var linha = '[Captcha OCR auto] ' + feitas + '/' + max + ' tentativas (' + restantes + ' restantes)';
+    var linha = '[Script Caçadas] OCR auto: ' + feitas + '/' + max +
+      ' tentativas (' + restantes + ' restantes)';
     if (origem) linha += ' — ' + origem;
-    console.warn(linha);
-    console.warn('[Captcha OCR auto] Zerar contador → copie no console: botZerarOcrAuto()');
+    console.log(linha);
+    console.log(COMANDO_ZERAR_OCR_AUTO);
   }
 
-  function descreverOcrAutoCaptcha() {
-    var feitas = lerTentativasOcrAutoCaptcha();
-    return feitas + '/' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS +
-      ' usadas | zerar: botZerarOcrAuto()';
+  function zerarTentativasOcrAutoCaptcha(motivo) {
+    try { sessionStorage.removeItem(BOT_CAPTCHA_OCR_AUTO_KEY); } catch (e) {}
+    logOcrAutoNoConsole(motivo || 'contador zerado');
+  }
+
+  function logStatusOcrAutoCaptcha(origem) {
+    logOcrAutoNoConsole(origem);
   }
 
   window.botZerarOcrAuto = function() {
@@ -1813,6 +1813,7 @@
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
+    ' | OCR auto: ' + descreverOcrAutoCaptcha() +
     ' | Código: ' + CODIGO_SERVIDOR
   );
 
