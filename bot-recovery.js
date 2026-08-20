@@ -23,7 +23,9 @@
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       var ma = localStorage.getItem('BOT_MIN_ATAQUES_INVASOR');
-      var lh = localStorage.getItem('BOT_LASTHIT_POR_DATA');
+      var lm = localStorage.getItem('BOT_LASTHIT_MODO');
+      var lsm = localStorage.getItem('BOT_LASTHIT_SORTEIO_MIN');
+      var lsx = localStorage.getItem('BOT_LASTHIT_SORTEIO_MAX');
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
@@ -35,7 +37,9 @@
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (ma !== null && ma !== '') params.set('bot_min_ataques_invasor', ma);
-      if (lh === '1') params.set('bot_lasthit_data', '1');
+      if (lm === 'data' || lm === 'sorteio' || lm === 'scout') params.set('bot_lasthit_modo', lm);
+      if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
+      if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
@@ -55,7 +59,8 @@
     if (modo === 'invasor' || modo === 'cacadas') dest.set('bot_modo', modo);
 
     ['bot_user', 'bot_pass', 'bot_nivel', 'bot_espera_cacadas', 'bot_limite_invasor',
-     'bot_min_ataques_invasor', 'bot_lasthit_data',
+     'bot_min_ataques_invasor', 'bot_lasthit_data', 'bot_lasthit_modo',
+     'bot_lasthit_sorteio_min', 'bot_lasthit_sorteio_max',
      'bot_whitelist_cacadas', 'bot_whitelist_cla_cacadas', 'bot_max_ryous_cacadas', 'bot_diff_nivel_cacadas',
      'bot_min_ryous_vitoria_cacadas'].forEach(function(k) {
       var v = rp.get(k);

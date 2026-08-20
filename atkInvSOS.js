@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.1
-// @description  Automação do Invasor: last hit por scout (derrotados) ou por data (+3min pos-janela).
+// @version      7.2
+// @description  Automação do Invasor: last hit scout, data (+3min) ou sorteio (31k-32k aleatorio).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -81,34 +81,117 @@
   function gravarLastHitPorDataParam(valor) {
     var v = parseLastHitPorData(valor);
     if (v === null) return false;
-    localStorage.setItem('BOT_LASTHIT_POR_DATA', v ? '1' : '0');
+    if (v) {
+      localStorage.setItem('BOT_LASTHIT_MODO', 'data');
+    } else {
+      localStorage.setItem('BOT_LASTHIT_MODO', 'scout');
+    }
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
     return true;
   }
 
-  function lastHitPorDataAtivo() {
-    return parseLastHitPorData(localStorage.getItem('BOT_LASTHIT_POR_DATA')) === true;
+  function normalizarLastHitModo(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var s = String(valor).trim().toLowerCase();
+    if (s === 'scout' || s === '0' || s === 'false' || s === 'off') return 'scout';
+    if (s === 'data' || s === '1' || s === 'true' || s === 'on') return 'data';
+    if (s === 'sorteio' || s === 'random' || s === 'aleatorio' || s === 'aleatório') return 'sorteio';
+    return null;
   }
 
-  function descreverLastHitPorData() {
-    if (lastHitPorDataAtivo()) {
-      return 'data (+3min pos-janela)';
+  function gravarLastHitModoParam(valor) {
+    var modo = normalizarLastHitModo(valor);
+    if (!modo) return false;
+    localStorage.setItem('BOT_LASTHIT_MODO', modo);
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
+    return true;
+  }
+
+  function obterLastHitModo() {
+    var modo = normalizarLastHitModo(localStorage.getItem('BOT_LASTHIT_MODO'));
+    if (modo) return modo;
+    if (parseLastHitPorData(localStorage.getItem('BOT_LASTHIT_POR_DATA')) === true) return 'data';
+    return LASTHIT_MODO_DEFAULT;
+  }
+
+  function lastHitModoData() {
+    return obterLastHitModo() === 'data';
+  }
+
+  function lastHitModoSorteio() {
+    return obterLastHitModo() === 'sorteio';
+  }
+
+  function parseLastHitSorteioNum(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, '').replace(',', ''), 10);
+    if (isNaN(n) || n < 0) return null;
+    return n;
+  }
+
+  function gravarLastHitSorteioMinParam(valor) {
+    var n = parseLastHitSorteioNum(valor);
+    if (n === null) return false;
+    localStorage.setItem('BOT_LASTHIT_SORTEIO_MIN', String(n));
+    return true;
+  }
+
+  function gravarLastHitSorteioMaxParam(valor) {
+    var n = parseLastHitSorteioNum(valor);
+    if (n === null) return false;
+    localStorage.setItem('BOT_LASTHIT_SORTEIO_MAX', String(n));
+    return true;
+  }
+
+  function obterLastHitSorteioMin() {
+    var n = parseLastHitSorteioNum(localStorage.getItem('BOT_LASTHIT_SORTEIO_MIN'));
+    if (n === null) return LASTHIT_SORTEIO_MIN_DEFAULT;
+    return n;
+  }
+
+  function obterLastHitSorteioMax() {
+    var n = parseLastHitSorteioNum(localStorage.getItem('BOT_LASTHIT_SORTEIO_MAX'));
+    if (n === null) return LASTHIT_SORTEIO_MAX_DEFAULT;
+    return n;
+  }
+
+  function formatarNumeroInvasor(n) {
+    if (n == null || isNaN(n)) return '?';
+    try {
+      return Number(n).toLocaleString('pt-BR');
+    } catch (e) {
+      return String(n);
+    }
+  }
+
+  function descreverLastHitModo() {
+    var modo = obterLastHitModo();
+    if (modo === 'data') return 'data (+3min pos-janela)';
+    if (modo === 'sorteio') {
+      return 'sorteio (' + formatarNumeroInvasor(obterLastHitSorteioMin()) + '-' +
+        formatarNumeroInvasor(obterLastHitSorteioMax()) + ' aleatorio)';
     }
     return 'scout (derrotados, padrao)';
   }
 
-  var COMANDO_LASTHIT_DATA = 'botLastHitData()';
   var COMANDO_LASTHIT_SCOUT = 'botLastHitScout()';
+  var COMANDO_LASTHIT_DATA = 'botLastHitData()';
+  var COMANDO_LASTHIT_SORTEIO = 'botLastHitSorteio()';
 
   function logLastHitNoConsole(origem) {
-    var linha = '[Script Invasor] Last hit: ' + descreverLastHitPorData();
+    var linha = '[Script Invasor] Last hit: ' + descreverLastHitModo();
     if (origem) linha += ' — ' + origem;
     console.log(linha);
-    console.log(COMANDO_LASTHIT_DATA);
     console.log(COMANDO_LASTHIT_SCOUT);
+    console.log(COMANDO_LASTHIT_DATA);
+    console.log(COMANDO_LASTHIT_SORTEIO);
   }
 
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
+  var LASTHIT_MODO_DEFAULT = 'scout';
+  var LASTHIT_SORTEIO_MIN_DEFAULT = 31000;
+  var LASTHIT_SORTEIO_MAX_DEFAULT = 32000;
 
   function lerModoReferrer() {
     try {
@@ -146,11 +229,17 @@
       var l = rp.get('bot_limite_invasor');
       var ma = rp.get('bot_min_ataques_invasor');
       var lh = rp.get('bot_lasthit_data');
+      var lm = rp.get('bot_lasthit_modo');
+      var lsm = rp.get('bot_lasthit_sorteio_min');
+      var lsx = rp.get('bot_lasthit_sorteio_max');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
-      if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
+      if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
+      else if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
+      if (lsm !== null && lsm !== '') gravarLastHitSorteioMinParam(lsm);
+      if (lsx !== null && lsx !== '') gravarLastHitSorteioMaxParam(lsx);
     } catch (e) {}
   }
 
@@ -184,14 +273,21 @@
       var l = params.get('bot_limite_invasor');
       var ma = params.get('bot_min_ataques_invasor');
       var lh = params.get('bot_lasthit_data');
+      var lm = params.get('bot_lasthit_modo');
+      var lsm = params.get('bot_lasthit_sorteio_min');
+      var lsx = params.get('bot_lasthit_sorteio_max');
       if (u) localStorage.setItem('BOT_USUARIO', u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
-      if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
+      if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
+      else if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
+      if (lsm !== null && lsm !== '') gravarLastHitSorteioMinParam(lsm);
+      if (lsx !== null && lsx !== '') gravarLastHitSorteioMaxParam(lsx);
       if (!u && !p) aplicarCredenciaisReferrer();
 
-      if ((u || p || l || ma || lh || modoVeioDeQuery) && window.history && window.history.replaceState) {
+      if ((u || p || l || ma || lh || lm || lsm || lsx || modoVeioDeQuery) &&
+          window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
 
@@ -218,8 +314,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.1';
-  var SCRIPT_ATUALIZADO = '19/08/2026 23:52';
+  var SCRIPT_VERSAO = '7.2';
+  var SCRIPT_ATUALIZADO = '20/08/2026 16:55';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -243,17 +339,27 @@
   }
 
   window.botLastHitData = function() {
-    localStorage.setItem('BOT_LASTHIT_POR_DATA', '1');
+    localStorage.setItem('BOT_LASTHIT_MODO', 'data');
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
     logLastHitNoConsole('comando manual — recarregando...');
     location.reload();
     return 'data';
   };
 
   window.botLastHitScout = function() {
-    localStorage.setItem('BOT_LASTHIT_POR_DATA', '0');
+    localStorage.setItem('BOT_LASTHIT_MODO', 'scout');
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
     logLastHitNoConsole('comando manual — recarregando...');
     location.reload();
     return 'scout';
+  };
+
+  window.botLastHitSorteio = function() {
+    localStorage.setItem('BOT_LASTHIT_MODO', 'sorteio');
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
+    logLastHitNoConsole('comando manual — recarregando...');
+    location.reload();
+    return 'sorteio';
   };
 
   window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
@@ -342,14 +448,18 @@
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       var ma = localStorage.getItem('BOT_MIN_ATAQUES_INVASOR');
-      var lh = localStorage.getItem('BOT_LASTHIT_POR_DATA');
+      var lm = localStorage.getItem('BOT_LASTHIT_MODO');
+      var lsm = localStorage.getItem('BOT_LASTHIT_SORTEIO_MIN');
+      var lsx = localStorage.getItem('BOT_LASTHIT_SORTEIO_MAX');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (ma !== null && ma !== '') params.set('bot_min_ataques_invasor', ma);
-      if (lh === '1') params.set('bot_lasthit_data', '1');
+      if (lm === 'data' || lm === 'sorteio' || lm === 'scout') params.set('bot_lasthit_modo', lm);
+      if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
+      if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
     } catch (err) {}
 
     var qs = params.toString();
@@ -646,6 +756,55 @@
     return localDerrotados;
   }
 
+  function sortearAlvoLastHit(coord) {
+    var min = (coord && coord.sorteio_min != null) ? coord.sorteio_min : obterLastHitSorteioMin();
+    var max = (coord && coord.sorteio_max != null) ? coord.sorteio_max : obterLastHitSorteioMax();
+    if (max < min) {
+      var tmp = min;
+      min = max;
+      max = tmp;
+    }
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function garantirAlvoSorteadoNoFirebase(coord, derrotadosLocal) {
+    if (!coordEhModoSorteio(coord) || coord.alvo_sorteado != null) {
+      return Promise.resolve(coord);
+    }
+    if (!ehScoutDaCoord(coord)) {
+      return Promise.resolve(coord);
+    }
+    if (derrotadosLocal == null || isNaN(derrotadosLocal)) {
+      return Promise.resolve(coord);
+    }
+
+    var min = coord.sorteio_min || obterLastHitSorteioMin();
+    if (derrotadosLocal < min) {
+      return Promise.resolve(coord);
+    }
+
+    var alvo = sortearAlvoLastHit(coord);
+    var atualizado = Object.assign({}, coord, {
+      alvo_sorteado: alvo,
+      derrotados_atual: derrotadosLocal,
+      ts_atualizado: Date.now(),
+      sorteado_por: USUARIO_FINAL
+    });
+
+    console.warn('[LastHit] Sorteio realizado! Alvo=' + formatarNumeroInvasor(alvo) +
+      ' (faixa ' + formatarNumeroInvasor(min) + '-' +
+      formatarNumeroInvasor(coord.sorteio_max || obterLastHitSorteioMax()) +
+      ', atual ' + formatarNumeroInvasor(derrotadosLocal) + ')');
+
+    return putCoordInvasor(atualizado).then(function() {
+      enviarDiscordLastHitBaseline(atualizado);
+      return atualizado;
+    }).catch(function(err) {
+      console.warn('[LastHit] Falha ao publicar alvo sorteado:', err);
+      return coord;
+    });
+  }
+
   function atualizarDerrotadosAtualNoFirebase(coord, derrotadosLocal) {
     if (coordEhModoData(coord)) {
       return Promise.resolve(coord);
@@ -680,6 +839,12 @@
       console.log('[LastHit] ' + (origem || 'check') + ' modo=data ataque=' +
         formatarHoraLocal(coord.ts_atacar) + ' restante=' + Math.ceil(lh.restanteMs / 1000) +
         's fase=' + lh.fase);
+    } else if (coordEhModoSorteio(coord)) {
+      console.log('[LastHit] ' + (origem || 'check') + ' modo=sorteio alvo=' +
+        (coord.alvo_sorteado != null ? formatarNumeroInvasor(coord.alvo_sorteado) : '?') +
+        ' ref=' + formatarNumeroInvasor(derrotadosRef) +
+        ' faltam=' + (lh.faltam != null ? formatarNumeroInvasor(lh.faltam) : '?') +
+        ' fase=' + lh.fase);
     } else {
       console.log('[LastHit] ' + (origem || 'check') + ' base=' + lh.base +
         ' ref=' + derrotadosRef + ' delta=' + lh.delta + '/' + lh.minDelta +
@@ -689,9 +854,14 @@
     if (!lh.pronto) return Promise.resolve(false);
 
     lastHitAtaqueEmAndamento = true;
-    var motivoAtaque = coordEhModoData(coord)
-      ? 'Last hit ' + origem + ' (3min pos-janela)'
-      : 'Last hit ' + origem + ' (+' + lh.delta + ' derrotados)';
+    var motivoAtaque;
+    if (coordEhModoData(coord)) {
+      motivoAtaque = 'Last hit ' + origem + ' (3min pos-janela)';
+    } else if (coordEhModoSorteio(coord)) {
+      motivoAtaque = 'Last hit ' + origem + ' (sorteio >= ' + formatarNumeroInvasor(lh.alvo) + ')';
+    } else {
+      motivoAtaque = 'Last hit ' + origem + ' (+' + lh.delta + ' derrotados)';
+    }
     console.warn('[LastHit] Pronto (' + origem + ')! Disparando ataque (' + USUARIO_FINAL + ')...');
 
     return marcarCoordAtacando(coord).then(function() {
@@ -716,6 +886,10 @@
       if (coordEhModoData(coord)) {
         console.warn('[LastHit] Janela Firebase ativa (modo data) — ataque=' +
           formatarHoraLocal(coord.ts_atacar) + ', registrado_por=' + (coord.registrado_por || '?'));
+      } else if (coordEhModoSorteio(coord)) {
+        console.warn('[LastHit] Janela Firebase ativa (modo sorteio) — alvo=' +
+          (coord.alvo_sorteado != null ? formatarNumeroInvasor(coord.alvo_sorteado) : 'pendente') +
+          ', scout=' + (coord.scout || '?'));
       } else {
         console.warn('[LastHit] Janela Firebase ativa — scout=' + (coord.scout || '?') +
           ', base=' + coord.derrotados_base +
@@ -882,9 +1056,14 @@
     return !!(coord && coord.modo === 'data' && coord.ts_atacar != null);
   }
 
+  function coordEhModoSorteio(coord) {
+    return !!(coord && coord.modo === 'sorteio');
+  }
+
   function coordMonitorAtivo(coord) {
     if (!coord || (coord.fase !== 'aguardando' && coord.fase !== 'atacando')) return false;
     if (coordEhModoData(coord)) return true;
+    if (coordEhModoSorteio(coord)) return true;
     return coord.derrotados_base != null;
   }
 
@@ -907,6 +1086,16 @@
         '**Ataque programado:** `' + formatarHoraLocal(coord.ts_atacar) + '` (+3min)',
         '**Registrado por:** `' + (coord.registrado_por || '?') + '`',
         '**Contas:** Firebase sincroniza; todas atacam 3min apos sumir botao/cooldown (sem scout de derrotados).'
+      ].join('\n');
+    } else if (coordEhModoSorteio(coord)) {
+      conteudo = [
+        '🎲 **Janela Last Hit aberta (modo sorteio)**',
+        '**Faixa:** `' + formatarNumeroInvasor(coord.sorteio_min) + ' - ' +
+          formatarNumeroInvasor(coord.sorteio_max) + '`',
+        '**Alvo sorteado:** `' + (coord.alvo_sorteado != null ? formatarNumeroInvasor(coord.alvo_sorteado) : 'aguardando >= min') + '`',
+        '**Atual:** `' + formatarNumeroInvasor(coord.derrotados_atual) + '`',
+        '**Scout:** `' + (coord.scout || '?') + '`',
+        '**Contas:** scout publica derrotados; todas atacam ao atingir o alvo sorteado.'
       ].join('\n');
     } else {
       conteudo = [
@@ -935,6 +1124,10 @@
         if (coordEhModoData(coord)) {
           console.log('[LastHit] Coord ja ativa (modo data) — ataque=' +
             formatarHoraLocal(coord.ts_atacar) + ' fase=' + coord.fase);
+        } else if (coordEhModoSorteio(coord)) {
+          console.log('[LastHit] Coord ja ativa (modo sorteio) — alvo=' +
+            (coord.alvo_sorteado != null ? formatarNumeroInvasor(coord.alvo_sorteado) : '?') +
+            ' fase=' + coord.fase);
         } else {
           console.log('[LastHit] Coord ja ativa — base=' + coord.derrotados_base + ' fase=' + coord.fase);
         }
@@ -944,7 +1137,7 @@
       var agora = Date.now();
       var novo;
 
-      if (lastHitPorDataAtivo()) {
+      if (lastHitModoData()) {
         novo = {
           modo: 'data',
           ts_janela: agora,
@@ -957,6 +1150,30 @@
 
         console.warn('[LastHit] Janela detectada (modo data)! Ataque em 3min — ' +
           formatarHoraLocal(novo.ts_atacar));
+      } else if (lastHitModoSorteio()) {
+        var sortMin = obterLastHitSorteioMin();
+        var sortMax = obterLastHitSorteioMax();
+        novo = {
+          modo: 'sorteio',
+          sorteio_min: sortMin,
+          sorteio_max: sortMax,
+          alvo_sorteado: null,
+          derrotados_atual: derrotadosAtual,
+          fase: 'aguardando',
+          ts: agora,
+          ts_atualizado: agora,
+          scout: USUARIO_FINAL
+        };
+
+        if (derrotadosAtual != null && !isNaN(derrotadosAtual) && derrotadosAtual >= sortMin) {
+          novo.alvo_sorteado = sortearAlvoLastHit(novo);
+          novo.sorteado_por = USUARIO_FINAL;
+          console.warn('[LastHit] Sorteio registrado! Alvo=' + formatarNumeroInvasor(novo.alvo_sorteado) +
+            ' (atual ' + formatarNumeroInvasor(derrotadosAtual) + ')');
+        } else {
+          console.warn('[LastHit] Sorteio registrado — aguardando ' + formatarNumeroInvasor(sortMin) +
+            ' para sortear (atual ' + formatarNumeroInvasor(derrotadosAtual) + ')');
+        }
       } else {
         novo = {
           derrotados_base: derrotadosAtual,
@@ -974,9 +1191,16 @@
 
       return putCoordInvasor(novo).then(function() {
         enviarDiscordLastHitBaseline(novo);
-        var motivoPrint = coordEhModoData(novo)
-          ? 'Last Hit — modo data (ataque ' + formatarHoraLocal(novo.ts_atacar) + ')'
-          : 'Last Hit — baseline ' + derrotadosAtual + ' (+' + novo.min_delta + ')';
+        var motivoPrint;
+        if (coordEhModoData(novo)) {
+          motivoPrint = 'Last Hit — modo data (ataque ' + formatarHoraLocal(novo.ts_atacar) + ')';
+        } else if (coordEhModoSorteio(novo)) {
+          motivoPrint = 'Last Hit — sorteio ' + (novo.alvo_sorteado != null
+            ? formatarNumeroInvasor(novo.alvo_sorteado)
+            : ('aguardando ' + formatarNumeroInvasor(novo.sorteio_min)));
+        } else {
+          motivoPrint = 'Last Hit — baseline ' + derrotadosAtual + ' (+' + novo.min_delta + ')';
+        }
         capturarEEnviarPrintInferiorDiscord(motivoPrint, false);
         return novo;
       });
@@ -1009,6 +1233,20 @@
       };
     }
 
+    if (coordEhModoSorteio(coord)) {
+      var alvo = coord.alvo_sorteado;
+      var prontoSorteio = alvo != null && derrotadosAtual != null && !isNaN(derrotadosAtual) &&
+        derrotadosAtual >= alvo;
+      return {
+        pronto: prontoSorteio,
+        alvo: alvo,
+        faltam: alvo != null && derrotadosAtual != null ? Math.max(0, alvo - derrotadosAtual) : null,
+        fase: coord.fase,
+        restanteMs: 0,
+        modo: 'sorteio'
+      };
+    }
+
     var minDelta = coord.min_delta || obterMinAtaquesInvasor();
     var delta = derrotadosAtual - coord.derrotados_base;
 
@@ -1035,6 +1273,21 @@
         '[LastHit] Firebase ATIVO (modo data) — reload ' + (TEMPO_RELOAD_MONITOR / 1000) +
         's | ataque em ' + Math.ceil(restanteMs / 1000) + 's (' +
         formatarHoraLocal(coord.ts_atacar) + ')' +
+        (extras.length ? ' (' + extras.join(', ') + ')' : '')
+      );
+      return;
+    }
+
+    if (coordEhModoSorteio(coord)) {
+      var alvoSort = coord.alvo_sorteado;
+      var msgSort = alvoSort != null
+        ? 'meta ' + formatarNumeroInvasor(alvoSort) + ' | atual ' + formatarNumeroInvasor(derrotados) +
+          ' | faltam ' + formatarNumeroInvasor(Math.max(0, alvoSort - derrotados))
+        : 'aguardando sorteio (>= ' + formatarNumeroInvasor(coord.sorteio_min || obterLastHitSorteioMin()) +
+          ') | atual ' + formatarNumeroInvasor(derrotados);
+      console.warn(
+        '[LastHit] Firebase ATIVO (modo sorteio) — reload ' + (TEMPO_RELOAD_MONITOR / 1000) +
+        's | ' + msgSort +
         (extras.length ? ' (' + extras.join(', ') + ')' : '')
       );
       return;
@@ -1081,7 +1334,8 @@
       });
     }
 
-    if (coord && !coordEhModoData(coord) && coord.derrotados_base != null && derrotados < coord.derrotados_base) {
+    if (coord && !coordEhModoData(coord) && !coordEhModoSorteio(coord) &&
+        coord.derrotados_base != null && derrotados < coord.derrotados_base) {
       console.warn('[LastHit] Derrotados (' + derrotados + ') < base (' +
         coord.derrotados_base + ') — novo evento? Limpando coord.');
       return limparEstadoFirebaseInvasor('contador derrotados regrediu').then(function() {
@@ -1095,6 +1349,29 @@
         garantirEscutaCoordInvasor();
         return dispararLastHitSePronto(coord, derrotados, 'reload data').then(function() {
           return resolverTempoReloadInvasor(coord);
+        });
+      }
+
+      if (coordEhModoSorteio(coord)) {
+        return atualizarDerrotadosAtualNoFirebase(coord, derrotados).then(function(coordPub) {
+          return garantirAlvoSorteadoNoFirebase(coordPub || coord, derrotados).then(function(coordSorteio) {
+            var coordAtiva = coordSorteio;
+            var derrotadosRef = obterDerrotadosReferencia(coordAtiva, derrotados);
+
+            avisarMonitorSeNecessario(coordAtiva, derrotadosRef, temBotao, temTimer);
+
+            if (!ehScoutDaCoord(coordAtiva)) {
+              garantirEscutaCoordInvasor();
+            }
+
+            return dispararLastHitSePronto(
+              coordAtiva,
+              derrotadosRef,
+              ehScoutDaCoord(coordAtiva) ? 'reload sorteio scout' : 'reload sorteio'
+            ).then(function() {
+              return resolverTempoReloadInvasor(coordAtiva);
+            });
+          });
         });
       }
 
@@ -1125,8 +1402,12 @@
       tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
     } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
       var tempoPosLimite = resolverTempoReloadInvasor(coord);
-      if (lastHitPorDataAtivo()) {
+      if (lastHitModoData()) {
         console.log('[Invasor] Pos-limite (modo data) — aguardando sumir botao/cooldown para registrar janela (reload ' +
+          descreverTempoReload(tempoPosLimite) + ').');
+      } else if (lastHitModoSorteio()) {
+        console.log('[Invasor] Pos-limite (modo sorteio) — aguardando >= ' +
+          formatarNumeroInvasor(obterLastHitSorteioMin()) + ' derrotados (reload ' +
           descreverTempoReload(tempoPosLimite) + ').');
       } else {
         console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload ' +
@@ -1168,12 +1449,27 @@
           return processarCoordInvasor(coord, derrotados, temBotao, temTimer);
         }
 
-        // 2) Sem coord: quem ficou sem botao/cooldown avisa todas via Firebase + Discord
+        // 2) Sem coord: registrar janela ou iniciar sorteio ao atingir faixa minima
         if (!temBotao && !temTimer) {
-          var msgJanela = lastHitPorDataAtivo()
-            ? '[LastHit] Sem botao/cooldown — registrando janela (modo data, +3min)...'
-            : '[LastHit] Sem botao/cooldown — registrando baseline no Firebase...';
+          var msgJanela;
+          if (lastHitModoData()) {
+            msgJanela = '[LastHit] Sem botao/cooldown — registrando janela (modo data, +3min)...';
+          } else if (lastHitModoSorteio()) {
+            msgJanela = '[LastHit] Sem botao/cooldown — registrando sorteio no Firebase...';
+          } else {
+            msgJanela = '[LastHit] Sem botao/cooldown — registrando baseline no Firebase...';
+          }
           console.warn(msgJanela);
+          return registrarJanelaLastHitSeNecessario(derrotados).then(function() {
+            return fetchCoordInvasor();
+          }).then(function(coordNova) {
+            return processarCoordInvasor(coordNova, derrotados, temBotao, temTimer);
+          });
+        }
+
+        if (lastHitModoSorteio() && derrotados >= obterLastHitSorteioMin()) {
+          console.warn('[LastHit] Sorteio — >= ' + formatarNumeroInvasor(obterLastHitSorteioMin()) +
+            ' derrotados, registrando coord no Firebase...');
           return registrarJanelaLastHitSeNecessario(derrotados).then(function() {
             return fetchCoordInvasor();
           }).then(function(coordNova) {
