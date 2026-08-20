@@ -11,6 +11,7 @@ $NivelCacadas = '4'
 # Favoritos manuais no navegador (se nao usar o launcher):
 #   Caçadas:  $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas
 #   Invasor:  $UrlBase/invasor?bot_modo=invasor
+#   Invasor (last hit por data, sem scout):  ...&bot_lasthit_data=1
 # Nao use /cacadas direto — o bot exige passar pelo portao de relatorios primeiro.
 
 # Intervalo entre abrir cada navegador (segundos)

@@ -55,6 +55,15 @@
         var mam = parseInt(String(ma).replace(/\./g, '').replace(',', ''), 10);
         if (!isNaN(mam) && mam >= 1) localStorage.setItem('BOT_MIN_ATAQUES_INVASOR', String(mam));
       }
+      var lh = rp.get('bot_lasthit_data');
+      if (lh !== null && lh !== '') {
+        var lhv = String(lh).trim().toLowerCase();
+        if (lhv === '1' || lhv === 'true' || lhv === 'on' || lhv === 'sim' || lhv === 'yes') {
+          localStorage.setItem('BOT_LASTHIT_POR_DATA', '1');
+        } else if (lhv === '0' || lhv === 'false' || lhv === 'off' || lhv === 'nao' || lhv === 'não' || lhv === 'no') {
+          localStorage.setItem('BOT_LASTHIT_POR_DATA', '0');
+        }
+      }
       if (w !== null && w !== '') localStorage.setItem('BOT_WHITELIST_CACADAS', String(w).trim());
       if (wc !== null && wc !== '') localStorage.setItem('BOT_WHITELIST_CLA_CACADAS', String(wc).trim());
       if (r !== null && r !== '') {
@@ -88,7 +97,7 @@
       aplicarCredenciais(window.location.search);
       if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
           !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
-          !params.get('bot_min_ataques_invasor') &&
+          !params.get('bot_min_ataques_invasor') && !params.get('bot_lasthit_data') &&
           !params.get('bot_whitelist_cacadas') && !params.get('bot_whitelist_cla_cacadas') &&
           !params.get('bot_max_ryous_cacadas') &&
           !params.get('bot_diff_nivel_cacadas') && !params.get('bot_min_ryous_vitoria_cacadas')) {
