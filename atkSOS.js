@@ -1393,6 +1393,12 @@
     console.warn('[Captcha OCR auto] Zerar contador → copie no console: botZerarOcrAuto()');
   }
 
+  function descreverOcrAutoCaptcha() {
+    var feitas = lerTentativasOcrAutoCaptcha();
+    return feitas + '/' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS +
+      ' usadas | zerar: botZerarOcrAuto()';
+  }
+
   window.botZerarOcrAuto = function() {
     zerarTentativasOcrAutoCaptcha('comando manual botZerarOcrAuto()');
     agendarProximaTentativaOcrAuto();
