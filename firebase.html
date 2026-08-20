@@ -686,7 +686,7 @@
         if (!item.digits || item.digits.length !== 5) continue;
 
         const pesoBase = (item.peso || 10) * (item.metodo === 'segmentado' ? 2.2 : 1);
-        const pesoVariante = pesoBase * obterFatorVarianteAprendizado(item.variantId);
+        const pesoVariante = pesoBase;
 
         for (let pos = 0; pos < 5; pos++) {
           const ch = item.digits.charAt(pos);
@@ -729,244 +729,10 @@
       return codigo.length === 5 ? codigo : null;
     }
 
-    // --- Aprendizado: grava correcoes manuais e aplica nas proximas leituras ---
-    const OCR_APRENDIZADO_KEY = 'OCR_APRENDIZADO_V1';
-    const OCR_APRENDIZADO_FB = 'ocr_aprendizado/global';
-    const OCR_APRENDIZADO_MAX_PADROES = 80;
-
-    let ocrAprendizadoCache = null;
     let ocrUltimaSugestao = null;
-    let ocrUltimaMeta = null;
-
-    function criarAprendizadoVazio() {
-      return {
-        version: 1,
-        totalCorrecoes: 0,
-        confusoes: { global: {}, pos0: {}, pos1: {}, pos2: {}, pos3: {}, pos4: {} },
-        variantes: {},
-        padroes: []
-      };
-    }
-
-    function carregarAprendizadoOcrLocal() {
-      try {
-        const raw = localStorage.getItem(OCR_APRENDIZADO_KEY);
-        if (!raw) return criarAprendizadoVazio();
-        const parsed = JSON.parse(raw);
-        if (!parsed || parsed.version !== 1) return criarAprendizadoVazio();
-        if (!parsed.confusoes) parsed.confusoes = criarAprendizadoVazio().confusoes;
-        if (!parsed.variantes) parsed.variantes = {};
-        if (!parsed.padroes) parsed.padroes = [];
-        return parsed;
-      } catch (e) {
-        return criarAprendizadoVazio();
-      }
-    }
-
-    function mesclarAprendizadoOcr(a, b) {
-      const base = criarAprendizadoVazio();
-      const fontes = [a, b].filter(Boolean);
-      for (let f = 0; f < fontes.length; f++) {
-        const src = fontes[f];
-        base.totalCorrecoes += src.totalCorrecoes || 0;
-        for (const bucket in base.confusoes) {
-          if (!src.confusoes || !src.confusoes[bucket]) continue;
-          for (const de in src.confusoes[bucket]) {
-            base.confusoes[bucket][de] = base.confusoes[bucket][de] || {};
-            for (const para in src.confusoes[bucket][de]) {
-              base.confusoes[bucket][de][para] = Math.max(
-                base.confusoes[bucket][de][para] || 0,
-                src.confusoes[bucket][de][para] || 0
-              );
-            }
-          }
-        }
-        if (src.variantes) {
-          for (const vid in src.variantes) {
-            base.variantes[vid] = base.variantes[vid] || { acertos: 0, erros: 0 };
-            base.variantes[vid].acertos += src.variantes[vid].acertos || 0;
-            base.variantes[vid].erros += src.variantes[vid].erros || 0;
-          }
-        }
-      }
-      const padroes = [];
-      for (let f = 0; f < fontes.length; f++) {
-        if (fontes[f].padroes) padroes.push.apply(padroes, fontes[f].padroes);
-      }
-      padroes.sort(function(x, y) { return (y.ts || 0) - (x.ts || 0); });
-      base.padroes = padroes.slice(0, OCR_APRENDIZADO_MAX_PADROES);
-      return base;
-    }
-
-    function obterAprendizadoOcr() {
-      if (!ocrAprendizadoCache) {
-        ocrAprendizadoCache = carregarAprendizadoOcrLocal();
-      }
-      return ocrAprendizadoCache;
-    }
-
-    function salvarAprendizadoOcr(dados) {
-      ocrAprendizadoCache = dados;
-      try {
-        localStorage.setItem(OCR_APRENDIZADO_KEY, JSON.stringify(dados));
-      } catch (e) {
-        console.warn('[OCR learn] localStorage cheio?', e);
-      }
-      database.ref(OCR_APRENDIZADO_FB).set(dados).catch(function(err) {
-        console.warn('[OCR learn] Firebase sync:', err);
-      });
-    }
-
-    function sincronizarAprendizadoFirebase() {
-      database.ref(OCR_APRENDIZADO_FB).once('value').then(function(snap) {
-        const remoto = snap.val();
-        if (!remoto) return;
-        const mesclado = mesclarAprendizadoOcr(obterAprendizadoOcr(), remoto);
-        salvarAprendizadoOcr(mesclado);
-        atualizarBadgeAprendizado();
-      }).catch(function(err) {
-        console.warn('[OCR learn] sync remoto:', err);
-      });
-    }
-
-    function incrementarConfusao(bucket, de, para) {
-      if (!de || !para || de === para) return;
-      bucket[de] = bucket[de] || {};
-      bucket[de][para] = (bucket[de][para] || 0) + 1;
-    }
-
-    function registrarCorrecaoOcr(sugerido, correto, meta) {
-      const sug = extrairDigitosOcr(sugerido);
-      const cor = extrairDigitosOcr(correto);
-      if (sug.length !== 5 || cor.length !== 5) return false;
-
-      const aprend = obterAprendizadoOcr();
-      aprend.totalCorrecoes += 1;
-
-      for (let pos = 0; pos < 5; pos++) {
-        const de = sug.charAt(pos);
-        const para = cor.charAt(pos);
-        if (de === para) continue;
-        incrementarConfusao(aprend.confusoes.global, de, para);
-        incrementarConfusao(aprend.confusoes['pos' + pos], de, para);
-      }
-
-      if (meta && meta.variantIdVencedor) {
-        aprend.variantes[meta.variantIdVencedor] = aprend.variantes[meta.variantIdVencedor] || { acertos: 0, erros: 0 };
-        aprend.variantes[meta.variantIdVencedor].erros += 1;
-      }
-
-      if (meta && meta.fingerprint) {
-        aprend.padroes = aprend.padroes.filter(function(p) { return p.fp !== meta.fingerprint; });
-        aprend.padroes.unshift({ fp: meta.fingerprint, codigo: cor, ts: Date.now() });
-        if (aprend.padroes.length > OCR_APRENDIZADO_MAX_PADROES) {
-          aprend.padroes.length = OCR_APRENDIZADO_MAX_PADROES;
-        }
-      }
-
-      salvarAprendizadoOcr(aprend);
-      return true;
-    }
-
-    function registrarAcertoOcr(sugerido, meta) {
-      const sug = extrairDigitosOcr(sugerido);
-      if (sug.length !== 5) return;
-      const aprend = obterAprendizadoOcr();
-      if (meta && meta.variantIdVencedor) {
-        aprend.variantes[meta.variantIdVencedor] = aprend.variantes[meta.variantIdVencedor] || { acertos: 0, erros: 0 };
-        aprend.variantes[meta.variantIdVencedor].acertos += 1;
-      }
-      if (meta && meta.fingerprint) {
-        aprend.padroes = aprend.padroes.filter(function(p) { return p.fp !== meta.fingerprint; });
-        aprend.padroes.unshift({ fp: meta.fingerprint, codigo: sug, ts: Date.now() });
-        if (aprend.padroes.length > OCR_APRENDIZADO_MAX_PADROES) {
-          aprend.padroes.length = OCR_APRENDIZADO_MAX_PADROES;
-        }
-      }
-      salvarAprendizadoOcr(aprend);
-    }
-
-    function obterFatorVarianteAprendizado(variantId) {
-      if (!variantId) return 1;
-      const stats = obterAprendizadoOcr().variantes[variantId];
-      if (!stats) return 1;
-      const total = (stats.acertos || 0) + (stats.erros || 0);
-      if (total < 3) return 1;
-      const taxa = stats.acertos / total;
-      return 0.75 + taxa * 0.5;
-    }
-
-    function aplicarAprendizadoNaMatriz(matriz) {
-      const aprend = obterAprendizadoOcr();
-      const bonusConfusao = 3.5;
-
-      for (let pos = 0; pos < 5; pos++) {
-        const bucketPos = aprend.confusoes['pos' + pos] || {};
-        const bucketGlobal = aprend.confusoes.global || {};
-        const votos = matriz[pos];
-
-        for (const de in votos) {
-          const pesoDe = votos[de];
-          const destinos = {};
-          if (bucketGlobal[de]) {
-            for (const para in bucketGlobal[de]) {
-              destinos[para] = (destinos[para] || 0) + bucketGlobal[de][para];
-            }
-          }
-          if (bucketPos[de]) {
-            for (const para in bucketPos[de]) {
-              destinos[para] = (destinos[para] || 0) + bucketPos[de][para] * 1.5;
-            }
-          }
-          for (const para in destinos) {
-            const freq = destinos[para];
-            votos[para] = (votos[para] || 0) + pesoDe * bonusConfusao * Math.min(freq, 8) * 0.25;
-          }
-        }
-      }
-
-      return matriz;
-    }
-
-    function buscarPadraoAprendido(fingerprint) {
-      if (!fingerprint) return null;
-      const padroes = obterAprendizadoOcr().padroes || [];
-      for (let i = 0; i < padroes.length; i++) {
-        if (padroes[i].fp === fingerprint && padroes[i].codigo) {
-          return padroes[i].codigo;
-        }
-      }
-      return null;
-    }
-
-    function gerarFingerprintCaptcha(img) {
-      const base = escalaImagemCaptcha(img, 2);
-      const ctx = base.ctx;
-      const d = ctx.getImageData(0, 0, base.w, base.h).data;
-      let h = 2166136261;
-      for (let i = 0; i < d.length; i += 32) {
-        h ^= d[i];
-        h = Math.imul(h, 16777619);
-      }
-      return 'fp' + (h >>> 0).toString(16);
-    }
-
-    function atualizarBadgeAprendizado(extra) {
-      const status = document.getElementById('ocrStatus');
-      if (!status) return;
-      const aprend = obterAprendizadoOcr();
-      const n = aprend.totalCorrecoes || 0;
-      const sufixo = n > 0
-        ? ' | Aprendizado: ' + n + ' correc' + (n === 1 ? 'ao' : 'oes') + ' salva' + (n === 1 ? '' : 's')
-        : '';
-      if (extra && status.textContent.indexOf('Aprendizado:') === -1) {
-        status.textContent += sufixo;
-      }
-    }
 
     function resetarEstadoOcrSessao() {
       ocrUltimaSugestao = null;
-      ocrUltimaMeta = null;
     }
 
     function pontuarCandidatoOcr(digits, confidence, pesoVariante, votos, metodo) {
@@ -1138,18 +904,6 @@
         throw new Error('codigo vazio');
       }
 
-      if (ocrUltimaSugestao) {
-        const sugDigits = extrairDigitosOcr(ocrUltimaSugestao);
-        const envDigits = extrairDigitosOcr(valorComando);
-        if (sugDigits.length === 5 && envDigits.length === 5) {
-          if (sugDigits === envDigits) {
-            registrarAcertoOcr(sugDigits, ocrUltimaMeta);
-          } else {
-            registrarCorrecaoOcr(sugDigits, envDigits, ocrUltimaMeta);
-          }
-        }
-      }
-
       const refComando = database.ref(nomeComando);
       await refComando.remove();
       await refComando.set(valorComando);
@@ -1213,21 +967,6 @@
         img.onload = async function() {
           let resultado = { codigoFinal: null, confOk: false };
           try {
-            const fingerprint = gerarFingerprintCaptcha(img);
-            const padrao = buscarPadraoAprendido(fingerprint);
-            if (padrao) {
-              valorInput.value = padrao;
-              ocrUltimaSugestao = padrao;
-              ocrUltimaMeta = { fingerprint: fingerprint, variantIdVencedor: 'memoria', metodo: 'aprendizado' };
-              status.textContent = modoAutoOcr
-                ? 'OCR (memoria): ' + padrao + ' — enviando...'
-                : 'OCR (memoria): ' + padrao + ' — confira e ENVIAR';
-              atualizarBadgeAprendizado(true);
-              resultado = { codigoFinal: padrao, confOk: true };
-              resolve(resultado);
-              return;
-            }
-
             const variantes = gerarVariantesOcr(img);
             const todos = [];
 
@@ -1243,7 +982,6 @@
             if (consenso) todos.push(consenso);
 
             let matriz = acumularMatrizPosicional(todos);
-            matriz = aplicarAprendizadoNaMatriz(matriz);
             const codigoMatriz = montarCodigoDaMatriz(matriz);
 
             const contagem = {};
@@ -1280,18 +1018,12 @@
             }
 
             ocrUltimaSugestao = codigoFinal;
-            ocrUltimaMeta = {
-              fingerprint: fingerprint,
-              variantIdVencedor: escolhido ? escolhido.variantId : null,
-              metodo: escolhido ? escolhido.metodo : null
-            };
 
             const votosEscolhido = codigoFinal ? (contagem[codigoFinal] || 0) : 0;
             const confOk = codigoFinal && (
               (escolhido && escolhido.metodo === 'segmentado') ||
               votosEscolhido >= 2 ||
-              (escolhido && escolhido.confidence >= 72) ||
-              (obterAprendizadoOcr().totalCorrecoes > 0 && !!codigoMatriz)
+              (escolhido && escolhido.confidence >= 72)
             );
 
             if (codigoFinal && confOk) {
@@ -1309,7 +1041,6 @@
                 ? 'OCR nao obteve 5 digitos (auto)'
                 : 'OCR nao obteve 5 digitos — digite manualmente';
             }
-            atualizarBadgeAprendizado(true);
             resultado = { codigoFinal: codigoFinal, confOk: confOk };
             resolve(resultado);
           } catch (err) {
@@ -1390,7 +1121,6 @@
         if (!modoAutoOcr) {
           subtitulo.textContent = 'Confira o OCR e clique ENVIAR AO BOT';
         }
-        sincronizarAprendizadoFirebase();
         carregarImagemCaptchaFirebase(codigoContaAtual);
       }
     }
@@ -1475,21 +1205,6 @@
         destacarErroCampo(valorInput);
         exibirNotificacao('⚠️ Informe o codigo do captcha!', true);
         return;
-      }
-
-      if (ocrUltimaSugestao) {
-        const sugDigits = extrairDigitosOcr(ocrUltimaSugestao);
-        const envDigits = extrairDigitosOcr(valorComando);
-        if (sugDigits.length === 5 && envDigits.length === 5) {
-          if (sugDigits === envDigits) {
-            registrarAcertoOcr(sugDigits, ocrUltimaMeta);
-          } else {
-            const aprendeu = registrarCorrecaoOcr(sugDigits, envDigits, ocrUltimaMeta);
-            if (aprendeu) {
-              exibirNotificacao('🧠 OCR aprendeu com sua correcao!', false);
-            }
-          }
-        }
       }
 
       nomeInput.value = nomeComando;
