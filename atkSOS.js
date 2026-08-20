@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.55
+// @version      2.56
 // @description  Automação do Caçadas/Atacar com portão via relatórios, OCR auto captcha (5min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.55';
-  var SCRIPT_ATUALIZADO = '19/08/2026 23:20';
+  var SCRIPT_VERSAO = '2.56';
+  var SCRIPT_ATUALIZADO = '19/08/2026 23:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1604,7 +1604,6 @@
       return;
     }
     captchaJaNotificado = true;
-    zerarTentativasOcrAutoCaptcha();
     tocarAlertaSonoro();
 
     capturarBlobCaptcha(function(blob) {
