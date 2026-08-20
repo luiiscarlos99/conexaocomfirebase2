@@ -1379,6 +1379,7 @@
   }
 
   function zerarTentativasOcrAutoCaptcha() {
+    // So zera quando captcha e resolvido com sucesso
     try { sessionStorage.removeItem(BOT_CAPTCHA_OCR_AUTO_KEY); } catch (e) {}
   }
 
