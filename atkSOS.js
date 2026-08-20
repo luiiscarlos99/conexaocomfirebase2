@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.56
+// @version      2.58
 // @description  Automação do Caçadas/Atacar com portão via relatórios, OCR auto captcha (5min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.56';
-  var SCRIPT_ATUALIZADO = '19/08/2026 23:25';
+  var SCRIPT_VERSAO = '2.58';
+  var SCRIPT_ATUALIZADO = '19/08/2026 23:32';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1378,10 +1378,26 @@
     return n;
   }
 
-  function zerarTentativasOcrAutoCaptcha() {
-    // So zera quando captcha e resolvido com sucesso
+  function zerarTentativasOcrAutoCaptcha(motivo) {
     try { sessionStorage.removeItem(BOT_CAPTCHA_OCR_AUTO_KEY); } catch (e) {}
+    logStatusOcrAutoCaptcha(motivo || 'contador zerado');
   }
+
+  function logStatusOcrAutoCaptcha(origem) {
+    var feitas = lerTentativasOcrAutoCaptcha();
+    var max = CAPTCHA_OCR_AUTO_MAX_TENTATIVAS;
+    var restantes = Math.max(0, max - feitas);
+    var linha = '[Captcha OCR auto] ' + feitas + '/' + max + ' tentativas (' + restantes + ' restantes)';
+    if (origem) linha += ' — ' + origem;
+    console.warn(linha);
+    console.warn('[Captcha OCR auto] Zerar contador → copie no console: botZerarOcrAuto()');
+  }
+
+  window.botZerarOcrAuto = function() {
+    zerarTentativasOcrAutoCaptcha('comando manual botZerarOcrAuto()');
+    agendarProximaTentativaOcrAuto();
+    return lerTentativasOcrAutoCaptcha();
+  };
 
   function montarLinkPainelCaptcha(opcoes) {
     var opts = opcoes || {};
@@ -1409,10 +1425,12 @@
     var feitas = lerTentativasOcrAutoCaptcha();
     if (feitas >= CAPTCHA_OCR_AUTO_MAX_TENTATIVAS) {
       console.warn('[Captcha] OCR auto — limite de ' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ' tentativas.');
+      logStatusOcrAutoCaptcha('limite atingido');
       return;
     }
 
     var tentativa = incrementarTentativasOcrAutoCaptcha();
+    logStatusOcrAutoCaptcha('tentativa ' + tentativa);
     var link = montarLinkPainelCaptcha({ auto: true });
     console.warn('[Captcha] OCR automatico ' + tentativa + '/' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ': ' + link);
 
@@ -1473,10 +1491,10 @@
       (TEMPO_TIMEOUT_CAPTCHA / 60000) + ' min...');
 
     agendarProximaTentativaOcrAuto();
+    logStatusOcrAutoCaptcha('timers iniciados');
 
     timerCaptchaTimeout = setTimeout(function() {
       timerCaptchaTimeout = null;
-      zerarTentativasOcrAutoCaptcha();
       var destino = urlAposCaptcha();
       console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
       window.location.href = destino;
@@ -1660,7 +1678,7 @@
           console.log('%c[Firebase] CODIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
 
           limparTimersCaptcha();
-          zerarTentativasOcrAutoCaptcha();
+          zerarTentativasOcrAutoCaptcha('captcha resolvido');
 
           var inputCaptcha = document.querySelector('input[name="resposta"]') ||
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
