@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.53
-// @description  Automação do Caçadas/Atacar com portão via relatórios de ataque (5min cooldown + faixa), Captcha e Firebase.
+// @version      2.54
+// @description  Automação do Caçadas/Atacar com portão via relatórios, OCR auto captcha (5min) e Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.53';
-  var SCRIPT_ATUALIZADO = '19/08/2026 15:55';
+  var SCRIPT_VERSAO = '2.54';
+  var SCRIPT_ATUALIZADO = '19/08/2026 22:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -348,7 +348,8 @@
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = TEMPO_RECUPERACAO_FALHA;
-  var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos (60 * 10 * 1000)
+  var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos — reload se ainda sem resposta
+  var TEMPO_OCR_AUTO_CAPTCHA = 300000; // 5 minutos — abre painel OCR automatico
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
@@ -361,6 +362,8 @@
   var BOT_ULTIMO_ALVO_KEY = 'BOT_ULTIMO_ALVO_CACADAS';
   var BOT_COMBATE_NOTIFICADO_KEY = 'BOT_COMBATE_NOTIFICADO';
   var timerCaptchaTimeout = null;
+  var timerCaptchaOcrAuto = null;
+  var captchaOcrAutoTentado = false;
   var captchaRespostaProcessando = false;
   var loginJaEnviado = false;
   var portaoRelatoriosAgendado = false;
@@ -1359,8 +1362,68 @@
     return 'comandos/' + CODIGO_SERVIDOR + '/resposta';
   }
 
-  function montarLinkPainelCaptcha() {
-    return URL_PAINEL_BASE + '?codigo=' + encodeURIComponent(CODIGO_SERVIDOR);
+  function montarLinkPainelCaptcha(opcoes) {
+    var opts = opcoes || {};
+    var url = URL_PAINEL_BASE + '?codigo=' + encodeURIComponent(CODIGO_SERVIDOR);
+    if (opts.auto) {
+      url += '&auto=1&fechar=1';
+    }
+    return url;
+  }
+
+  function limparTimersCaptcha() {
+    if (timerCaptchaTimeout) {
+      clearTimeout(timerCaptchaTimeout);
+      timerCaptchaTimeout = null;
+    }
+    if (timerCaptchaOcrAuto) {
+      clearTimeout(timerCaptchaOcrAuto);
+      timerCaptchaOcrAuto = null;
+    }
+  }
+
+  function tentarOcrAutomaticoCaptcha() {
+    if (captchaOcrAutoTentado || captchaRespostaProcessando) return;
+    captchaOcrAutoTentado = true;
+
+    var link = montarLinkPainelCaptcha({ auto: true });
+    console.warn('[Captcha] 5 min sem resposta — OCR automatico: ' + link);
+
+    var novaAba = null;
+    try {
+      novaAba = window.open(link, 'bot_ocr_' + CODIGO_SERVIDOR, 'noopener,noreferrer');
+    } catch (e) {}
+
+    if (!novaAba) {
+      console.warn('[Captcha] Popup bloqueado — usando iframe oculto para OCR.');
+      var iframe = document.createElement('iframe');
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;top:-9999px;border:0';
+      iframe.src = link;
+      document.body.appendChild(iframe);
+      setTimeout(function() {
+        try { iframe.remove(); } catch (e) {}
+      }, 180000);
+    }
+  }
+
+  function agendarTimersCaptcha() {
+    limparTimersCaptcha();
+
+    console.log('[Captcha] OCR auto em ' + (TEMPO_OCR_AUTO_CAPTCHA / 60000) +
+      ' min | reload em ' + (TEMPO_TIMEOUT_CAPTCHA / 60000) + ' min...');
+
+    timerCaptchaOcrAuto = setTimeout(function() {
+      timerCaptchaOcrAuto = null;
+      tentarOcrAutomaticoCaptcha();
+    }, TEMPO_OCR_AUTO_CAPTCHA);
+
+    timerCaptchaTimeout = setTimeout(function() {
+      timerCaptchaTimeout = null;
+      var destino = urlAposCaptcha();
+      console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
+      window.location.href = destino;
+    }, TEMPO_TIMEOUT_CAPTCHA);
   }
 
   function obterImagemCaptcha() {
@@ -1443,6 +1506,8 @@
       '',
       '**Conta:** ' + USUARIO_FINAL,
       '**Codigo:** `' + CODIGO_SERVIDOR + '`',
+      '',
+      'OCR automatico aos **5 min** se ninguem resolver.',
       '',
       '[**Abrir painel (OCR + confirmar)**](' + montarLinkPainelCaptcha() + ')'
     ].join('\n');
@@ -1537,10 +1602,7 @@
           var codigoCaptcha = String(valor).trim();
           console.log('%c[Firebase] CODIGO DO CAPTCHA RECEBIDO:', 'color: #ffff00; font-weight: bold;', codigoCaptcha);
 
-          if (timerCaptchaTimeout) {
-            clearTimeout(timerCaptchaTimeout);
-            timerCaptchaTimeout = null;
-          }
+          limparTimersCaptcha();
 
           var inputCaptcha = document.querySelector('input[name="resposta"]') ||
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
@@ -1748,15 +1810,9 @@
             console.warn('[Script] Captcha detectado! Imagem -> Firebase + Discord...');
             processarCaptchaDetectado();
 
-            console.log('[Captcha] Timer de 10 minutos iniciado...');
-            if (timerCaptchaTimeout) clearTimeout(timerCaptchaTimeout);
-            timerCaptchaTimeout = setTimeout(function() {
-              var destino = urlAposCaptcha();
-              console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
-              window.location.href = destino;
-            }, TEMPO_TIMEOUT_CAPTCHA);
+            agendarTimersCaptcha();
 
-            return true; 
+            return true;
           }
         },
         {
