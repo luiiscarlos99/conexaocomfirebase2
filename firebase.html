@@ -376,6 +376,357 @@
       return { canvas: canvas, ctx: ctx, w: w, h: h };
     }
 
+    // --- OCR especifico Shadow of Shinobi (amarelo pixel + templates + componentes) ---
+    var SOS_GRID_W = 14;
+    var SOS_GRID_H = 20;
+    var SOS_SCALE = 6;
+    var SOS_MIN_AREA_COMPONENTE = 80;
+
+    var SOS_DIGIT_TEMPLATES = {
+      '0': ['00000111100000','00000111100000','00011111110000','00011111110000','00111000011100','00111000011100','11100000001111','11100000001111','11100000001111','11100000001111','11100000001111','11100000001111','11100000001111','11100000001111','00111000011100','00111000011100','00011111110000','00011111110000','00000111100000','00000111100000'],
+      '1': ['00000011110000','00000011110000','00001100110000','00001100110000','00111111110000','00111111110000','11110011110000','11110011110000','00001111110000','00001111110000','00000011110000','00000011110000','00000011110011','00000011110011','00000011110000','00000011110000','00000011110000','00000011110000','00111111111111','00111111111111'],
+      '2': ['00011111110000','00011111110000','00111000011100','00111000011100','11100000001111','11100000001111','00000000001111','00000000001111','00000000011100','00000000011100','00000001110000','00000001110000','00000111100000','00000111100000','00011110000000','00011110000000','00111000000000','00111000000000','00111111111111','00111111111111'],
+      '3': ['00011111110000','00011111110000','00000000001111','00000000001111','00000000001111','00000000001111','00000000001111','00000000001111','00011111110000','00011111110000','00000000001111','00000000001111','00000000001111','00000000001111','00000000001111','00000000001111','00011111110000','00011111110000','00011111110000','00011111110000'],
+      '4': ['00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','11111111111111','11111111111111','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000','00000011110000'],
+      '5': ['00111111111111','00111111111111','00111000000000','00111000000000','00011110000000','00011110000000','00000111100000','00000111100000','00000001110000','00000001110000','00000000011100','00000000011100','00000000001111','00000000001111','11100000001111','11100000001111','00111000011100','00111000011100','00011111110000','00011111110000'],
+      '6': ['00000111100000','00000111100000','00011111110000','00011111110000','00111000011100','00111000011100','11100000000110','11100000000110','11100000000110','11100000000110','11100000001111','11100000001111','11100000001111','11100000001111','00111000011100','00111000011100','00011111110000','00011111110000','00000111100000','00000111100000'],
+      '7': ['11111111111111','11111111111111','00000000001111','00000000001111','00000000001111','00000000001111','00000000011100','00000000011100','00000001110000','00000001110000','00000111100000','00000111100000','00011110000000','00011110000000','00111000000000','00111000000000','11100000000000','11100000000000','11100000000000','11100000000000'],
+      '8': ['00000111100000','00000111100000','00011111110000','00011111110000','00111000011100','00111000011100','11100000001111','11100000001111','00111000011100','00111000011100','00111000011100','00111000011100','11100000001111','11100000001111','00111000011100','00111000011100','00011111110000','00011111110000','00000111100000','00000111100000'],
+      '9': ['00000111100000','00000111100000','00011111110000','00011111110000','00111000011100','00111000011100','11100000001111','11100000001111','11100000001111','11100000001111','11100000000110','11100000000110','11100000000110','11100000000110','00111000011100','00111000011100','00011111110000','00011111110000','00000111100000','00000111100000']
+    };
+
+    function ehPixelDigitoSos(r, g, b) {
+      if (b > 110 && r < 180) return false;
+      if (r < 80 || g < 60) return false;
+      if (r > 110 && g > 85 && b < 95 && r > b + 25 && g > b + 15) return true;
+      if (r + g > 380 && b < 80 && r > 140) return true;
+      if (r > 150 && g > 120 && b < 70) return true;
+      return false;
+    }
+
+    function criarMascaraSos(imgData, w, h) {
+      const mask = new Uint8Array(w * h);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          mask[y * w + x] = ehPixelDigitoSos(imgData[i], imgData[i + 1], imgData[i + 2]) ? 1 : 0;
+        }
+      }
+      return mask;
+    }
+
+    function limparRuidoIsoladoSos(mask, w, h) {
+      for (let pass = 0; pass < 2; pass++) {
+        const nxt = new Uint8Array(mask.length);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            if (!mask[y * w + x]) continue;
+            let n = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < w && ny < h && mask[ny * w + nx]) n++;
+              }
+            }
+            if (n >= 1) nxt[y * w + x] = 1;
+          }
+        }
+        mask.set(nxt);
+      }
+      return mask;
+    }
+
+    function encontrarComponentesSos(mask, w, h, minArea) {
+      const vis = new Uint8Array(w * h);
+      const comps = [];
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = y * w + x;
+          if (!mask[idx] || vis[idx]) continue;
+
+          const q = [[x, y]];
+          let minx = x;
+          let maxx = x;
+          let miny = y;
+          let maxy = y;
+          let area = 0;
+          vis[idx] = 1;
+
+          while (q.length) {
+            const pt = q.pop();
+            const cx = pt[0];
+            const cy = pt[1];
+            area++;
+            minx = Math.min(minx, cx);
+            maxx = Math.max(maxx, cx);
+            miny = Math.min(miny, cy);
+            maxy = Math.max(maxy, cy);
+
+            const viz = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+            for (let v = 0; v < viz.length; v++) {
+              const nx = cx + viz[v][0];
+              const ny = cy + viz[v][1];
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const ni = ny * w + nx;
+              if (mask[ni] && !vis[ni]) {
+                vis[ni] = 1;
+                q.push([nx, ny]);
+              }
+            }
+          }
+
+          if (area >= minArea) {
+            comps.push({ minx: minx, maxx: maxx, miny: miny, maxy: maxy, area: area });
+          }
+        }
+      }
+
+      return comps;
+    }
+
+    function projecaoVerticalSos(mask, w, h) {
+      const proj = new Array(w).fill(0);
+      for (let x = 0; x < w; x++) {
+        for (let y = 0; y < h; y++) {
+          if (mask[y * w + x]) proj[x]++;
+        }
+      }
+      return proj;
+    }
+
+    function segmentarPorProjecaoSos(mask, w, h) {
+      const proj = projecaoVerticalSos(mask, w, h);
+      const thr = Math.max(3, Math.floor(h * 0.04));
+      let segs = [];
+      let inSeg = false;
+      let start = 0;
+
+      for (let x = 0; x < w; x++) {
+        if (proj[x] >= thr && !inSeg) {
+          inSeg = true;
+          start = x;
+        } else if (proj[x] < thr && inSeg) {
+          inSeg = false;
+          segs.push({ minx: start, maxx: x - 1 });
+        }
+      }
+      if (inSeg) segs.push({ minx: start, maxx: w - 1 });
+
+      segs = segs.filter(function(s) { return (s.maxx - s.minx + 1) >= 8; });
+
+      while (segs.length > 5) {
+        let best = 0;
+        let bg = 1e9;
+        for (let i = 0; i < segs.length - 1; i++) {
+          const g = segs[i + 1].minx - segs[i].maxx;
+          if (g < bg) { bg = g; best = i; }
+        }
+        segs[best] = { minx: segs[best].minx, maxx: segs[best + 1].maxx };
+        segs.splice(best + 1, 1);
+      }
+
+      while (segs.length < 5) {
+        let wi = 0;
+        let mx = 0;
+        for (let i = 0; i < segs.length; i++) {
+          const wd = segs[i].maxx - segs[i].minx;
+          if (wd > mx) { mx = wd; wi = i; }
+        }
+        const a = segs[wi].minx;
+        const b = segs[wi].maxx;
+        let bx = -1;
+        let bv = 1e9;
+        for (let x = a + 6; x < b - 6; x++) {
+          if (proj[x] < bv) { bv = proj[x]; bx = x; }
+        }
+        if (bx < 0) bx = Math.floor((a + b) / 2);
+        segs.splice(wi, 1, { minx: a, maxx: bx }, { minx: bx + 1, maxx: b });
+      }
+
+      return segs.slice(0, 5);
+    }
+
+    function segmentarCincoDigitosSos(mask, w, h) {
+      const comps = encontrarComponentesSos(mask, w, h, SOS_MIN_AREA_COMPONENTE);
+      if (comps.length >= 5) {
+        comps.sort(function(a, b) { return b.area - a.area; });
+        return comps.slice(0, 5).sort(function(a, b) { return a.minx - b.minx; });
+      }
+      return segmentarPorProjecaoSos(mask, w, h);
+    }
+
+    function extrairGridDigitoSos(mask, w, h, bbox) {
+      const y0 = bbox.miny;
+      const y1 = bbox.maxy;
+      if (y0 > y1) return null;
+
+      const gw = bbox.maxx - bbox.minx + 1;
+      const gh = y1 - y0 + 1;
+      const grid = [];
+
+      for (let gy = 0; gy < SOS_GRID_H; gy++) {
+        let row = '';
+        for (let gx = 0; gx < SOS_GRID_W; gx++) {
+          const sx = bbox.minx + Math.floor((gx + 0.5) * gw / SOS_GRID_W);
+          const sy = y0 + Math.floor((gy + 0.5) * gh / SOS_GRID_H);
+          row += mask[sy * w + sx] ? '1' : '0';
+        }
+        grid.push(row);
+      }
+
+      return grid;
+    }
+
+    function pontuarGridTemplateSos(grid, template) {
+      let inter = 0;
+      let union = 0;
+      let xor = 0;
+      const total = SOS_GRID_W * SOS_GRID_H;
+
+      for (let y = 0; y < SOS_GRID_H; y++) {
+        for (let x = 0; x < SOS_GRID_W; x++) {
+          const g = grid[y][x] === '1';
+          const t = template[y][x] === '1';
+          if (g || t) union++;
+          if (g && t) inter++;
+          if (g !== t) xor++;
+        }
+      }
+
+      const iou = union ? inter / union : 0;
+      const acc = 1 - xor / total;
+      return iou * 0.7 + acc * 0.3;
+    }
+
+    function classificarGridDigitoSos(grid) {
+      let melhorChar = '';
+      let melhorScore = -1;
+      let segundoChar = '';
+      let segundoScore = -1;
+
+      for (const dig in SOS_DIGIT_TEMPLATES) {
+        const score = pontuarGridTemplateSos(grid, SOS_DIGIT_TEMPLATES[dig]);
+        if (score > melhorScore) {
+          segundoScore = melhorScore;
+          segundoChar = melhorChar;
+          melhorScore = score;
+          melhorChar = dig;
+        } else if (score > segundoScore) {
+          segundoScore = score;
+          segundoChar = dig;
+        }
+      }
+
+      return {
+        char: melhorChar,
+        score: melhorScore,
+        segundo: segundoChar,
+        scoreSegundo: segundoScore
+      };
+    }
+
+    function gridParaCanvasAmpliado(grid, escala) {
+      const c = document.createElement('canvas');
+      c.width = SOS_GRID_W * escala;
+      c.height = SOS_GRID_H * escala;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#000';
+      for (let y = 0; y < SOS_GRID_H; y++) {
+        for (let x = 0; x < SOS_GRID_W; x++) {
+          if (grid[y][x] === '1') {
+            ctx.fillRect(x * escala, y * escala, escala, escala);
+          }
+        }
+      }
+      return c;
+    }
+
+    function canvasMascaraSos(img) {
+      const base = escalaImagemCaptcha(img, SOS_SCALE);
+      const imgData = base.ctx.getImageData(0, 0, base.w, base.h);
+      const mask = limparRuidoIsoladoSos(criarMascaraSos(imgData.data, base.w, base.h), base.w, base.h);
+
+      const out = document.createElement('canvas');
+      out.width = base.w;
+      out.height = base.h;
+      const ctx = out.getContext('2d');
+      const outData = ctx.createImageData(base.w, base.h);
+      for (let i = 0; i < mask.length; i++) {
+        const v = mask[i] ? 0 : 255;
+        const p = i * 4;
+        outData.data[p] = v;
+        outData.data[p + 1] = v;
+        outData.data[p + 2] = v;
+        outData.data[p + 3] = 255;
+      }
+      ctx.putImageData(outData, 0, 0);
+      return { canvas: out, mask: mask, w: base.w, h: base.h };
+    }
+
+    async function classificarGridComTesseract(grid) {
+      const canvas = gridParaCanvasAmpliado(grid, 5);
+      const psms = ['10', '8'];
+      for (let i = 0; i < psms.length; i++) {
+        try {
+          const parsed = await reconhecerCanvas(canvas, psms[i]);
+          const ch = extrairDigitosOcr(parsed.digits).charAt(0);
+          if (ch) return { char: ch, score: Math.max(0.48, parsed.confidence / 100) };
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    async function ocrSosGame(img) {
+      const proc = canvasMascaraSos(img);
+      const segmentos = segmentarCincoDigitosSos(proc.mask, proc.w, proc.h);
+      if (!segmentos || segmentos.length !== 5) {
+        console.warn('[OCR SOS] segmentacao falhou —', segmentos ? segmentos.length : 0, 'partes');
+        return null;
+      }
+
+      let codigo = '';
+      let confTotal = 0;
+      const posicoes = [];
+
+      for (let i = 0; i < 5; i++) {
+        const grid = extrairGridDigitoSos(proc.mask, proc.w, proc.h, segmentos[i]);
+        if (!grid) return null;
+
+        let cls = classificarGridDigitoSos(grid);
+
+        if (cls.score < 0.46 || (cls.scoreSegundo > 0 && cls.score - cls.scoreSegundo < 0.06)) {
+          const tesseract = await classificarGridComTesseract(grid);
+          if (tesseract && tesseract.score > cls.score) {
+            cls = { char: tesseract.char, score: tesseract.score, segundo: cls.segundo, scoreSegundo: cls.score };
+          }
+        }
+
+        if (!cls.char) return null;
+        codigo += cls.char;
+        confTotal += cls.score;
+        posicoes.push({
+          char: cls.char,
+          conf: cls.score,
+          alternativas: cls.segundo ? [{ char: cls.segundo, conf: cls.scoreSegundo }] : []
+        });
+      }
+
+      return {
+        digits: codigo,
+        confidence: (confTotal / 5) * 100,
+        posicoes: posicoes,
+        psm: 'sos-template',
+        variantId: 'sos-game',
+        peso: 45,
+        metodo: 'sos-template'
+      };
+    }
+
     function obterCinza(r, g, b) {
       return Math.round(0.299 * r + 0.587 * g + 0.114 * b);
     }
@@ -427,13 +778,7 @@
 
     function variantAmarelo(ctx, w, h) {
       return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        const lum = obterCinza(r, g, b);
-        const ehDigito =
-          (r > 100 && g > 75 && b < 145 && r > b && g > b * 0.65) ||
-          (r > 130 && g > 110 && b < 110) ||
-          (r + g > 260 && b < 120) ||
-          (lum > 135 && r > 90 && b < 130);
-        return ehDigito ? 0 : 255;
+        return ehPixelDigitoSos(r, g, b) ? 0 : 255;
       });
     }
 
@@ -492,11 +837,7 @@
 
     function variantAmareloStrict(ctx, w, h) {
       return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        const lum = obterCinza(r, g, b);
-        const ehDigito =
-          (r > 120 && g > 95 && b < 120 && r > b + 25 && g > b + 15) ||
-          (lum > 150 && r > 110 && g > 85 && b < 100);
-        return ehDigito ? 0 : 255;
+        return ehPixelDigitoSos(r, g, b) ? 0 : 255;
       });
     }
 
@@ -581,7 +922,7 @@
     }
 
     function gerarVariantesOcr(img) {
-      const scale = 5;
+      const scale = SOS_SCALE;
       const base = escalaImagemCaptcha(img, scale);
       const copia = function(processar) {
         const c = document.createElement('canvas');
@@ -591,18 +932,14 @@
         return processar(c.getContext('2d'), base.w, base.h);
       };
 
+      const proc = canvasMascaraSos(img);
+
       return [
-        { id: 'amarelo', canvas: copia(variantAmarelo), peso: 14 },
-        { id: 'amarelo-strict', canvas: copia(variantAmareloStrict), peso: 16 },
-        { id: 'amarelo-suave', canvas: copia(variantAmareloSuave), peso: 12 },
-        { id: 'otsu', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, false); }), peso: 12 },
-        { id: 'otsu-inv', canvas: copia(function(ctx, w, h) { return variantOtsu(ctx, w, h, true); }), peso: 12 },
-        { id: 'otsu-dil', canvas: copia(variantOtsuDilatado), peso: 14 },
-        { id: 'otsu-ero', canvas: copia(variantOtsuErosion), peso: 13 },
-        { id: 'contraste', canvas: copia(variantContraste), peso: 10 },
-        { id: 'limiar-100', canvas: copia(function(ctx, w, h) { return variantLimiarFixo(ctx, w, h, 100); }), peso: 9 },
-        { id: 'limiar-140', canvas: copia(function(ctx, w, h) { return variantLimiarFixo(ctx, w, h, 140); }), peso: 9 },
-        { id: 'cinza', canvas: copia(variantCinza), peso: 6 }
+        { id: 'sos-mask', canvas: proc.canvas, peso: 18 },
+        { id: 'amarelo', canvas: copia(variantAmarelo), peso: 16 },
+        { id: 'amarelo-strict', canvas: copia(variantAmareloStrict), peso: 15 },
+        { id: 'otsu-ero', canvas: copia(variantOtsuErosion), peso: 10 },
+        { id: 'otsu-dil', canvas: copia(variantOtsuDilatado), peso: 10 }
       ];
     }
 
@@ -740,7 +1077,8 @@
       const conf = typeof confidence === 'number' ? confidence : 0;
       const bonusVoto = (votos - 1) * 200;
       const bonusSeg = metodo === 'segmentado' ? 350 : 0;
-      return 3000 + conf + pesoVariante + bonusVoto + bonusSeg;
+      const bonusSos = metodo === 'sos-template' ? 1200 : 0;
+      return 3000 + conf + pesoVariante + bonusVoto + bonusSeg + bonusSos;
     }
 
     async function reconhecerCanvas(canvas, psm) {
@@ -958,7 +1296,7 @@
       if (ocrEmAndamento) return Promise.resolve(null);
       ocrEmAndamento = true;
       if (btnOcr) btnOcr.disabled = true;
-      status.textContent = 'Lendo numeros (OCR multiplo)...';
+      status.textContent = 'Lendo numeros (OCR SOS + fallback)...';
 
       return new Promise(function(resolve) {
         const img = new Image();
@@ -967,11 +1305,19 @@
         img.onload = async function() {
           let resultado = { codigoFinal: null, confOk: false };
           try {
-            const variantes = gerarVariantesOcr(img);
             const todos = [];
 
+            status.textContent = 'OCR SOS (template jogo)...';
+            const sos = await ocrSosGame(img);
+            if (sos && sos.digits && sos.digits.length === 5) {
+              todos.push(sos);
+              console.log('[OCR SOS]', sos.digits, 'conf', sos.confidence.toFixed(1));
+            }
+
+            const variantes = gerarVariantesOcr(img);
+
             for (let i = 0; i < variantes.length; i++) {
-              status.textContent = 'OCR ' + (i + 1) + '/' + variantes.length + ' (' + variantes[i].id + ')...';
+              status.textContent = 'OCR fallback ' + (i + 1) + '/' + variantes.length + ' (' + variantes[i].id + ')...';
               const parciais = await ocrVariante(variantes[i]);
               for (let j = 0; j < parciais.length; j++) {
                 todos.push(parciais[j]);
@@ -1021,6 +1367,8 @@
 
             const votosEscolhido = codigoFinal ? (contagem[codigoFinal] || 0) : 0;
             const confOk = codigoFinal && (
+              (sos && sos.digits === codigoFinal && sos.confidence >= 55) ||
+              (escolhido && escolhido.metodo === 'sos-template') ||
               (escolhido && escolhido.metodo === 'segmentado') ||
               votosEscolhido >= 2 ||
               (escolhido && escolhido.confidence >= 72)
