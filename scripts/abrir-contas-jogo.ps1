@@ -1,4 +1,4 @@
-# Abre Chrome + Opera com abas cacadas e invasor para cada conta configurada.
+﻿# Abre Chrome + Opera com abas cacadas e invasor para cada conta configurada.
 # Requer Inject Code com auto-run (atkSOS + atkInvSOS) ja configurado em cada navegador.
 #
 # Uso:
@@ -135,7 +135,7 @@ function Get-BotModoConta {
         return $Conta.BotModo
     }
 
-    # Compat: contas antigas sem BotModo — padrão caçadas
+    # Compat: contas antigas sem BotModo - padrao cacadas
     return 'cacadas'
 }
 
@@ -182,7 +182,7 @@ function Get-UrlLogin {
 function Get-UrlPortaoCacadas {
     param([string]$Base)
 
-    # Portao de timing (ultimo ataque) — bot redireciona para /cacadas quando liberado
+    # Portao de timing (ultimo ataque) - bot redireciona para /cacadas quando liberado
     return '{0}/mensagens?tab=relatorios_ataque&bot_modo=cacadas' -f $Base.TrimEnd('/')
 }
 
@@ -221,7 +221,7 @@ function Get-UrlJogo {
     }
     $qs = $pairs -join '&'
 
-    # Fase 2 cacadas: portao relatorios_ataque — valida ultimo ataque antes de /cacadas
+    # Fase 2 cacadas: portao relatorios_ataque - valida ultimo ataque antes de /cacadas
     if ($BotModo -eq 'cacadas') {
         return '{0}/mensagens?tab=relatorios_ataque&{1}' -f $root, $qs
     }
@@ -256,7 +256,7 @@ function Resolve-BrowserExe {
 function Get-ContaModoAnonimo {
     param([hashtable]$Conta)
 
-    # Chrome sempre anonimo — evita cache de JS antigo no perfil normal
+    # Chrome sempre anonimo - evita cache de JS antigo no perfil normal
     if ($Conta.Exe -imatch 'chrome') { return $true }
     return [bool]$Conta.Anonimo
 }
@@ -271,7 +271,7 @@ function Get-BrowserArgs {
     $ehOpera = $Conta.Exe -match '(?i)opera'
     $anonimo = Get-ContaModoAnonimo -Conta $Conta
 
-    # Fase 2 anonimo Opera: --private sem --new-window → nova aba na janela privada existente
+    # Fase 2 anonimo Opera: --private sem --new-window -> nova aba na janela privada existente
     if ($Fase -eq 'Jogo' -and $anonimo -and $ehOpera) {
         return @('--private')
     }
@@ -396,11 +396,11 @@ $contasLoginOrdenadas = @(
 # --- Fase 1: abas de login (todas as contas com senha) ---
 if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host '--- Fase 1: login (bot_modo=invasor nas 3 contas) ---' -ForegroundColor Green
-    Write-Host '  Shizuo/Sora/Shiroe logam aqui; caçadas abre na fase 2.' -ForegroundColor DarkGray
-    Write-Host '  Sora (Opera anon) abre antes do Opera normal — --private --new-window + launcher.exe' -ForegroundColor DarkGray
-    Write-Host '  Chrome (Shiroe) sempre anonimo — --incognito --new-window na fase 1.' -ForegroundColor DarkGray
+    Write-Host '  Shizuo/Sora/Shiroe logam aqui; cacadas abre na fase 2.' -ForegroundColor DarkGray
+    Write-Host '  Sora (Opera anon) abre antes do Opera normal - --private --new-window + launcher.exe' -ForegroundColor DarkGray
+    Write-Host '  Chrome (Shiroe) sempre anonimo - --incognito --new-window na fase 1.' -ForegroundColor DarkGray
     if ($esperaAntesPrimeira -gt 0) {
-        Write-Host "  Aguardando ${esperaAntesPrimeira}s antes da 1ª aba..." -ForegroundColor DarkGray
+        Write-Host "  Aguardando ${esperaAntesPrimeira}s antes da 1a aba..." -ForegroundColor DarkGray
         Start-Sleep -Seconds $esperaAntesPrimeira
     }
     $i = 0
@@ -442,7 +442,7 @@ if ($contasLoginOrdenadas.Count -gt 0) {
     Write-Host ''
 }
 
-# --- Fase 2: caçadas (Sora anon, Shizuo, Shiroe) — mesma ordem da fase 1 ---
+# --- Fase 2: cacadas (Sora anon, Shizuo, Shiroe) - mesma ordem da fase 1 ---
 $contasFase2Lista = [System.Collections.ArrayList]@()
 Add-ContasLista -Destino $contasFase2Lista -Itens ($Contas | Where-Object { $_.Anonimo -and $_.Exe -match '(?i)opera' })
 Add-ContasLista -Destino $contasFase2Lista -Itens ($Contas | Where-Object { -not $_.Anonimo -and $_.Exe -match '(?i)opera' })
@@ -489,6 +489,6 @@ if ($contasFase2.Count -gt 0) {
 Send-DiscordStartAviso -ContasAbertas $contasAbertas -ContasIgnoradas $contasIgnoradas -OrigemStart $Origem
 
 Write-Host ''
-Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = portao caçadas (relatorios_ataque) → caçadas.' -ForegroundColor Green
+Write-Host 'Pronto. Fase 1 = login invasor | 60s | Fase 2 = portao cacadas (relatorios_ataque) -> cacadas.' -ForegroundColor Green
 Write-Host 'Edite BotModo e senhas em contas-jogo.config.ps1 se necessario.' -ForegroundColor Yellow
 Write-Host ''
