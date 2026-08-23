@@ -233,8 +233,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.60';
-  var SCRIPT_ATUALIZADO = '19/08/2026 23:38';
+  var SCRIPT_VERSAO = '2.61';
+  var SCRIPT_ATUALIZADO = '23/08/2026 10:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -360,6 +360,7 @@
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
   var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
+  var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var captchaJaNotificado = false;
   var atacarJaProcessado = false;
@@ -1026,18 +1027,22 @@
     };
   }
 
-  function enviarDiscordTexto(mensagem, webhookUrl) {
+  function enviarDiscordTexto(mensagem, webhookUrl, silencioso) {
     var url = webhookUrl || DISCORD_WEBHOOK_CACADAS;
     if (!url) return Promise.resolve();
+    var payload = {
+      username: 'Bot Shadow of Shinobi',
+      content: mensagem
+    };
+    if (silencioso) {
+      payload.flags = 4096; // SUPPRESS_NOTIFICATIONS — posta no canal sem notificar
+    }
     return fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: 'Bot Shadow of Shinobi',
-        content: mensagem
-      })
+      body: JSON.stringify(payload)
     }).then(function(r) {
-      if (r.ok) console.log('[Discord] Aviso enviado.');
+      if (r.ok) console.log('[Discord] Aviso enviado.' + (silencioso ? ' (silencioso)' : ''));
       else console.warn('[Discord] Falha ao enviar aviso:', r.status);
     }).catch(function(e) {
       console.error('[Discord] Erro ao enviar aviso:', e);
@@ -1062,7 +1067,7 @@
   }
 
   function avisarDiscordEVoltarCacadas(mensagem) {
-    enviarDiscordTexto(mensagem).finally(function() {
+    enviarDiscordTexto(mensagem, null, DISCORD_ALVO_IGNORADO_SILENCIOSO).finally(function() {
       irParaPortaoRelatorios('Alvo ignorado');
     });
   }
