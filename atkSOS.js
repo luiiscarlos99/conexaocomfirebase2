@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.60
-// @description  Automação do Caçadas/Atacar com portão via relatórios, OCR auto captcha (5min) e Firebase.
+// @version      2.63
+// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -76,15 +76,28 @@
     return true;
   }
 
+  function gravarBlacklistCacadasParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim();
+    if (s === '') {
+      try { localStorage.removeItem('BOT_BLACKLIST_CACADAS'); } catch (e) {}
+      return true;
+    }
+    localStorage.setItem('BOT_BLACKLIST_CACADAS', s);
+    return true;
+  }
+
   function aplicarParamsCacadasAtacar(rp) {
     if (!rp) return;
     var w = rp.get('bot_whitelist_cacadas');
     var wc = rp.get('bot_whitelist_cla_cacadas');
+    var bl = rp.get('bot_blacklist_cacadas');
     var r = rp.get('bot_max_ryous_cacadas');
     var d = rp.get('bot_diff_nivel_cacadas');
     var v = rp.get('bot_min_ryous_vitoria_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
+    if (bl !== null) gravarBlacklistCacadasParam(bl);
     if (r !== null && r !== '') gravarMaxRyousCacadasParam(r);
     if (d !== null && d !== '') gravarDiffNivelCacadasParam(d);
     if (v !== null && v !== '') gravarMinRyousVitoriaCacadasParam(v);
@@ -182,7 +195,7 @@
       if (!u && !p && !n) aplicarCredenciaisReferrer();
 
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
-          params.get('bot_whitelist_cla_cacadas') ||
+          params.get('bot_whitelist_cla_cacadas') || params.get('bot_blacklist_cacadas') ||
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
           modoVeioDeQuery) && window.history && window.history.replaceState) {
@@ -233,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.61';
-  var SCRIPT_ATUALIZADO = '23/08/2026 10:50';
+  var SCRIPT_VERSAO = '2.63';
+  var SCRIPT_ATUALIZADO = '24/08/2026 16:53';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -257,6 +270,7 @@
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
+      var bl = localStorage.getItem('BOT_BLACKLIST_CACADAS');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
       var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
       var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
@@ -267,6 +281,7 @@
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
+      if (bl !== null && bl !== '') params.set('bot_blacklist_cacadas', bl);
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
       if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
@@ -355,9 +370,12 @@
   var BOT_CAPTCHA_OCR_AUTO_KEY = 'BOT_CAPTCHA_OCR_AUTO_TENTATIVAS';
   var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
+  var URL_MISSOES = 'https://shadowofshinobi.com/missoes';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
+  var BOT_CACADAS_MODO_KEY = 'BOT_CACADAS_MODO';
+  var BOT_CACADAS_ALVO_NOME_KEY = 'BOT_CACADAS_ALVO_NOME';
   var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
   var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
   var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
@@ -371,6 +389,113 @@
   var captchaRespostaProcessando = false;
   var loginJaEnviado = false;
   var portaoRelatoriosAgendado = false;
+  var missaoCancelamentoClicado = false;
+
+  function instalarConfirmAutoOkMissao() {
+    if (window.__BOT_CONFIRM_MISSAO_OK__) return;
+    window.__BOT_CONFIRM_MISSAO_OK__ = true;
+    var confirmOriginal = window.confirm;
+    window.confirm = function(msg) {
+      var t = normalizarTextoCombate(msg);
+      if (t.indexOf('cancelar a miss') !== -1) {
+        console.log('[Missao] confirm() auto-OK — ' + msg);
+        return true;
+      }
+      return confirmOriginal.call(window, msg);
+    };
+  }
+
+  function paginaCacadasBloqueadaPorMissao() {
+    if (document.getElementById('mn_timer')) return true;
+
+    var col = document.getElementById('col_direita');
+    if (!col) return false;
+    var texto = normalizarTextoCombate(col.innerText || col.textContent || '');
+
+    if (texto.indexOf('cacada bloqueada') !== -1 && texto.indexOf('missao') !== -1) return true;
+    if (texto.indexOf('esta em missao') !== -1 && texto.indexOf('cacar') !== -1) return true;
+    return texto.indexOf('conclua ou cancele a missao') !== -1;
+  }
+
+  function obterFormCancelarMissao() {
+    var forms = document.querySelectorAll('form[action*="missoes"]');
+    for (var i = 0; i < forms.length; i++) {
+      if (forms[i].querySelector('input[name="cancelar_missao"]')) return forms[i];
+    }
+    return null;
+  }
+
+  function obterFormReceberMissao() {
+    var btn = document.getElementById('btn_receber_mis');
+    if (!btn) return null;
+    if (btn.style && btn.style.display === 'none') return null;
+    return btn.closest('form');
+  }
+
+  function paginaMissoesComMissaoAtiva() {
+    if (obterFormCancelarMissao()) return true;
+    if (document.getElementById('missao_timer_mis')) return true;
+
+    var col = document.getElementById('col_direita');
+    if (!col) return false;
+    var texto = normalizarTextoCombate(col.innerText || col.textContent || '');
+    return texto.indexOf('em missao') !== -1;
+  }
+
+  function missaoConcluidaAguardandoReceber() {
+    if (obterFormReceberMissao()) return true;
+    var col = document.getElementById('col_direita');
+    if (!col) return false;
+    var texto = normalizarTextoCombate(col.innerText || col.textContent || '');
+    return texto.indexOf('missao concluida') !== -1;
+  }
+
+  function processarCacadasBloqueadaPorMissao() {
+    console.warn('[Missao] Caçadas bloqueadas — missao em andamento. Indo para /missoes...');
+    window.location.href = URL_MISSOES;
+    return true;
+  }
+
+  function processarPaginaMissoes() {
+    if (missaoConcluidaAguardandoReceber()) {
+      var formRec = obterFormReceberMissao();
+      if (formRec) {
+        var btnRec = formRec.querySelector('input[type="submit"]');
+        if (btnRec) {
+          console.log('[Missao] Concluida — recebendo recompensa para liberar caçadas...');
+          btnRec.click();
+          return true;
+        }
+      }
+    }
+
+    if (!paginaMissoesComMissaoAtiva()) {
+      console.log('[Missao] Sem missao ativa — voltando ao portao de caçadas.');
+      window.location.href = URL_RELATORIOS_ATAQUE;
+      return true;
+    }
+
+    if (missaoCancelamentoClicado) return true;
+
+    var formCancel = obterFormCancelarMissao();
+    if (!formCancel) {
+      console.warn('[Missao] Botao cancelar_missao nao encontrado.');
+      return false;
+    }
+
+    instalarConfirmAutoOkMissao();
+    missaoCancelamentoClicado = true;
+    console.warn('[Missao] Cancelando missao em andamento (confirm auto-OK)...');
+
+    var btnCancel = formCancel.querySelector('input[type="submit"]');
+    if (btnCancel) {
+      btnCancel.click();
+      return true;
+    }
+
+    formCancel.submit();
+    return true;
+  }
 
   function recarregarCredenciaisLogin() {
     USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
@@ -655,6 +780,45 @@
     return null;
   }
 
+  function extrairVitimaDoRelatorioAtaque(texto) {
+    var norm = normalizarTextoCombate(texto);
+    if (norm.indexOf('voce atacou') === -1) return null;
+
+    var m = String(texto || '').match(/voce atacou\s+(.+?)(?:\s+[-–—]\s|\s+em\s|\.\s*$|$)/i);
+    if (m) return m[1].trim();
+
+    m = String(texto || '').match(/voce atacou\s+(.+)/i);
+    return m ? m[1].trim() : null;
+  }
+
+  function extrairAtaquesRelatorios() {
+    var col = document.getElementById('col_direita') || document;
+    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
+    var ataques = [];
+
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || '';
+      if (href.indexOf('ver=') === -1) continue;
+
+      var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
+      var vitima = extrairVitimaDoRelatorioAtaque(texto);
+      if (!vitima) continue;
+
+      var matchData = texto.match(/(\d{2}\/\d{2}\s+\d{2}:\d{2})/);
+      var ts = matchData ? parseDataHoraRelatorioAtaque(matchData[1]) : null;
+
+      ataques.push({
+        ts: ts,
+        vitima: vitima,
+        vitimaNorm: normalizarNomeCacadas(vitima),
+        dataTexto: matchData ? matchData[1] : null,
+        resumo: texto
+      });
+    }
+
+    return ataques;
+  }
+
   function calcularEsperaAposUltimoAtaque(ultimoAtaqueMs) {
     var iv = calcularIntervaloEsperaCacadas();
     var agora = Date.now();
@@ -775,18 +939,31 @@
 
     console.log('[Caçadas] Portao — ' + decisao.motivo);
 
-    if (decisao.waitMs <= 0) {
-      irParaCacadasLiberado('portao-imediato');
-      return true;
+    function irAposResolver() {
+      if (decisao.waitMs <= 0) {
+        irParaCacadasLiberado('portao-imediato');
+        return;
+      }
+
+      portaoRelatoriosAgendado = true;
+      var segundos = Math.round(decisao.waitMs / 1000);
+      console.log('[Caçadas] Portao — aguardando ' + segundos + 's nesta pagina...');
+
+      setTimeout(function() {
+        var ultimoPos = extrairUltimoAtaqueRelatorios();
+        var decisaoPos = calcularEsperaAposUltimoAtaque(ultimoPos ? ultimoPos.ts : null);
+        console.log('[Caçadas] Portao pos-espera — ' + decisaoPos.motivo);
+        resolverBlacklistNoPortao(decisaoPos, function() {
+          irParaCacadasLiberado('portao-pos-espera (' + segundos + 's)');
+        });
+      }, decisao.waitMs);
     }
 
-    portaoRelatoriosAgendado = true;
-    var segundos = Math.round(decisao.waitMs / 1000);
-    console.log('[Caçadas] Portao — aguardando ' + segundos + 's nesta pagina...');
-
-    setTimeout(function() {
-      irParaCacadasLiberado('portao-pos-espera (' + segundos + 's)');
-    }, decisao.waitMs);
+    if (decisao.waitMs <= 0) {
+      resolverBlacklistNoPortao(decisao, irAposResolver);
+    } else {
+      irAposResolver();
+    }
 
     return true;
   }
@@ -841,6 +1018,124 @@
       ? ' (bot_whitelist_cacadas)'
       : ' (padrao)';
     return 'nao atacar: ' + lista.join(', ') + sufixo;
+  }
+
+  function obterBlacklistCacadas() {
+    var raw = localStorage.getItem('BOT_BLACKLIST_CACADAS');
+    if (!raw || !String(raw).trim()) return [];
+    return String(raw).split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+
+  function blacklistCacadasAtiva() {
+    return obterBlacklistCacadas().length > 0;
+  }
+
+  function descreverBlacklistCacadas() {
+    var lista = obterBlacklistCacadas();
+    if (!lista.length) {
+      return 'vazia (caçada por classe)';
+    }
+    var sufixo = localStorage.getItem('BOT_BLACKLIST_CACADAS')
+      ? ' (bot_blacklist_cacadas)'
+      : '';
+    return lista.join(', ') + sufixo;
+  }
+
+  function mapaAtacadosNoRelatorio(ataques) {
+    var mapa = {};
+    for (var i = 0; i < ataques.length; i++) {
+      if (ataques[i].vitimaNorm) mapa[ataques[i].vitimaNorm] = true;
+    }
+    return mapa;
+  }
+
+  function nomesBlacklistJaAtacadosNoRelatorio(ataques) {
+    var lista = obterBlacklistCacadas();
+    var mapa = mapaAtacadosNoRelatorio(ataques);
+    var atacados = [];
+    lista.forEach(function(nome) {
+      if (mapa[normalizarNomeCacadas(nome)]) atacados.push(nome);
+    });
+    return atacados;
+  }
+
+  function escolherProximoAlvoBlacklist(ataques) {
+    var lista = obterBlacklistCacadas();
+    var mapa = mapaAtacadosNoRelatorio(ataques);
+    for (var i = 0; i < lista.length; i++) {
+      var nome = lista[i];
+      if (!mapa[normalizarNomeCacadas(nome)]) return nome;
+    }
+    return null;
+  }
+
+  function limparEstadoModoCacadas() {
+    try {
+      sessionStorage.removeItem(BOT_CACADAS_MODO_KEY);
+      sessionStorage.removeItem(BOT_CACADAS_ALVO_NOME_KEY);
+    } catch (e) {}
+  }
+
+  function definirModoCacadasClasse(motivo) {
+    try {
+      sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'classe');
+      sessionStorage.removeItem(BOT_CACADAS_ALVO_NOME_KEY);
+    } catch (e) {}
+    console.log('[Blacklist] Modo classe — ' + motivo);
+  }
+
+  function definirModoCacadasBlacklist(nome) {
+    try {
+      sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'blacklist');
+      sessionStorage.setItem(BOT_CACADAS_ALVO_NOME_KEY, nome);
+    } catch (e) {}
+    console.warn('[Blacklist] Proximo alvo por nome: ' + nome);
+  }
+
+  function obterModoCacadasSessao() {
+    try { return sessionStorage.getItem(BOT_CACADAS_MODO_KEY) || 'classe'; } catch (e) {}
+    return 'classe';
+  }
+
+  function obterAlvoNomeCacadasSessao() {
+    try { return sessionStorage.getItem(BOT_CACADAS_ALVO_NOME_KEY) || ''; } catch (e) {}
+    return '';
+  }
+
+  function decisaoIgnoraBlacklist(decisao) {
+    return !!(decisao && decisao.waitMs <= 0 && decisao.motivo &&
+      decisao.motivo.indexOf('teto ocioso') !== -1);
+  }
+
+  function resolverBlacklistNoPortao(decisao, callback) {
+    limparEstadoModoCacadas();
+
+    if (!blacklistCacadasAtiva()) {
+      definirModoCacadasClasse('lista vazia ou nao configurada');
+      callback();
+      return;
+    }
+
+    if (decisaoIgnoraBlacklist(decisao)) {
+      definirModoCacadasClasse('teto de espera atingido — evita penalidade, ignorando blacklist');
+      callback();
+      return;
+    }
+
+    var ataques = extrairAtaquesRelatorios();
+    var jaAtacados = nomesBlacklistJaAtacadosNoRelatorio(ataques);
+    if (jaAtacados.length) {
+      console.log('[Blacklist] Ja no relatorio de ataque: ' + jaAtacados.join(', '));
+    }
+
+    var proximo = escolherProximoAlvoBlacklist(ataques);
+    if (proximo) {
+      definirModoCacadasBlacklist(proximo);
+    } else {
+      console.warn('[Blacklist] Todos os nomes da lista ja constam no relatorio — caçada por classe.');
+      definirModoCacadasClasse('todos os nomes ja no relatorio');
+    }
+    callback();
   }
 
   function parseNumeroBr(valor) {
@@ -1410,6 +1705,15 @@
     return lerTentativasOcrAutoCaptcha();
   };
 
+  window.botBlacklistCacadas = function(lista) {
+    if (arguments.length === 0) {
+      return descreverBlacklistCacadas();
+    }
+    gravarBlacklistCacadasParam(lista);
+    console.log('[Blacklist] Lista atualizada: ' + descreverBlacklistCacadas());
+    return descreverBlacklistCacadas();
+  };
+
   function montarLinkPainelCaptcha(opcoes) {
     var opts = opcoes || {};
     var url = URL_PAINEL_BASE + '?codigo=' + encodeURIComponent(CODIGO_SERVIDOR);
@@ -1805,6 +2109,67 @@
     try { location.replace(url); } catch (e) { location.href = url; }
   }
 
+  function executarCacadaPorNome(nome) {
+    var input = document.getElementById('por_nome') ||
+      document.querySelector('input[name="por_nome"]');
+    if (!input) return false;
+
+    var form = input.closest('form');
+    if (!form) return false;
+
+    input.value = nome;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    var btnSubmit = form.querySelector('input[type="submit"]');
+    if (!btnSubmit) return false;
+
+    console.log('[Caçadas] Blacklist — caçando por nome: ' + nome);
+    btnSubmit.click();
+    return true;
+  }
+
+  function executarCacadaPorClasse() {
+    var selectNivel = document.getElementById('por_nivel');
+    if (selectNivel) {
+      selectNivel.value = NIVEL_CACADAS_FINAL;
+      selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
+
+      var formNivel = selectNivel.closest('form');
+      if (formNivel) {
+        var btnNivel = formNivel.querySelector('input[type="submit"]');
+        if (btnNivel) {
+          console.log('[Caçadas] Gate OK — nivel/classe ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
+          btnNivel.click();
+          return true;
+        }
+      }
+    }
+
+    var selectAleatorio = document.getElementById('aleatorio');
+    if (selectAleatorio) {
+      var valor = NIVEL_CACADAS_FINAL;
+      var opcaoValida = selectAleatorio.querySelector('option[value="' + valor + '"]');
+      if (!opcaoValida) {
+        valor = selectAleatorio.querySelector('option[value="2"]') ? '2' : '1';
+      }
+      selectAleatorio.value = valor;
+      selectAleatorio.dispatchEvent(new Event('change', { bubbles: true }));
+
+      var formAleatorio = selectAleatorio.closest('form');
+      if (formAleatorio) {
+        var btnAleatorio = formAleatorio.querySelector('input[type="submit"]');
+        if (btnAleatorio) {
+          console.log('[Caçadas] Gate OK — aleatorio ' + valor + ', clicando Caçar...');
+          btnAleatorio.click();
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   function urlAposCaptcha() {
     if (obterModoAba() === 'invasor') return URL_INVASOR;
     return URL_RELATORIOS_ATAQUE;
@@ -1815,6 +2180,7 @@
     ' | Espera caçadas: ' + descreverEsperaCacadas() +
     ' | Whitelist: ' + descreverWhitelistAtacar() +
     ' | ' + descreverWhitelistClaAtacar() +
+    ' | Blacklist: ' + descreverBlacklistCacadas() +
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
@@ -1924,9 +2290,23 @@
           }
         },
         {
+          id: 'missoes',
+          checar: function() {
+            if (obterModoAba() !== 'cacadas') return false;
+            return urlAtual.indexOf('missoes') !== -1;
+          },
+          executar: function() {
+            return processarPaginaMissoes();
+          }
+        },
+        {
           id: 'cacadas',
           checar: function() { return urlAtual.indexOf('cacadas') !== -1; },
           executar: function() {
+            if (paginaCacadasBloqueadaPorMissao()) {
+              return processarCacadasBloqueadaPorMissao();
+            }
+
             if (!gateCacadasLiberado()) {
               console.log('[Caçadas] Gate nao liberado — redirecionando ao portao...');
               window.location.href = URL_RELATORIOS_ATAQUE;
@@ -1934,21 +2314,18 @@
             }
             consumirGateCacadas();
 
-            var selectNivel = document.getElementById('por_nivel');
+            var modo = obterModoCacadasSessao();
+            var alvoNome = obterAlvoNomeCacadasSessao();
 
-            if (selectNivel) {
-              selectNivel.value = NIVEL_CACADAS_FINAL;
-              selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
-
-              var formNivel = selectNivel.closest('form');
-              if (formNivel) {
-                var btnSubmit = formNivel.querySelector('input[type="submit"]');
-                if (btnSubmit) {
-                  console.log('[Caçadas] Gate OK — nivel ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
-                  btnSubmit.click();
-                  return true;
-                }
+            if (modo === 'blacklist' && alvoNome) {
+              if (executarCacadaPorNome(alvoNome)) {
+                return true;
               }
+              console.warn('[Blacklist] Formulario por_nome indisponivel — fallback caçada por classe.');
+            }
+
+            if (executarCacadaPorClasse()) {
+              return true;
             }
             return false;
           }

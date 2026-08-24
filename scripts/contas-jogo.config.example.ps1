@@ -10,6 +10,7 @@ $NivelCacadas = '4'
 
 # Favoritos manuais no navegador (se nao usar o launcher):
 #   Caçadas:  $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas
+#   Caçadas (blacklist por nome):  ...&bot_blacklist_cacadas=Nome1,Nome2,Nome3
 #   Invasor:  $UrlBase/invasor?bot_modo=invasor
 #   Invasor (last hit por data):  ...&bot_lasthit_modo=data
 #   Invasor (last hit sorteio 36k-38k):  ...&bot_lasthit_modo=sorteio
