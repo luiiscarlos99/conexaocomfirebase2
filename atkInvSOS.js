@@ -432,21 +432,6 @@
   };
 
   window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
-
-  function ehPaginaRankingInvasor() {
-    if (window.__BOT_RANKING_PAGINA__) return true;
-    try {
-      var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
-      return path.indexOf('ranking') !== -1;
-    } catch (e) {}
-    return false;
-  }
-
-  if (ehPaginaRankingInvasor()) {
-    console.log('[Script Invasor] Pagina ranking — sem acao (use botRankingScan() no bot-ranking.js).');
-    return;
-  }
-
   console.log(
     '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
     'color:#3498db;font-weight:bold'

@@ -159,10 +159,6 @@
     function aplicar() {
       var el = document.getElementById('serverID');
       if (!el) return false;
-      var pathRank = (window.location.pathname || '').replace(/\/+$/, '') || '/';
-      if (pathRank.indexOf('ranking') !== -1 || window.__BOT_RANKING_PAGINA__) {
-        return false;
-      }
       var modo = '';
       try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
       if (!el.dataset.botServerBase) {

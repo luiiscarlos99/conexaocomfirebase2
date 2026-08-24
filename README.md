@@ -8,7 +8,7 @@ Automação para [Shadow of Shinobi](https://shadowofshinobi.com/) via **Inject 
 
 | Arquivo | Descrição |
 |---|---|
-| `bot-ranking.js` | Scan ranking — detectar contas mult (manual via console) |
+| `bot-ranking.js` | **Script novo** — scan ranking mult (inject separado, so /ranking) |
 | `bot-recovery.js` | Recuperação em erro 500 / `chrome-error://` via `window.name` |
 | `bot-bootstrap.js` | Bootstrap cedo — grava modo/credenciais + URL de recuperação |
 | `atkSOS.js` | Bot **Caçadas** — login, caçadas, captcha, atacar |
@@ -30,9 +30,16 @@ Injetar **nesta ordem** (auto-run ON em todos):
 |---|---|---|
 | 1 | `bot-recovery.js` | `.../bot-recovery.js` |
 | 2 | `bot-bootstrap.js` | `.../bot-bootstrap.js` |
-| 3 | `bot-ranking.js` | `.../bot-ranking.js` *(opcional — so ranking)* |
-| 4 | Caçadas | `.../atkSOS.js` |
-| 5 | Invasor | `.../atkInvSOS.js` |
+| 3 | Caçadas | `.../atkSOS.js` |
+| 4 | Invasor | `.../atkInvSOS.js` |
+
+**Ranking (script separado — nao entra na ordem acima):**
+
+| Script | Quando injectar |
+|---|---|
+| `bot-ranking.js` | So na aba de ranking, ou `@match` ranking — **nao** mistura com caçadas/invasor |
+
+Abra o ranking em **aba manual** (sem `?bot_modo=`) para caçadas/invasor nao agirem.
 
 | Regra | Auto-run | CDN |
 |---|---|---|
@@ -123,13 +130,14 @@ Captcha → caçadas trata → volta ao invasor
 - `/status` → `/invasor` | last hit scout/data/sorteio
 - Captcha delegado ao `atkSOS.js`
 
-### `bot-ranking.js` — v1.0
+### `bot-ranking.js` — v1.0 *(script novo, separado)*
 
-- **Só na página** `/ranking` — Caçadas/Invasor não agem
-- **Manual:** console `botRankingScan()` (não roda sozinho)
-- Percorre ranking geral de personagens de **50 em 50** até página vazia
-- Filtra **lvl > 55** e **ryous < 1M** (contas mult) — parâmetros configuráveis
-- No fim: 2 logs — detalhado + lista pronta para `bot_blacklist_cacadas`
+- Arquivo **independente** — nao modifica `atkSOS.js` nem `atkInvSOS.js`
+- Inject **so no ranking** (URL `/ranking*` ou aba dedicada)
+- **Manual:** `botRankingScan()` no console
+- Percorre ranking geral de 50 em 50 ate pagina vazia
+- Filtra lvl > 55 e ryous < 1M (parametros na URL)
+- 2 logs no fim: detalhado + lista para `bot_blacklist_cacadas`
 
 **Parâmetros URL:**
 ```

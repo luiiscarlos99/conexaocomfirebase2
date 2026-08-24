@@ -1,4 +1,13 @@
-// Bot Ranking — detectar contas mult no ranking de personagens (Inject Code: apos bootstrap, antes de atkSOS).
+// ==UserScript==
+// @name         Bot Ranking Mult - Shadow of Shinobi
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Scan ranking personagens — detecta contas mult (lvl alto, ryous baixo). Script separado; nao altera Caçadas/Invasor.
+// @match        https://shadowofshinobi.com/ranking*
+// @grant        none
+// ==UserScript==
+
+// Inject Code: script NOVO e independente — pode injetar so nesta aba/pagina ranking.
 (function() {
   'use strict';
 
