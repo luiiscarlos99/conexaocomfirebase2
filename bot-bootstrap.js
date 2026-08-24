@@ -119,6 +119,19 @@
     } catch (e) {}
   }
 
+  function escHtmlPainelBootstrap(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function resumirBootstrap(texto, max) {
+    var s = String(texto || '');
+    if (s.length <= max) return s;
+    return s.substring(0, max - 3) + '...';
+  }
+
   function exibirModoAbaServerID() {
     function aplicar() {
       var el = document.getElementById('serverID');
@@ -126,10 +139,33 @@
       var modo = '';
       try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
       if (!el.dataset.botServerBase) {
-        el.dataset.botServerBase = (el.textContent || '').replace(/\s*\|\s*Bot:.*$/i, '').trim();
+        var primeira = (el.textContent || '').split('\n')[0];
+        el.dataset.botServerBase = primeira.replace(/\s*\|\s*Bot:.*$/i, '').trim();
       }
       var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
-      el.textContent = el.dataset.botServerBase + ' | Bot: ' + label;
+      var login = '';
+      try { login = localStorage.getItem('BOT_USUARIO') || '?'; } catch (e) { login = '?'; }
+      var rot = descreverRotacaoAutomacaoBootstrap();
+      var nivel = '';
+      var bl = '';
+      try {
+        nivel = localStorage.getItem('BOT_NIVEL_CACADAS') || '?';
+        bl = localStorage.getItem('BOT_BLACKLIST_CACADAS') || 'vazia';
+      } catch (e) {}
+
+      var linhas = [
+        escHtmlPainelBootstrap(el.dataset.botServerBase),
+        'Bot: <b>' + escHtmlPainelBootstrap(label) + '</b>',
+        'Principal: ' + escHtmlPainelBootstrap(login),
+        '<span style="opacity:.65">—</span>',
+        'Nivel: ' + escHtmlPainelBootstrap(nivel) + ' | Rotacao: ' + escHtmlPainelBootstrap(rot),
+        'Blacklist: ' + escHtmlPainelBootstrap(resumirBootstrap(bl || 'vazia', 64))
+      ];
+
+      el.style.lineHeight = '1.35';
+      el.style.fontSize = '9pt';
+      el.style.whiteSpace = 'normal';
+      el.innerHTML = linhas.join('<br>');
       return true;
     }
     if (aplicar()) return;
@@ -207,7 +243,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.1', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.2', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.75
+// @version      2.76
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,34 +246,15 @@
 
   function sincronizarModoAba() {
     var params = aplicarParamsUrl();
-    exibirModoAbaServerID();
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
     return params;
   }
 
-  function exibirModoAbaServerID() {
-    function aplicar() {
-      var el = document.getElementById('serverID');
-      if (!el) return false;
-      var modo = '';
-      try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
-      if (!el.dataset.botServerBase) {
-        el.dataset.botServerBase = (el.textContent || '').replace(/\s*\|\s*Bot:.*$/i, '').trim();
-      }
-      var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
-      el.textContent = el.dataset.botServerBase + ' | Bot: ' + label;
-      return true;
-    }
-    if (aplicar()) return;
-    setTimeout(aplicar, 800);
-    setTimeout(aplicar, 2500);
-  }
-
   aplicarParamsUrl();
-  exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.75';
-  var SCRIPT_ATUALIZADO = '24/08/2026 19:25';
+  var SCRIPT_VERSAO = '2.76';
+  var SCRIPT_ATUALIZADO = '24/08/2026 19:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -878,6 +859,7 @@
 
     if (!nomeLogado) {
       USUARIO_EXIBICAO = loginSalvo;
+      exibirModoAbaServerID();
       return;
     }
 
@@ -889,6 +871,7 @@
           '[Automacao] Conta ativa: ' + nomeLogado + ' | Login (nao alterado): ' + loginSalvo
         );
       }
+      exibirModoAbaServerID();
       return;
     }
 
@@ -898,6 +881,7 @@
       USUARIO_FINAL = nomeLogado;
       USUARIO_EXIBICAO = nomeLogado;
     }
+    exibirModoAbaServerID();
   }
 
   function processarRotacaoContaPrincipal() {
@@ -1337,6 +1321,87 @@
       ? ' (bot_blacklist_cacadas)'
       : '';
     return lista.join(', ') + sufixo;
+  }
+
+  function escHtmlPainelServer(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function obterNomeAutomacaoPainel() {
+    var login = obterUsuarioLogin();
+    var ativo = obterUsuarioExibicao();
+    if (!ativo || ativo === login) return '';
+    if (estaEmContaGerenciada() || rotacaoAutomacaoAtiva()) return ativo;
+    return '';
+  }
+
+  function resumirTextoPainel(texto, max) {
+    var s = String(texto || '');
+    var lim = typeof max === 'number' ? max : 72;
+    if (s.length <= lim) return s;
+    return s.substring(0, lim - 3) + '...';
+  }
+
+  function montarHtmlPainelServerID(el) {
+    if (!el.dataset.botServerBase) {
+      var primeira = (el.textContent || '').split('\n')[0];
+      el.dataset.botServerBase = primeira.replace(/\s*\|\s*Bot:.*$/i, '').trim();
+    }
+
+    var modo = '';
+    try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
+    var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
+    var login = obterUsuarioLogin();
+    var auto = obterNomeAutomacaoPainel();
+    var linhas = [
+      escHtmlPainelServer(el.dataset.botServerBase),
+      'Bot: <b>' + escHtmlPainelServer(label) + '</b>',
+      'Principal: ' + escHtmlPainelServer(login)
+    ];
+
+    if (auto) {
+      linhas.push('Auto: <b>' + escHtmlPainelServer(auto) + '</b>');
+    }
+
+    linhas.push('<span style="opacity:.65">—</span>');
+    linhas.push(
+      'Nivel: ' + escHtmlPainelServer(NIVEL_CACADAS_FINAL) +
+      ' | Rotacao: ' + escHtmlPainelServer(descreverRotacaoAutomacao())
+    );
+    linhas.push('Espera: ' + escHtmlPainelServer(resumirTextoPainel(descreverEsperaCacadas(), 48)));
+    linhas.push('Blacklist: ' + escHtmlPainelServer(resumirTextoPainel(descreverBlacklistCacadas(), 64)));
+    linhas.push(
+      'Max ryous: ' + escHtmlPainelServer(formatarNumeroBr(obterMaxRyousCacadas())) +
+      ' | Diff: ' + escHtmlPainelServer(String(obterDiffNivelCacadas())) +
+      ' | Min vit: ' + escHtmlPainelServer(formatarNumeroBr(obterMinRyousVitoriaCacadas()))
+    );
+    linhas.push(
+      'WL nome: ' + escHtmlPainelServer(resumirTextoPainel(descreverWhitelistAtacar(), 40))
+    );
+    linhas.push(
+      'WL cla: ' + escHtmlPainelServer(resumirTextoPainel(descreverWhitelistClaAtacar(), 40))
+    );
+    linhas.push('v' + escHtmlPainelServer(SCRIPT_VERSAO));
+
+    return linhas.join('<br>');
+  }
+
+  function exibirModoAbaServerID() {
+    function aplicar() {
+      var el = document.getElementById('serverID');
+      if (!el) return false;
+      el.style.lineHeight = '1.35';
+      el.style.fontSize = '9pt';
+      el.style.whiteSpace = 'normal';
+      el.innerHTML = montarHtmlPainelServerID(el);
+      return true;
+    }
+    if (aplicar()) return;
+    setTimeout(aplicar, 800);
+    setTimeout(aplicar, 2500);
   }
 
   function extrairNinjaNaoEncontradoCacadas() {
