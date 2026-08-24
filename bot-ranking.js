@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Scan ranking personagens — detecta contas mult (lvl alto, ryous baixo). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.2';
+      var SCRIPT_VERSAO = '1.3';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -43,6 +43,7 @@
 
       function parseNumeroRanking(valor) {
         if (valor === null || valor === undefined || valor === '') return null;
+        if (valor && valor.nodeType === 1) valor = valor.textContent;
         var s = String(valor).trim().replace(/^\|\s*/, '');
         if (!s) return null;
         var lower = s.toLowerCase();
@@ -180,15 +181,15 @@
         var ryous = parseNumeroRanking(ryousTexto);
 
         if (tds.length >= 7) {
-          nivel = parseIntRanking(tds[3]);
-          vitorias = parseIntRanking(tds[4]);
-          derrotas = parseIntRanking(tds[5]);
+          nivel = parseIntRanking(textoCelula(tds[3]));
+          vitorias = parseIntRanking(textoCelula(tds[4]));
+          derrotas = parseIntRanking(textoCelula(tds[5]));
           ryousTexto = textoCelula(tds[6]);
           ryous = parseNumeroRanking(ryousTexto);
         } else if (linkIdx + 1 < tds.length) {
-          nivel = parseIntRanking(tds[linkIdx + 1]);
-          if (linkIdx + 2 < tds.length) vitorias = parseIntRanking(tds[linkIdx + 2]);
-          if (linkIdx + 3 < tds.length) derrotas = parseIntRanking(tds[linkIdx + 3]);
+          nivel = parseIntRanking(textoCelula(tds[linkIdx + 1]));
+          if (linkIdx + 2 < tds.length) vitorias = parseIntRanking(textoCelula(tds[linkIdx + 2]));
+          if (linkIdx + 3 < tds.length) derrotas = parseIntRanking(textoCelula(tds[linkIdx + 3]));
         }
 
         if (nivel === null || ryous === null) return null;
