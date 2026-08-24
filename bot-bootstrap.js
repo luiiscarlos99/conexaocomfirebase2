@@ -241,6 +241,23 @@
     } catch (e) {}
   }
 
+  function lerModoPreferidoBootstrap() {
+    try {
+      var pref = localStorage.getItem('BOT_MODO_PREFERIDO');
+      if (pref === 'invasor' || pref === 'cacadas') return pref;
+    } catch (e) {}
+    return '';
+  }
+
+  function restaurarModoPreferidoBootstrap() {
+    try {
+      var atual = sessionStorage.getItem(BOT_MODO_KEY);
+      if (atual === 'invasor' || atual === 'cacadas') return;
+      var pref = lerModoPreferidoBootstrap();
+      if (pref) sessionStorage.setItem(BOT_MODO_KEY, pref);
+    } catch (e) {}
+  }
+
   try {
     var params = new URLSearchParams(window.location.search);
     var modoQuery = extrairModo(window.location.search);
