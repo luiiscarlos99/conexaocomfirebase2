@@ -260,6 +260,7 @@
 
       if (modo === 'invasor' || modo === 'cacadas') {
         sessionStorage.setItem(BOT_MODO_KEY, modo);
+        try { localStorage.setItem('BOT_MODO_PREFERIDO', modo); } catch (ePref) {}
       }
 
       aplicarCredenciais(window.location.search);
@@ -292,9 +293,10 @@
     }
   } catch (e) {}
 
+  restaurarModoPreferidoBootstrap();
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.5', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.6', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;

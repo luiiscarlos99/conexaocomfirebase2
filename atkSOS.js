@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.79
+// @version      2.80
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -218,7 +218,31 @@
 
   function gravarModoAba(modo) {
     if (modo !== 'invasor' && modo !== 'cacadas') return;
-    try { sessionStorage.setItem(BOT_MODO_KEY, modo); } catch (e) {}
+    try {
+      sessionStorage.setItem(BOT_MODO_KEY, modo);
+      localStorage.setItem('BOT_MODO_PREFERIDO', modo);
+    } catch (e) {}
+  }
+
+  function lerModoPreferidoNavegador() {
+    try {
+      var pref = localStorage.getItem('BOT_MODO_PREFERIDO');
+      if (pref === 'invasor' || pref === 'cacadas') return pref;
+    } catch (e) {}
+    return '';
+  }
+
+  function restaurarModoAbaDoNavegador() {
+    try {
+      var atual = sessionStorage.getItem(BOT_MODO_KEY);
+      if (atual === 'invasor' || atual === 'cacadas') return atual;
+      var pref = lerModoPreferidoNavegador();
+      if (pref) {
+        sessionStorage.setItem(BOT_MODO_KEY, pref);
+        return pref;
+      }
+    } catch (e) {}
+    return '';
   }
 
   function aplicarCredenciaisReferrer() {
@@ -266,6 +290,7 @@
   // Bootstrap imediato — antes de qualquer return (redirect /status nao perde o modo)
   function aplicarParamsUrl() {
     try {
+      restaurarModoAbaDoNavegador();
       var params = new URLSearchParams(window.location.search);
       var modo = lerModoUrl(params);
       var modoParamRaw = params.get('bot_modo');
@@ -338,8 +363,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.79';
-  var SCRIPT_ATUALIZADO = '24/08/2026 19:55';
+  var SCRIPT_VERSAO = '2.80';
+  var SCRIPT_ATUALIZADO = '24/08/2026 20:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -453,13 +478,19 @@
     }
   } catch (e) {}
 
+  restaurarModoAbaDoNavegador();
   var modoInicial = obterModoAba();
   var ehPaginaLoginInicial = !!document.getElementById('login');
+  var ehPaginaStatusInicial = (window.location.pathname || '').indexOf('status') !== -1;
 
-  if (!modoInicial && !ehPaginaLoginInicial) {
+  if (!modoInicial && !ehPaginaLoginInicial && !ehPaginaStatusInicial) {
     logDiagnosticoModo('cacadas');
     console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
     return;
+  }
+
+  if (!modoInicial && ehPaginaStatusInicial) {
+    console.warn('[Script Caçadas] Status sem modo na aba — abra uma vez com ?bot_modo=invasor ou ?bot_modo=cacadas na URL.');
   }
 
   if (modoInicial && modoInicial !== 'cacadas' && modoInicial !== 'invasor') {
@@ -2750,17 +2781,25 @@
         return;
       }
 
+      // /status → destino conforme modo
+      if (urlAtual.indexOf('status') !== -1) {
+        var modoStatus = obterModoAba();
+        if (modoStatus === 'cacadas') {
+          if (processarRotacaoContaPrincipal()) return;
+          console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
+          window.location.href = URL_RELATORIOS_ATAQUE;
+          return;
+        }
+        if (modoStatus === 'invasor') {
+          console.log('[Script Caçadas] Status — redirecionando ao invasor...');
+          window.location.href = URL_INVASOR;
+          return;
+        }
+      }
+
       // Modo cacadas: ignora paginas do invasor
       if (obterModoAba() === 'cacadas' && urlAtual.indexOf('invasor') !== -1) {
         console.log('[Script Caçadas] Pagina do invasor — sem acao.');
-        return;
-      }
-
-      // Modo cacadas: /status → automacao (rotacao) ou portao relatorios
-      if (obterModoAba() === 'cacadas' && urlAtual.indexOf('status') !== -1) {
-        if (processarRotacaoContaPrincipal()) return;
-        console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
-        window.location.href = URL_RELATORIOS_ATAQUE;
         return;
       }
 
