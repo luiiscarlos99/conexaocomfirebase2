@@ -39,7 +39,7 @@ Injetar **nesta ordem** (auto-run ON em todos):
 |---|---|
 | `bot-ranking.js` | So na aba de ranking, ou `@match` ranking — **nao** mistura com caçadas/invasor |
 
-Abra o ranking em **aba manual** (sem `?bot_modo=`) para caçadas/invasor nao agirem.
+- Abra o ranking em **aba manual** (sem `?bot_modo=`) — ou use os scripts caçadas/invasor/bootstrap que **nao agem** em `/ranking` (so aviso no console/painel).
 
 | Regra | Auto-run | CDN |
 |---|---|---|

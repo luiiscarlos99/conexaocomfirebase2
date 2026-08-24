@@ -432,6 +432,18 @@
   };
 
   window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
+
+  if ((function() {
+    try {
+      var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return p.indexOf('ranking') !== -1;
+    } catch (e) {}
+    return false;
+  })()) {
+    console.log('[Script Invasor] Pagina /ranking — sem acao (use bot-ranking.js + botRankingScan()).');
+    return;
+  }
+
   console.log(
     '%c[Bot Invasor] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
     'color:#3498db;font-weight:bold'

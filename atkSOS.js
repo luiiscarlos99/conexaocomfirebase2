@@ -443,6 +443,17 @@
     return descreverRotacaoAutomacao();
   };
 
+  if ((function() {
+    try {
+      var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return p.indexOf('ranking') !== -1;
+    } catch (e) {}
+    return false;
+  })()) {
+    console.log('[Script Caçadas] Pagina /ranking — sem acao (use bot-ranking.js + botRankingScan()).');
+    return;
+  }
+
   window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
   console.log(
     '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,

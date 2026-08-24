@@ -155,10 +155,39 @@
     return s.substring(0, max - 3) + '...';
   }
 
+  function ehPaginaRankingBootstrap() {
+    try {
+      var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return path.indexOf('ranking') !== -1;
+    } catch (e) {}
+    return false;
+  }
+
   function exibirModoAbaServerID() {
     function aplicar() {
       var el = document.getElementById('serverID');
       if (!el) return false;
+      if (!el.dataset.botServerBase) {
+        var primeira = (el.textContent || '').split('\n')[0];
+        el.dataset.botServerBase = primeira.replace(/\s*\|\s*Bot:.*$/i, '').trim();
+      }
+      var login = '';
+      try { login = lerUsuarioLoginArmazenado() || '?'; } catch (e) { login = '?'; }
+
+      if (ehPaginaRankingBootstrap()) {
+        el.style.lineHeight = '1.35';
+        el.style.fontSize = '9pt';
+        el.style.whiteSpace = 'normal';
+        el.innerHTML = [
+          escHtmlPainelBootstrap(el.dataset.botServerBase),
+          'Bot: <b>manual</b> (ranking — sem acao)',
+          'Principal: ' + escHtmlPainelBootstrap(login),
+          '<span style="opacity:.65">—</span>',
+          'Ranking: bot-ranking.js + botRankingScan()'
+        ].join('<br>');
+        return true;
+      }
+
       var modo = '';
       try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
       if (!el.dataset.botServerBase) {
