@@ -14,6 +14,17 @@
     if (!u) return false;
     localStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
     localStorage.setItem('BOT_USUARIO', u);
+    try {
+      sessionStorage.removeItem(BOT_USUARIO_LOGIN_KEY);
+      sessionStorage.removeItem('BOT_USUARIO');
+    } catch (e) {}
+    return true;
+  }
+
+  function gravarSenhaLoginParam(valor) {
+    if (!valor) return false;
+    localStorage.setItem('BOT_SENHA', String(valor));
+    try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
     return true;
   }
 
@@ -61,7 +72,7 @@
       var d = rp.get('bot_diff_nivel_cacadas');
       var v = rp.get('bot_min_ryous_vitoria_cacadas');
       if (u) gravarUsuarioLoginParam(u);
-      if (p) localStorage.setItem('BOT_SENHA', p);
+      if (p) gravarSenhaLoginParam(p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') {
         var em = parseFloat(String(e).replace(',', '.'));
@@ -261,7 +272,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.3', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.4', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
