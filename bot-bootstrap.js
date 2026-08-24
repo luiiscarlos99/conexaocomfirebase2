@@ -119,6 +119,49 @@
     } catch (e) {}
   }
 
+  function exibirModoAbaServerID() {
+    function aplicar() {
+      var el = document.getElementById('serverID');
+      if (!el) return false;
+      var modo = '';
+      try { modo = sessionStorage.getItem(BOT_MODO_KEY) || ''; } catch (e) {}
+      if (!el.dataset.botServerBase) {
+        el.dataset.botServerBase = (el.textContent || '').replace(/\s*\|\s*Bot:.*$/i, '').trim();
+      }
+      var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
+      el.textContent = el.dataset.botServerBase + ' | Bot: ' + label;
+      return true;
+    }
+    if (aplicar()) return;
+    setTimeout(aplicar, 800);
+    setTimeout(aplicar, 2500);
+  }
+
+  function descreverRotacaoAutomacaoBootstrap() {
+    try {
+      return localStorage.getItem('BOT_ROTACAO_AUTOMACAO') === '1'
+        ? 'ligada (bot_rotacao_automacao=1)' : 'desligada';
+    } catch (e) {
+      return 'desligada';
+    }
+  }
+
+  function registrarComandosConsolePagina() {
+    try {
+      var el = document.createElement('script');
+      el.textContent =
+        'window.botRotacaoAutomacao=function(ligar){' +
+        'function s(){try{return localStorage.getItem("BOT_ROTACAO_AUTOMACAO")==="1"?' +
+        '"ligada (bot_rotacao_automacao=1)":"desligada";}catch(e){return "desligada";}}' +
+        'if(arguments.length===0)return s();' +
+        'try{if(ligar)localStorage.setItem("BOT_ROTACAO_AUTOMACAO","1");' +
+        'else localStorage.removeItem("BOT_ROTACAO_AUTOMACAO");}catch(e){}' +
+        'console.log("[Automacao] Rotacao: "+s());return s();};';
+      (document.documentElement || document.head).appendChild(el);
+      el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
+
   try {
     var params = new URLSearchParams(window.location.search);
     var modoQuery = extrairModo(window.location.search);
@@ -161,6 +204,11 @@
       } catch (e) {}
     }
   } catch (e) {}
+
+  exibirModoAbaServerID();
+  registrarComandosConsolePagina();
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.1', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
 })();
