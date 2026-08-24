@@ -258,6 +258,14 @@
     } catch (e) {}
   }
 
+  function urlSearchTemParamsBotBootstrap(search) {
+    try {
+      var rp = new URLSearchParams(search || '');
+      return !!(rp.get('bot_user') || rp.get('bot_pass') || rp.get('bot_modo') || rp.get('bot_nivel'));
+    } catch (e) {}
+    return false;
+  }
+
   try {
     var params = new URLSearchParams(window.location.search);
     var modoQuery = extrairModo(window.location.search);
@@ -265,8 +273,9 @@
     if (modoQuery === 'off' || modoQuery === 'manual') {
       sessionStorage.removeItem(BOT_MODO_KEY);
     } else {
-      var modo = modoQuery || lerModoReferrer();
-      if (modo !== 'invasor' && modo !== 'cacadas') {
+      var modo = modoQuery;
+      if ((modo !== 'invasor' && modo !== 'cacadas') &&
+          urlSearchTemParamsBotBootstrap(window.location.search)) {
         modo = inferirModoPelaUrlBootstrap();
       }
       if (modoQuery && modoQuery !== 'invasor' && modoQuery !== 'cacadas' &&
@@ -281,7 +290,9 @@
       }
 
       aplicarCredenciais(window.location.search);
+      var pathBoot = (window.location.pathname || '').replace(/\/+$/, '') || '/';
       if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
+          (pathBoot === '/' || pathBoot.indexOf('status') !== -1) &&
           !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
           !params.get('bot_min_ataques_invasor') && !params.get('bot_lasthit_data') &&
           !params.get('bot_lasthit_modo') && !params.get('bot_lasthit_sorteio_min') &&
@@ -310,10 +321,9 @@
     }
   } catch (e) {}
 
-  restaurarModoPreferidoBootstrap();
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.6', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.7', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
