@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.69
+// @version      2.70
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -87,17 +87,33 @@
     return true;
   }
 
+  function gravarRotacaoAutomacaoParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '' || s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem('BOT_ROTACAO_AUTOMACAO'); } catch (e) {}
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_ROTACAO_AUTOMACAO', '1');
+      return true;
+    }
+    return false;
+  }
+
   function aplicarParamsCacadasAtacar(rp) {
     if (!rp) return;
     var w = rp.get('bot_whitelist_cacadas');
     var wc = rp.get('bot_whitelist_cla_cacadas');
     var bl = rp.get('bot_blacklist_cacadas');
+    var ra = rp.get('bot_rotacao_automacao');
     var r = rp.get('bot_max_ryous_cacadas');
     var d = rp.get('bot_diff_nivel_cacadas');
     var v = rp.get('bot_min_ryous_vitoria_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
     if (bl !== null) gravarBlacklistCacadasParam(bl);
+    if (ra !== null) gravarRotacaoAutomacaoParam(ra);
     if (r !== null && r !== '') gravarMaxRyousCacadasParam(r);
     if (d !== null && d !== '') gravarDiffNivelCacadasParam(d);
     if (v !== null && v !== '') gravarMinRyousVitoriaCacadasParam(v);
@@ -196,6 +212,7 @@
 
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
           params.get('bot_whitelist_cla_cacadas') || params.get('bot_blacklist_cacadas') ||
+          params.get('bot_rotacao_automacao') ||
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
           modoVeioDeQuery) && window.history && window.history.replaceState) {
@@ -246,8 +263,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.69';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:41';
+  var SCRIPT_VERSAO = '2.70';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:49';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -271,6 +288,7 @@
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
       var bl = localStorage.getItem('BOT_BLACKLIST_CACADAS');
+      var ra = localStorage.getItem('BOT_ROTACAO_AUTOMACAO');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
       var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
       var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
@@ -282,6 +300,7 @@
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
       if (bl !== null && bl !== '') params.set('bot_blacklist_cacadas', bl);
+      if (ra === '1') params.set('bot_rotacao_automacao', '1');
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
       if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
@@ -371,11 +390,14 @@
   var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_MISSOES = 'https://shadowofshinobi.com/missoes';
+  var URL_AUTOMACAO = 'https://shadowofshinobi.com/automacao';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var BOT_CACADAS_MODO_KEY = 'BOT_CACADAS_MODO';
   var BOT_CACADAS_ALVO_NOME_KEY = 'BOT_CACADAS_ALVO_NOME';
+  var BOT_ROTACAO_CICLO_KEY = 'BOT_ROTACAO_CICLO_PENDENTE';
+  var BOT_ROTACAO_ASSUMIDA_KEY = 'BOT_AUTO_ROT_ASSUMIDA';
   var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
   var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
   var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
@@ -390,6 +412,132 @@
   var loginJaEnviado = false;
   var portaoRelatoriosAgendado = false;
   var missaoCancelamentoClicado = false;
+  var automacaoAssumirEmAndamento = false;
+
+  function rotacaoAutomacaoAtiva() {
+    return localStorage.getItem('BOT_ROTACAO_AUTOMACAO') === '1';
+  }
+
+  function descreverRotacaoAutomacao() {
+    if (!rotacaoAutomacaoAtiva()) return 'desligada';
+    return 'ligada (bot_rotacao_automacao=1)';
+  }
+
+  function marcarRotacaoCicloPendente() {
+    try { sessionStorage.setItem(BOT_ROTACAO_CICLO_KEY, '1'); } catch (e) {}
+  }
+
+  function consumirRotacaoCicloPendente() {
+    try {
+      if (sessionStorage.getItem(BOT_ROTACAO_CICLO_KEY) === '1') {
+        sessionStorage.removeItem(BOT_ROTACAO_CICLO_KEY);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function marcarContaAutomacaoAssumida() {
+    try { sessionStorage.setItem(BOT_ROTACAO_ASSUMIDA_KEY, '1'); } catch (e) {}
+  }
+
+  function consumirContaAutomacaoAssumida() {
+    try {
+      if (sessionStorage.getItem(BOT_ROTACAO_ASSUMIDA_KEY) === '1') {
+        sessionStorage.removeItem(BOT_ROTACAO_ASSUMIDA_KEY);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function extrairContasAutomacaoPagina() {
+    var mapa = {};
+    var forms = document.querySelectorAll('form[action*="automacao"]');
+
+    for (var i = 0; i < forms.length; i++) {
+      if (!forms[i].querySelector('input[name="assumir"]')) continue;
+      var contaIdInput = forms[i].querySelector('input[name="conta_id"]');
+      if (!contaIdInput) continue;
+
+      var contaId = String(contaIdInput.value || '').trim();
+      if (!contaId || mapa[contaId]) continue;
+
+      var card = forms[i].closest('div[style*="background:#181818"]');
+      var nome = '';
+      if (card) {
+        var strong = card.querySelector('strong');
+        if (strong) nome = (strong.innerText || strong.textContent || '').trim();
+      }
+
+      mapa[contaId] = { contaId: contaId, nome: nome, form: forms[i] };
+    }
+
+    return Object.keys(mapa).map(function(k) { return mapa[k]; }).sort(function(a, b) {
+      var na = parseInt(a.contaId, 10);
+      var nb = parseInt(b.contaId, 10);
+      if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+      return String(a.contaId).localeCompare(String(b.contaId));
+    });
+  }
+
+  function escolherProximaContaAutomacao(contas) {
+    if (!contas.length) return null;
+    if (contas.length === 1) return contas[0];
+
+    var atual = extrairNomeUsuarioLogado();
+    var idx = -1;
+    if (atual) {
+      var normAtual = normalizarNomeCacadas(atual);
+      for (var i = 0; i < contas.length; i++) {
+        if (normalizarNomeCacadas(contas[i].nome) === normAtual) {
+          idx = i;
+          break;
+        }
+      }
+    }
+
+    if (idx === -1) return contas[0];
+    return contas[(idx + 1) % contas.length];
+  }
+
+  function irParaRotacaoAutomacao(motivo) {
+    console.warn('[Automacao] ' + motivo + ' — rotacionando para proxima conta...');
+    marcarRotacaoCicloPendente();
+    consumirGateCacadas();
+    portaoRelatoriosAgendado = false;
+    limparEstadoModoCacadas();
+    setTimeout(function() {
+      window.location.href = URL_AUTOMACAO;
+    }, 1500);
+  }
+
+  function processarPaginaAutomacao() {
+    if (!rotacaoAutomacaoAtiva() || !consumirRotacaoCicloPendente()) return false;
+    if (automacaoAssumirEmAndamento) return true;
+
+    var contas = extrairContasAutomacaoPagina();
+    if (!contas.length) {
+      console.warn('[Automacao] Nenhuma conta gerenciada encontrada — voltando ao portao.');
+      irParaPortaoRelatorios('Rotacao automacao sem contas');
+      return true;
+    }
+
+    var proxima = escolherProximaContaAutomacao(contas);
+    if (!proxima) {
+      irParaPortaoRelatorios('Rotacao automacao falhou');
+      return true;
+    }
+
+    automacaoAssumirEmAndamento = true;
+    marcarContaAutomacaoAssumida();
+    console.warn('[Automacao] Assumindo conta: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+
+    var btn = proxima.form.querySelector('input[type="submit"]');
+    if (btn) btn.click();
+    else proxima.form.submit();
+    return true;
+  }
 
   function instalarConfirmAutoOkMissao() {
     if (window.__BOT_CONFIRM_MISSAO_OK__) return;
@@ -963,7 +1111,12 @@
     window.location.href = URL_CACADAS;
   }
 
-  function irParaPortaoRelatorios(motivo) {
+  function irParaPortaoRelatorios(motivo, opcoes) {
+    var opts = opcoes || {};
+    if (opts.rotacionarAutomacao && rotacaoAutomacaoAtiva()) {
+      irParaRotacaoAutomacao(motivo);
+      return;
+    }
     console.log('[Caçadas] ' + motivo + ' — portao relatorios de ataque...');
     consumirGateCacadas();
     portaoRelatoriosAgendado = false;
@@ -1136,7 +1289,7 @@
 
     removerNomeBlacklistCacadas(nome);
     limparEstadoModoCacadas();
-    irParaPortaoRelatorios('Ninja nao encontrado: ' + nome);
+    irParaPortaoRelatorios('Ninja nao encontrado: ' + nome, { rotacionarAutomacao: true });
     return true;
   }
 
@@ -1485,7 +1638,7 @@
 
   function avisarDiscordEVoltarCacadas(mensagem) {
     enviarDiscordTexto(mensagem, null, DISCORD_ALVO_IGNORADO_SILENCIOSO).finally(function() {
-      irParaPortaoRelatorios('Alvo ignorado');
+      irParaPortaoRelatorios('Alvo ignorado', { rotacionarAutomacao: true });
     });
   }
 
@@ -1694,7 +1847,7 @@
   }
 
   function irParaCacadasAposCombate(motivo) {
-    irParaPortaoRelatorios(motivo);
+    irParaPortaoRelatorios(motivo, { rotacionarAutomacao: true });
   }
 
   function processarPaginaCombate() {
@@ -1840,9 +1993,21 @@
     if (arguments.length === 0) {
       return descreverBlacklistCacadas();
     }
+    if (lista && typeof lista === 'object' && lista.join) {
+      lista = lista.join(',');
+    }
     gravarBlacklistCacadasParam(lista);
     console.log('[Blacklist] Lista atualizada: ' + descreverBlacklistCacadas());
     return descreverBlacklistCacadas();
+  };
+
+  window.botRotacaoAutomacao = function(ligar) {
+    if (arguments.length === 0) {
+      return descreverRotacaoAutomacao();
+    }
+    gravarRotacaoAutomacaoParam(ligar ? '1' : '0');
+    console.log('[Automacao] Rotacao: ' + descreverRotacaoAutomacao());
+    return descreverRotacaoAutomacao();
   };
 
   function montarLinkPainelCaptcha(opcoes) {
@@ -2297,6 +2462,7 @@
     ' | Whitelist: ' + descreverWhitelistAtacar() +
     ' | ' + descreverWhitelistClaAtacar() +
     ' | Blacklist: ' + descreverBlacklistCacadas() +
+    ' | Rotacao automacao: ' + descreverRotacaoAutomacao() +
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
@@ -2327,6 +2493,12 @@
 
       sincronizarUsuarioLocalStorage();
       CODIGO_SERVIDOR = obterCodigoServidor();
+
+      if (obterModoAba() === 'cacadas' && consumirContaAutomacaoAssumida()) {
+        console.log('[Automacao] Conta assumida — iniciando portao de caçadas...');
+        window.location.href = URL_RELATORIOS_ATAQUE;
+        return;
+      }
 
       var urlAtual = window.location.href;
       var formLogin = document.getElementById('login');
@@ -2403,6 +2575,16 @@
           },
           executar: function() {
             return processarPortaoRelatoriosAtaque();
+          }
+        },
+        {
+          id: 'automacao',
+          checar: function() {
+            if (obterModoAba() !== 'cacadas') return false;
+            return urlAtual.indexOf('automacao') !== -1;
+          },
+          executar: function() {
+            return processarPaginaAutomacao();
           }
         },
         {

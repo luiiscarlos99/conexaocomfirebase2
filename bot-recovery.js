@@ -29,6 +29,7 @@
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
       var bl = localStorage.getItem('BOT_BLACKLIST_CACADAS');
+      var ra = localStorage.getItem('BOT_ROTACAO_AUTOMACAO');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
       var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
       var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
@@ -44,6 +45,7 @@
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
       if (bl !== null && bl !== '') params.set('bot_blacklist_cacadas', bl);
+      if (ra === '1') params.set('bot_rotacao_automacao', '1');
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
       if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
@@ -64,6 +66,7 @@
      'bot_min_ataques_invasor', 'bot_lasthit_data', 'bot_lasthit_modo',
      'bot_lasthit_sorteio_min', 'bot_lasthit_sorteio_max',
      'bot_whitelist_cacadas', 'bot_whitelist_cla_cacadas', 'bot_blacklist_cacadas',
+     'bot_rotacao_automacao',
      'bot_max_ryous_cacadas', 'bot_diff_nivel_cacadas',
      'bot_min_ryous_vitoria_cacadas'].forEach(function(k) {
       var v = rp.get(k);
