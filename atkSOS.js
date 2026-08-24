@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.66
+// @version      2.67
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -1161,11 +1161,15 @@
   function escolherProximoAlvoBlacklist(ataques) {
     var lista = obterBlacklistCacadas();
     var mapa = mapaAtacadosNoRelatorio(ataques);
+    var pendentes = [];
+
     for (var i = 0; i < lista.length; i++) {
       var nome = lista[i];
-      if (!mapa[normalizarNomeCacadas(nome)]) return nome;
+      if (!mapa[normalizarNomeCacadas(nome)]) pendentes.push(nome);
     }
-    return null;
+
+    if (!pendentes.length) return null;
+    return pendentes[Math.floor(Math.random() * pendentes.length)];
   }
 
   function limparEstadoModoCacadas() {
