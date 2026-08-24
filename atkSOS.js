@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.63
+// @version      2.64
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.63';
-  var SCRIPT_ATUALIZADO = '24/08/2026 16:53';
+  var SCRIPT_VERSAO = '2.64';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:01';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1033,7 +1033,7 @@
   function descreverBlacklistCacadas() {
     var lista = obterBlacklistCacadas();
     if (!lista.length) {
-      return 'vazia (caçada por classe)';
+      return 'vazia (caçada por nivel se disponivel)';
     }
     var sufixo = localStorage.getItem('BOT_BLACKLIST_CACADAS')
       ? ' (bot_blacklist_cacadas)'
@@ -1132,7 +1132,7 @@
     if (proximo) {
       definirModoCacadasBlacklist(proximo);
     } else {
-      console.warn('[Blacklist] Todos os nomes da lista ja constam no relatorio — caçada por classe.');
+      console.warn('[Blacklist] Todos os nomes da lista ja constam no relatorio — caçada por nivel (se disponivel).');
       definirModoCacadasClasse('todos os nomes ja no relatorio');
     }
     callback();
@@ -2129,45 +2129,30 @@
     return true;
   }
 
-  function executarCacadaPorClasse() {
+  function executarCacadaPorNivel() {
     var selectNivel = document.getElementById('por_nivel');
-    if (selectNivel) {
-      selectNivel.value = NIVEL_CACADAS_FINAL;
-      selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!selectNivel) return false;
 
-      var formNivel = selectNivel.closest('form');
-      if (formNivel) {
-        var btnNivel = formNivel.querySelector('input[type="submit"]');
-        if (btnNivel) {
-          console.log('[Caçadas] Gate OK — nivel/classe ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
-          btnNivel.click();
-          return true;
-        }
-      }
-    }
+    var formNivel = selectNivel.closest('form');
+    if (!formNivel) return false;
 
-    var selectAleatorio = document.getElementById('aleatorio');
-    if (selectAleatorio) {
-      var valor = NIVEL_CACADAS_FINAL;
-      var opcaoValida = selectAleatorio.querySelector('option[value="' + valor + '"]');
-      if (!opcaoValida) {
-        valor = selectAleatorio.querySelector('option[value="2"]') ? '2' : '1';
-      }
-      selectAleatorio.value = valor;
-      selectAleatorio.dispatchEvent(new Event('change', { bubbles: true }));
+    var btnNivel = formNivel.querySelector('input[type="submit"]');
+    if (!btnNivel) return false;
 
-      var formAleatorio = selectAleatorio.closest('form');
-      if (formAleatorio) {
-        var btnAleatorio = formAleatorio.querySelector('input[type="submit"]');
-        if (btnAleatorio) {
-          console.log('[Caçadas] Gate OK — aleatorio ' + valor + ', clicando Caçar...');
-          btnAleatorio.click();
-          return true;
-        }
-      }
-    }
+    selectNivel.value = NIVEL_CACADAS_FINAL;
+    selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
+    console.log('[Caçadas] Gate OK — caçada por nivel ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
+    btnNivel.click();
+    return true;
+  }
 
-    return false;
+  function processarCacadasSemFormularioNivel(motivo) {
+    console.warn(
+      '[Caçadas] ' + motivo + ' — formulario por_nivel (caçar por nivel) indisponivel. ' +
+      'Nenhuma caçada iniciada.'
+    );
+    irParaPortaoRelatorios('Sem caçada por nivel disponivel');
+    return true;
   }
 
   function urlAposCaptcha() {
@@ -2321,13 +2306,22 @@
               if (executarCacadaPorNome(alvoNome)) {
                 return true;
               }
-              console.warn('[Blacklist] Formulario por_nome indisponivel — fallback caçada por classe.');
+              console.warn('[Blacklist] Formulario por_nome indisponivel — tentando caçada por nivel...');
             }
 
-            if (executarCacadaPorClasse()) {
+            if (executarCacadaPorNivel()) {
               return true;
             }
-            return false;
+
+            if (!blacklistCacadasAtiva()) {
+              return processarCacadasSemFormularioNivel('Blacklist vazia');
+            }
+
+            if (modo === 'classe') {
+              return processarCacadasSemFormularioNivel('Blacklist esgotada ou ignorada (teto de espera)');
+            }
+
+            return processarCacadasSemFormularioNivel('Blacklist ativa mas por_nome e por_nivel indisponiveis');
           }
         },
         {
