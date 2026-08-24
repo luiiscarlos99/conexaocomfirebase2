@@ -67,17 +67,25 @@ https://shadowofshinobi.com/?bot_modo=cacadas&bot_user=Shiroe&bot_pass=SUA_SENHA
 https://shadowofshinobi.com/?bot_modo=invasor&bot_user=Shizuo&bot_pass=SUA_SENHA
 ```
 
-**Manual (desliga bot):** `/?bot_modo=off`
+**Manual (desliga bot nesta aba):** `/?bot_modo=off` ou `/?bot_modo=manual`
 
-**Fallback redirect:** se cair em `/status` sem parâmetro, o script lê `bot_modo` do `referrer` (URL que você abriu antes do redirect).
+**Recuperação de modo pós-login:** se cair em `/status`, o script lê o modo desta **aba** (`sessionStorage`). Se vazio, tenta a URL salva em `window.name` (`__BOT_RECUP__:`) — nunca `localStorage` nem referrer.
 
-### Redirect `/status` — opções extras
+### Onde cada dado fica
 
-| Opção | Como | Prós |
-|---|---|---|
-| **A — URL com `?bot_modo=`** | Favoritos acima | Obrigatório para ligar o bot |
-| **B — Referrer (v2.19+)** | Automático após redirect | Recupera `bot_modo` da URL anterior na mesma aba |
-| **C — `bot-bootstrap.js` + `bot-recovery.js`** | Inject Code: ordem acima | Recuperação em erro 500 / `chrome-error://` |
+| Dado | Storage | Escopo |
+|------|---------|--------|
+| `BOT_MODO_ABA` (invasor/cacadas/manual) | `sessionStorage` | **Só esta aba** |
+| Login, senha, whitelist, rotação | `localStorage` | Todo o navegador |
+| URL de recuperação | `window.name` | **Só esta aba** (backup chrome-error) |
+
+### Redirect `/status`
+
+| Opção | Como |
+|---|---|
+| **A — URL com `?bot_modo=`** | Obrigatório para ligar o bot na aba |
+| **B — sessionStorage + window.name** | Automático pós-login na mesma aba |
+| **C — `bot-recovery.js` + bootstrap** | Recuperação em erro 500 / `chrome-error://` |
 
 ---
 
@@ -99,21 +107,18 @@ Captcha → caçadas trata → volta ao invasor
 
 ## Scripts (versões atuais)
 
-### `atkSOS.js` — v2.15
+### `atkSOS.js` — v2.84
 
-- Exige `BOT_MODO_ABA` (`cacadas` ou `invasor`)
-- Modo `invasor`: só login, captcha e re-login
-- Modo `cacadas`: login, caçadas (5–12 min aleatório), atacar
-- Captcha: recorte da `<img>` → Firebase + Discord; OCR no painel
-- Timeout captcha 10 min → `/cacadas` ou `/invasor` conforme o modo
-- Código Firebase por usuário: `BOT_CODIGO_SRV_<usuario>`
+- Modo **só desta aba** (`sessionStorage`); aba nova sem `?bot_modo=` = manual
+- Exige `BOT_MODO_ABA` (`cacadas` ou `invasor`) para agir
+- Modo `invasor`: login, captcha, re-login e redirect `/status` → invasor
+- Modo `cacadas`: portão, caçadas, atacar, rotação automação
+- Captcha: Firebase + Discord; OCR no painel
 
-### `atkInvSOS.js` — v4.8
+### `atkInvSOS.js` — v7.4
 
-- Exige `BOT_MODO_ABA=invasor`
-- `/status` → `/invasor` | `/invasor` → ataque + reload 60s | combate → 1 min → invasor
-- Sessão expirada → home (caçadas reloga)
-- Firebase `invasor_coord` (last hit) + limpeza de `comando_atacar` legado
+- Exige `BOT_MODO_ABA=invasor` (mesma regra de aba — sem referrer/localStorage)
+- `/status` → `/invasor` | last hit scout/data/sorteio
 - Captcha delegado ao `atkSOS.js`
 
 ---

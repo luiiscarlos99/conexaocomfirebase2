@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.3
+// @version      7.4
 // @description  Automação do Invasor: last hit scout, data (+3min) ou sorteio (36k-38k aleatorio).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -12,7 +12,11 @@
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
 
-  try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
+  // sessionStorage = desta aba (modo). localStorage = navegador (credenciais/config). Nunca modo em localStorage.
+  try {
+    localStorage.removeItem('BOT_MODO_ABA');
+    localStorage.removeItem('BOT_MODO_PREFERIDO');
+  } catch (e) {}
 
   function parseLimiteInvasor(valor) {
     if (valor === null || valor === undefined || valor === '') return null;
@@ -193,30 +197,32 @@
   var LASTHIT_SORTEIO_MIN_DEFAULT = 36000;
   var LASTHIT_SORTEIO_MAX_DEFAULT = 38000;
 
-  function lerModoReferrer() {
+  function extrairModoDeUrlString(urlStr) {
     try {
-      var ref = document.referrer || '';
-      if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return '';
-      var modo = new URLSearchParams(new URL(ref).search).get('bot_modo');
-      if (modo === 'invasor' || modo === 'cacadas') return modo;
+      if (!urlStr) return '';
+      var u = urlStr.indexOf('://') !== -1 ? new URL(urlStr) : new URL(urlStr, 'https://shadowofshinobi.com/');
+      var m = new URLSearchParams(u.search).get('bot_modo');
+      if (m === 'invasor' || m === 'cacadas') return m;
     } catch (e) {}
     return '';
   }
 
-  function lerModoUrl(params) {
-    var modo = params.get('bot_modo');
-    if (modo === 'invasor' || modo === 'cacadas') return modo;
-
+  function ehReferrerPosLogin() {
+    var ref = document.referrer || '';
+    if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return false;
     try {
-      var hash = (window.location.hash || '').replace(/^#/, '');
-      if (hash) {
-        var hp = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
-        modo = hp.get('bot_modo');
-        if (modo === 'invasor' || modo === 'cacadas') return modo;
-      }
+      var u = new URL(ref);
+      var p = (u.pathname || '/').replace(/\/+$/, '') || '/';
+      return p === '/' || u.pathname.indexOf('login') !== -1;
     } catch (e) {}
+    return false;
+  }
 
-    return lerModoReferrer();
+  function gravarModoAba(modo) {
+    if (modo !== 'invasor' && modo !== 'cacadas') return;
+    try {
+      sessionStorage.setItem(BOT_MODO_KEY, modo);
+    } catch (e) {}
   }
 
   function gravarUsuarioLoginParam(valor) {
@@ -225,6 +231,17 @@
     if (!u) return false;
     localStorage.setItem('BOT_USUARIO_LOGIN', u);
     localStorage.setItem('BOT_USUARIO', u);
+    try {
+      sessionStorage.removeItem('BOT_USUARIO_LOGIN');
+      sessionStorage.removeItem('BOT_USUARIO');
+    } catch (e) {}
+    return true;
+  }
+
+  function gravarSenhaLoginParam(valor) {
+    if (!valor) return false;
+    localStorage.setItem('BOT_SENHA', String(valor));
+    try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
     return true;
   }
 
@@ -238,6 +255,10 @@
 
   function aplicarCredenciaisReferrer() {
     try {
+      var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      var ehLoginOuHome = path === '/' || !!document.getElementById('login');
+      var ehStatusPosLogin = path.indexOf('status') !== -1 && ehReferrerPosLogin();
+      if (!ehLoginOuHome && !ehStatusPosLogin) return;
       var ref = document.referrer || '';
       if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return;
       var rp = new URLSearchParams(new URL(ref).search);
@@ -250,7 +271,7 @@
       var lsm = rp.get('bot_lasthit_sorteio_min');
       var lsx = rp.get('bot_lasthit_sorteio_max');
       if (u) gravarUsuarioLoginParam(u);
-      if (p) localStorage.setItem('BOT_SENHA', p);
+      if (p) gravarSenhaLoginParam(p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
       if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
@@ -273,16 +294,13 @@
   function aplicarParamsUrl() {
     try {
       var params = new URLSearchParams(window.location.search);
-      var modo = lerModoUrl(params);
-      var modoVeioDeQuery = params.get('bot_modo') === 'invasor' || params.get('bot_modo') === 'cacadas';
+      var modoParamRaw = params.get('bot_modo');
+      var modoVeioDeQuery = modoParamRaw === 'invasor' || modoParamRaw === 'cacadas';
+      var modo = modoVeioDeQuery ? modoParamRaw : '';
 
-      if (params.get('bot_modo') === 'off' || params.get('bot_modo') === 'manual') {
-        sessionStorage.removeItem(BOT_MODO_KEY);
-        return params;
-      }
-
-      if (modo === 'invasor' || modo === 'cacadas') {
-        sessionStorage.setItem(BOT_MODO_KEY, modo);
+      if (modoParamRaw && modoParamRaw !== 'invasor' && modoParamRaw !== 'cacadas' &&
+          modoParamRaw !== 'off' && modoParamRaw !== 'manual') {
+        console.warn('[Bot] bot_modo invalido: "' + modoParamRaw + '". Use invasor ou cacadas.');
       }
 
       var u = params.get('bot_user');
@@ -294,14 +312,25 @@
       var lsm = params.get('bot_lasthit_sorteio_min');
       var lsx = params.get('bot_lasthit_sorteio_max');
       if (u) gravarUsuarioLoginParam(u);
-      if (p) localStorage.setItem('BOT_SENHA', p);
+      if (p) gravarSenhaLoginParam(p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
       if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
       else if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
       if (lsm !== null && lsm !== '') gravarLastHitSorteioMinParam(lsm);
       if (lsx !== null && lsx !== '') gravarLastHitSorteioMaxParam(lsx);
-      if (!u && !p) aplicarCredenciaisReferrer();
+
+      if (modoParamRaw === 'off' || modoParamRaw === 'manual') {
+        sessionStorage.removeItem(BOT_MODO_KEY);
+      } else if (modo === 'invasor' || modo === 'cacadas') {
+        gravarModoAba(modo);
+      }
+
+      var pathAtual = window.location.pathname || '';
+      if (!u && !p && (document.getElementById('login') ||
+          pathAtual.indexOf('status') !== -1 || pathAtual === '/' || pathAtual === '')) {
+        aplicarCredenciaisReferrer();
+      }
 
       if ((u || p || l || ma || lh || lm || lsm || lsx || modoVeioDeQuery) &&
           window.history && window.history.replaceState) {
@@ -324,6 +353,29 @@
     return '';
   }
 
+  function recuperarModoAbaPosLogin() {
+    var modo = obterModoAba();
+    if (modo) return modo;
+
+    try {
+      if (window.__BOT_RECOVERY__) {
+        modo = extrairModoDeUrlString(window.__BOT_RECOVERY__.ler());
+        if (modo) {
+          gravarModoAba(modo);
+          return modo;
+        }
+      }
+    } catch (e) {}
+
+    modo = extrairModoDeUrlString(window.location.href);
+    if (modo) {
+      gravarModoAba(modo);
+      return modo;
+    }
+
+    return '';
+  }
+
   function sincronizarModoAba() {
     return aplicarParamsUrl();
   }
@@ -331,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.3';
-  var SCRIPT_ATUALIZADO = '23/08/2026 10:50';
+  var SCRIPT_VERSAO = '7.4';
+  var SCRIPT_ATUALIZADO = '24/08/2026 21:55';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -1689,9 +1741,14 @@
         return;
       }
 
-      // 4. STATUS → redireciona para invasor
+      // 4. STATUS → redireciona para invasor (recupera modo da aba se necessario)
       if (pagina.ehStatus) {
-        redirecionarParaInvasor('status');
+        if (!obterModoAba() && ehReferrerPosLogin()) {
+          recuperarModoAbaPosLogin();
+        }
+        if (obterModoAba() === 'invasor') {
+          redirecionarParaInvasor('status');
+        }
         return;
       }
 

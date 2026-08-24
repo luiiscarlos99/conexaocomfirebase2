@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.83
+// @version      2.84
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -194,30 +194,6 @@
     return '';
   }
 
-  function lerModoUrl(params) {
-    var modo = params.get('bot_modo');
-    if (modo === 'invasor' || modo === 'cacadas') return modo;
-
-    try {
-      var hash = (window.location.hash || '').replace(/^#/, '');
-      if (hash) {
-        var hp = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
-        modo = hp.get('bot_modo');
-        if (modo === 'invasor' || modo === 'cacadas') return modo;
-      }
-    } catch (e) {}
-
-    return '';
-  }
-
-  function urlTemParamsBot(params) {
-    if (!params) return false;
-    return !!(params.get('bot_user') || params.get('bot_pass') || params.get('bot_nivel') ||
-      params.get('bot_modo') || params.get('bot_espera_cacadas') || params.get('bot_limite_invasor') ||
-      params.get('bot_whitelist_cacadas') || params.get('bot_blacklist_cacadas') ||
-      params.get('bot_rotacao_automacao'));
-  }
-
   function ehReferrerPosLogin() {
     var ref = document.referrer || '';
     if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return false;
@@ -278,18 +254,8 @@
       var modo = modoVeioDeQuery ? modoParamRaw : '';
 
       if (modoParamRaw && modoParamRaw !== 'invasor' && modoParamRaw !== 'cacadas' &&
-          modoParamRaw !== 'off' && modoParamRaw !== 'manual' &&
-          modo !== 'invasor' && modo !== 'cacadas') {
+          modoParamRaw !== 'off' && modoParamRaw !== 'manual') {
         console.warn('[Bot] bot_modo invalido: "' + modoParamRaw + '". Use invasor ou cacadas.');
-      }
-
-      if (params.get('bot_modo') === 'off' || params.get('bot_modo') === 'manual') {
-        sessionStorage.removeItem(BOT_MODO_KEY);
-        return params;
-      }
-
-      if (modo === 'invasor' || modo === 'cacadas') {
-        gravarModoAba(modo);
       }
 
       var u = params.get('bot_user');
@@ -303,6 +269,13 @@
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       aplicarParamsCacadasAtacar(params);
+
+      if (modoParamRaw === 'off' || modoParamRaw === 'manual') {
+        sessionStorage.removeItem(BOT_MODO_KEY);
+      } else if (modo === 'invasor' || modo === 'cacadas') {
+        gravarModoAba(modo);
+      }
+
       var pathAtual = window.location.pathname || '';
       if (!u && !p && !n && (document.getElementById('login') ||
           pathAtual.indexOf('status') !== -1 || pathAtual === '/' || pathAtual === '')) {
@@ -368,8 +341,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.83';
-  var SCRIPT_ATUALIZADO = '24/08/2026 21:10';
+  var SCRIPT_VERSAO = '2.84';
+  var SCRIPT_ATUALIZADO = '24/08/2026 21:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2748,7 +2721,7 @@
           return;
         }
 
-        if (!ehLogin && !ehCaptcha) {
+        if (!ehLogin && !ehCaptcha && urlInv.indexOf('status') === -1) {
           console.log('[Script Caçadas] Aba invasor — sem acao.');
           return;
         }
@@ -2873,7 +2846,9 @@
         },
         {
           id: 'cacadas',
-          checar: function() { return urlAtual.indexOf('cacadas') !== -1; },
+          checar: function() {
+            return obterModoAba() === 'cacadas' && urlAtual.indexOf('cacadas') !== -1;
+          },
           executar: function() {
             if (paginaCacadasBloqueadaPorMissao()) {
               return processarCacadasBloqueadaPorMissao();

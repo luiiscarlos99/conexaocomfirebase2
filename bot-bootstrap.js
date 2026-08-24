@@ -266,7 +266,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.9', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '2.0', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
