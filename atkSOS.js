@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.74
+// @version      2.75
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -272,8 +272,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.74';
-  var SCRIPT_ATUALIZADO = '24/08/2026 18:15';
+  var SCRIPT_VERSAO = '2.75';
+  var SCRIPT_ATUALIZADO = '24/08/2026 19:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -724,7 +724,7 @@
   }
 
   function recarregarCredenciaisLogin() {
-    USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+    USUARIO_FINAL = obterUsuarioLogin();
     SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
   }
 
@@ -811,6 +811,7 @@
   // Credenciais do Usuário e Configuração de Caçadas
   var USUARIO_DEFAULT = 'Shiroe';
   var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+  var USUARIO_EXIBICAO = USUARIO_FINAL;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
@@ -850,17 +851,77 @@
     return null;
   }
 
+  function estaEmContaGerenciada() {
+    if (document.querySelector('a[href*="automacao?voltar=1"]')) return true;
+    var body = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+    return /conta gerenciada/i.test(body);
+  }
+
+  function obterUsuarioLogin() {
+    return localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+  }
+
+  function obterUsuarioExibicao() {
+    if (USUARIO_EXIBICAO && USUARIO_EXIBICAO !== obterUsuarioLogin()) {
+      return USUARIO_EXIBICAO;
+    }
+    var nomeSidebar = extrairNomeUsuarioLogado();
+    if (nomeSidebar && estaEmContaGerenciada()) return nomeSidebar;
+    return obterUsuarioLogin();
+  }
+
   function sincronizarUsuarioLocalStorage() {
     var nomeLogado = extrairNomeUsuarioLogado();
-    if (!nomeLogado) return;
+    var loginSalvo = obterUsuarioLogin();
 
-    var nomeSalvo = localStorage.getItem('BOT_USUARIO');
-    if (nomeSalvo !== nomeLogado) {
-      localStorage.setItem('BOT_USUARIO', nomeLogado);
-      console.log('[Script] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
+    USUARIO_FINAL = loginSalvo;
+
+    if (!nomeLogado) {
+      USUARIO_EXIBICAO = loginSalvo;
+      return;
     }
 
-    USUARIO_FINAL = nomeLogado;
+    USUARIO_EXIBICAO = nomeLogado;
+
+    if (estaEmContaGerenciada() || rotacaoAutomacaoAtiva()) {
+      if (nomeLogado !== loginSalvo) {
+        console.log(
+          '[Automacao] Conta ativa: ' + nomeLogado + ' | Login (nao alterado): ' + loginSalvo
+        );
+      }
+      return;
+    }
+
+    if (loginSalvo !== nomeLogado) {
+      localStorage.setItem('BOT_USUARIO', nomeLogado);
+      console.log('[Script] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
+      USUARIO_FINAL = nomeLogado;
+      USUARIO_EXIBICAO = nomeLogado;
+    }
+  }
+
+  function processarRotacaoContaPrincipal() {
+    if (!rotacaoAutomacaoAtiva()) return false;
+    if (obterModoAba() !== 'cacadas') return false;
+    if (document.getElementById('login')) return false;
+    if (estaEmContaGerenciada()) return false;
+
+    var url = window.location.href;
+    if (url.indexOf('automacao') !== -1) return false;
+    if (url.indexOf('captcha_seguranca') !== -1) return false;
+
+    try {
+      if (sessionStorage.getItem(BOT_ROTACAO_CICLO_KEY) === '1') return false;
+      if (sessionStorage.getItem(BOT_ROTACAO_ASSUMIDA_KEY) === '1') return false;
+    } catch (e) {}
+
+    console.warn('[Automacao] Conta principal detectada — indo assumir automacao...');
+    marcarRotacaoCicloPendente();
+    portaoRelatoriosAgendado = false;
+    setTimeout(function() {
+      window.location.href = URL_AUTOMACAO;
+    }, 1500);
+    return true;
   }
 
   // Nível da Caçada (Lê do localStorage ou usa '3' como padrão)
@@ -1660,7 +1721,7 @@
   function montarMensagemAlvoIgnorado(resultado) {
     var d = resultado.dados;
     var linhas = [
-      '**Alvo ignorado** — ' + USUARIO_FINAL,
+      '**Alvo ignorado** — ' + obterUsuarioExibicao(),
       'Inimigo: **' + nomeExibicaoInimigo(d) + '**'
     ];
     linhas.push(
@@ -1839,7 +1900,7 @@
 
   function montarMensagemCombateDerrota(dados) {
     var linhas = [
-      '**Combate — Derrota** — ' + USUARIO_FINAL,
+      '**Combate — Derrota** — ' + obterUsuarioExibicao(),
       'Inimigo: **' + nomeExibicaoInimigo(dados) + '**',
       'Ryous faturados: ' + (dados.ryousTexto || '?')
     ];
@@ -1849,7 +1910,7 @@
 
   function montarMensagemCombateVitoria(dados) {
     var linhas = [
-      '**Combate — Vitoria** — ' + USUARIO_FINAL,
+      '**Combate — Vitoria** — ' + obterUsuarioExibicao(),
       'Inimigo: **' + nomeExibicaoInimigo(dados) + '**',
       'Ryous faturados: ' + (dados.ryousTexto || '?') +
         ' (min. ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) + ')'
@@ -2222,7 +2283,7 @@
       'Verificacao de seguranca — **a imagem abaixo e a valida** (salva no Firebase).',
       'O navegador pode mostrar numeros diferentes; resolva pela imagem desta mensagem.',
       '',
-      '**Conta:** ' + USUARIO_FINAL,
+      '**Conta:** ' + obterUsuarioExibicao(),
       '**Codigo:** `' + CODIGO_SERVIDOR + '`',
       '',
       'OCR automatico: ate ' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ' tentativas (1a aos 5 min).',
@@ -2241,7 +2302,7 @@
         color: corDecimal,
         timestamp: new Date().toISOString(),
         image: { url: 'attachment://captcha.png' },
-        footer: { text: 'Usuario: ' + USUARIO_FINAL + ' | ' + CODIGO_SERVIDOR }
+        footer: { text: 'Usuario: ' + obterUsuarioExibicao() + ' | ' + CODIGO_SERVIDOR }
       }]
     };
 
@@ -2489,7 +2550,8 @@
   }
 
   console.log(
-    '[Script Caçadas] Usuário: ' + USUARIO_FINAL + ' | Nível: ' + NIVEL_CACADAS_FINAL +
+    '[Script Caçadas] Login: ' + obterUsuarioLogin() + ' | Ativo: ' + obterUsuarioExibicao() +
+    ' | Nível: ' + NIVEL_CACADAS_FINAL +
     ' | Espera caçadas: ' + descreverEsperaCacadas() +
     ' | Whitelist: ' + descreverWhitelistAtacar() +
     ' | ' + descreverWhitelistClaAtacar() +
@@ -2557,12 +2619,15 @@
         return;
       }
 
-      // Modo cacadas: /status → portao relatorios
+      // Modo cacadas: /status → automacao (rotacao) ou portao relatorios
       if (obterModoAba() === 'cacadas' && urlAtual.indexOf('status') !== -1) {
+        if (processarRotacaoContaPrincipal()) return;
         console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
         window.location.href = URL_RELATORIOS_ATAQUE;
         return;
       }
+
+      if (processarRotacaoContaPrincipal()) return;
 
       if (sessaoExpiradaSemLogin()) {
         redirecionarParaLogin('Sessao expirada');
