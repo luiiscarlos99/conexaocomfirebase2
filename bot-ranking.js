@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Scan ranking personagens — detecta contas mult (lvl alto, ryous baixo). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.3';
+      var SCRIPT_VERSAO = '1.4';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -318,10 +318,30 @@
       }
 
       function logAjuda(params) {
+        var p = params || lerParamsUrl();
         console.log('%c[Bot Ranking] v' + SCRIPT_VERSAO + ' — contexto pagina OK', 'color:#9b59b6;font-weight:bold;font-size:13px');
-        console.log('[Bot Ranking] Filtro: lvl > ' + params.minNivel + ' | ryous < ' + params.maxRyous.toLocaleString('pt-BR'));
-        console.log('[Bot Ranking] Digite botRankingScan() para iniciar');
-        console.log('[Bot Ranking] URL: bot_ranking_max_ryous=1000000 & bot_ranking_min_nivel=55');
+        console.log('[Bot Ranking] Caçadas/Invasor ficam inativos aqui. So este script age (quando voce chamar).');
+        console.log('[Bot Ranking] Filtro atual: lvl > ' + p.minNivel + ' e ryous < ' + p.maxRyous.toLocaleString('pt-BR'));
+        console.log('[Bot Ranking] Parametros URL (opcional):');
+        console.log('  bot_ranking_max_ryous=' + p.maxRyous + '   (padrao: 1M — pega 999,9k ou menos)');
+        console.log('  bot_ranking_min_nivel=' + p.minNivel + '        (padrao: 55 — lvl tem que ser MAIOR que este valor)');
+        console.log('  bot_ranking_vila=' + (p.vila || 'geral') + '          (padrao: geral)');
+        console.log('[Bot Ranking] Comandos console:');
+        console.log('  botRankingScan()                — OBRIGATORIO para iniciar (nao comeca so ao injetar)');
+        console.log('  botRankingScan({maxRyous:999000,minNivel:56})');
+        console.log('  botRankingParar()               — cancela scan em andamento');
+        console.log('  botRankingStatus()              — status do scan');
+        console.log('[Bot Ranking] Exemplo URL:');
+        console.log('  /ranking?view=personagens&vila=geral&ranking=0&bot_ranking_max_ryous=1000000&bot_ranking_min_nivel=55');
+      }
+
+      function logPreScanPagina() {
+        var params = lerParamsSalvos();
+        var offset = offsetRankingAtual();
+        var acum = lerResultadosAcumulados().length;
+        console.log('%c[Bot Ranking] v' + SCRIPT_VERSAO + ' — scan em andamento', 'color:#9b59b6;font-weight:bold');
+        console.log('[Bot Ranking] ranking=' + offset + ' | acumulado=' + acum + ' mult | lvl > ' + params.minNivel + ' | ryous < ' + params.maxRyous.toLocaleString('pt-BR'));
+        console.log('[Bot Ranking] botRankingParar() — cancelar | botRankingStatus() — status');
       }
 
       function logResultadoFinal(resultados, params) {
@@ -448,7 +468,7 @@
             el.dataset.botServerBase,
             'Bot: <b>ranking</b> (' + (scanAtivo() ? 'scan ON' : 'scan off') + ')',
             'Principal: ' + login,
-            'Console: botRankingScan()'
+            'Console: botRankingScan() | botRankingParar()'
           ].join('<br>');
           return true;
         }
@@ -463,9 +483,13 @@
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
 
       if (ehPaginaRanking()) {
-        logAjuda(lerParamsUrl());
         atualizarPainelRanking();
-        if (scanAtivo()) setTimeout(processarPaginaScan, 1200);
+        if (scanAtivo()) {
+          logPreScanPagina();
+          setTimeout(processarPaginaScan, 1200);
+        } else {
+          logAjuda(lerParamsUrl());
+        }
       }
     }.toString() + ')();';
 
