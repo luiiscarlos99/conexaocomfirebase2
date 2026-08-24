@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Scan ranking personagens — detecta contas mult (lvl alto, ryous baixo). Script separado; nao altera Caçadas/Invasor.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -13,12 +13,15 @@
 
   if (window.__BOT_RANKING_OK__) return;
 
-  var SCRIPT_VERSAO = '1.0';
+  var SCRIPT_VERSAO = '1.1';
   var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
   var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
   var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
+  var JA_LEU_KEY = 'BOT_RANKING_JA_LEU_PAGINA';
   var PASSO_RANKING = 50;
   var DELAY_PROXIMA_PAGINA_MS = 1200;
+  var AGUARDAR_TABELA_MS = 250;
+  var AGUARDAR_TABELA_TENTATIVAS = 24;
 
   var DEFAULTS = {
     maxRyous: 1000000,
@@ -134,6 +137,8 @@
     qs.set('view', p.view || 'personagens');
     qs.set('vila', p.vila || 'geral');
     qs.set('ranking', String(typeof offset === 'number' ? offset : 0));
+    qs.set('bot_ranking_max_ryous', String(p.maxRyous));
+    qs.set('bot_ranking_min_nivel', String(p.minNivel));
     return 'https://shadowofshinobi.com/ranking?' + qs.toString();
   }
 
@@ -141,48 +146,129 @@
     return (td && td.textContent ? td.textContent : '').replace(/^\|\s*/, '').trim();
   }
 
+  function acharTrDoLink(link) {
+    var n = link;
+    while (n && n !== document.body) {
+      if (n.tagName === 'TR') return n;
+      n = n.parentNode;
+    }
+    return null;
+  }
+
+  function parseLinhaRanking(tr) {
+    if (!tr) return null;
+    var tds = tr.querySelectorAll('td');
+    if (tds.length < 4) return null;
+
+    var link = null;
+    var linkIdx = -1;
+    for (var i = 0; i < tds.length; i++) {
+      link = tds[i].querySelector('a[href*="jogador"]');
+      if (link) {
+        linkIdx = i;
+        break;
+      }
+    }
+    if (!link) return null;
+
+    var nome = (link.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!nome) {
+      try {
+        var u = new URL(link.href, window.location.origin);
+        nome = u.searchParams.get('u') || '';
+      } catch (e) {}
+    }
+    if (!nome) return null;
+
+    var pos = textoCelula(tds[0]).replace(/\u00ba/g, '').trim();
+    var nivel = null;
+    var vitorias = null;
+    var derrotas = null;
+    var ryousTexto = textoCelula(tds[tds.length - 1]);
+    var ryous = parseNumeroRanking(ryousTexto);
+
+    if (tds.length >= 7) {
+      nivel = parseIntRanking(tds[3]);
+      vitorias = parseIntRanking(tds[4]);
+      derrotas = parseIntRanking(tds[5]);
+      ryousTexto = textoCelula(tds[6]);
+      ryous = parseNumeroRanking(ryousTexto);
+    } else if (linkIdx + 1 < tds.length) {
+      nivel = parseIntRanking(tds[linkIdx + 1]);
+      if (linkIdx + 2 < tds.length) vitorias = parseIntRanking(tds[linkIdx + 2]);
+      if (linkIdx + 3 < tds.length) derrotas = parseIntRanking(tds[linkIdx + 3]);
+    }
+
+    if (nivel === null || ryous === null) return null;
+
+    return {
+      pos: pos,
+      nome: nome,
+      nivel: nivel,
+      vitorias: vitorias != null ? vitorias : '?',
+      derrotas: derrotas != null ? derrotas : '?',
+      ryous: ryous,
+      ryousTexto: ryousTexto
+    };
+  }
+
   function extrairJogadoresPagina() {
     var out = [];
-    var tabelas = document.querySelectorAll('table.box_largura_100');
+    var vistos = {};
+
+    function add(j) {
+      if (!j || !j.nome) return;
+      var k = j.nome.toLowerCase();
+      if (vistos[k]) return;
+      vistos[k] = true;
+      out.push(j);
+    }
+
+    var tabelas = document.querySelectorAll('table.box_largura_100, table');
     for (var t = 0; t < tabelas.length; t++) {
       var tb = tabelas[t];
       var header = tb.querySelector('tr.box_preto_tarja');
-      if (!header || (header.textContent || '').indexOf('Player') === -1) continue;
+      if (!header) continue;
+      var ht = (header.textContent || '').toLowerCase();
+      if (ht.indexOf('player') === -1 || ht.indexOf('ryous') === -1) continue;
 
       var rows = tb.querySelectorAll('tr');
       for (var i = 0; i < rows.length; i++) {
-        var tr = rows[i];
-        if (tr.classList.contains('box_preto_tarja')) continue;
-        var tds = tr.querySelectorAll('td');
-        if (tds.length < 7) continue;
-
-        var link = tds[2].querySelector('a[href*="jogador"]');
-        if (!link) continue;
-
-        var nome = (link.textContent || '').trim();
-        if (!nome) continue;
-
-        var pos = textoCelula(tds[0]).replace(/\u00ba/g, '').trim();
-        var nivel = parseIntRanking(tds[3]);
-        var vitorias = parseIntRanking(tds[4]);
-        var derrotas = parseIntRanking(tds[5]);
-        var ryousTexto = textoCelula(tds[6]);
-        var ryous = parseNumeroRanking(ryousTexto);
-
-        if (nivel === null || ryous === null) continue;
-
-        out.push({
-          pos: pos,
-          nome: nome,
-          nivel: nivel,
-          vitorias: vitorias != null ? vitorias : '?',
-          derrotas: derrotas != null ? derrotas : '?',
-          ryous: ryous,
-          ryousTexto: ryousTexto
-        });
+        if (rows[i].classList.contains('box_preto_tarja')) continue;
+        add(parseLinhaRanking(rows[i]));
       }
     }
+
+    if (!out.length) {
+      var raiz = document.getElementById('col_direita') || document.getElementById('motor_game') || document.body;
+      var links = raiz.querySelectorAll('a[href*="jogador?u="], a[href*="jogador?"]');
+      for (var l = 0; l < links.length; l++) {
+        add(parseLinhaRanking(acharTrDoLink(links[l])));
+      }
+    }
+
     return out;
+  }
+
+  function aguardarJogadores(callback, tentativas) {
+    var restantes = typeof tentativas === 'number' ? tentativas : AGUARDAR_TABELA_TENTATIVAS;
+    var jogadores = extrairJogadoresPagina();
+    if (jogadores.length > 0 || restantes <= 0) {
+      callback(jogadores);
+      return;
+    }
+    setTimeout(function() {
+      aguardarJogadores(callback, restantes - 1);
+    }, AGUARDAR_TABELA_MS);
+  }
+
+  function marcarJaLeuPagina() {
+    try { sessionStorage.setItem(JA_LEU_KEY, '1'); } catch (e) {}
+  }
+
+  function jaLeuAlgumaPagina() {
+    try { return sessionStorage.getItem(JA_LEU_KEY) === '1'; } catch (e) {}
+    return false;
   }
 
   function lerResultadosAcumulados() {
@@ -204,6 +290,7 @@
       sessionStorage.removeItem(SCAN_KEY);
       sessionStorage.removeItem(DADOS_KEY);
       sessionStorage.removeItem(PARAMS_KEY);
+      sessionStorage.removeItem(JA_LEU_KEY);
     } catch (e) {}
   }
 
@@ -267,7 +354,7 @@
     console.log('  bot_ranking_min_nivel=55        (padrao: 55 — lvl tem que ser MAIOR que este valor)');
     console.log('  bot_ranking_vila=geral          (padrao: geral)');
     console.log('[Bot Ranking] Comandos console:');
-    console.log('  botRankingScan()                — inicia do ranking=0 (ou continua scan)');
+    console.log('  botRankingScan()                — OBRIGATORIO para iniciar (nao comeca so ao injetar)');
     console.log('  botRankingScan({maxRyous:999000,minNivel:56})');
     console.log('  botRankingParar()               — cancela scan em andamento');
     console.log('  botRankingStatus()              — status do scan');
@@ -320,33 +407,47 @@
     try { sessionStorage.removeItem(DADOS_KEY); } catch (e) {}
   }
 
-  function processarPaginaScan() {
+  function processarPaginaScanComJogadores(jogadores) {
     if (!ehPaginaRanking()) return;
 
     var params = lerParamsSalvos();
     var offset = offsetRankingAtual();
-    var jogadores = extrairJogadoresPagina();
 
     if (!jogadores.length) {
-      console.log('[Bot Ranking] Faixa ranking=' + offset + ' vazia — fim do ranking.');
-      finalizarScan(params);
+      if (jaLeuAlgumaPagina() || offset > 0) {
+        console.log('[Bot Ranking] Faixa ranking=' + offset + ' sem jogadores — fim do ranking.');
+        finalizarScan(params);
+        return;
+      }
+      console.error(
+        '[Bot Ranking] Tabela nao encontrada em ranking=' + offset +
+        '. Confira: /ranking?view=personagens&vila=geral&ranking=0 e aguarde a pagina carregar.'
+      );
+      marcarScanAtivo(false);
       return;
     }
+
+    marcarJaLeuPagina();
 
     var mult = filtrarMult(jogadores, params);
     var acumulado = mesclarSemDuplicar(lerResultadosAcumulados(), mult);
     salvarResultados(acumulado);
 
     console.log(
-      '[Bot Ranking] ranking=' + offset + ' (' + (offset + 1) + '-' + (offset + PASSO_RANKING) + '): ' +
+      '[Bot Ranking] ranking=' + offset + ' (pos. ~' + (offset + 1) + '-' + (offset + PASSO_RANKING) + '): ' +
       jogadores.length + ' jogadores, ' + mult.length + ' mult nesta pagina, ' + acumulado.length + ' acumulado.'
     );
 
     var proximo = offset + PASSO_RANKING;
     var url = montarUrlRanking(proximo, params);
+    console.log('[Bot Ranking] Proxima faixa: ranking=' + proximo);
     setTimeout(function() {
       try { location.href = url; } catch (e) { location.assign(url); }
     }, DELAY_PROXIMA_PAGINA_MS);
+  }
+
+  function processarPaginaScan() {
+    aguardarJogadores(processarPaginaScanComJogadores);
   }
 
   function iniciarScan(extraParams) {
@@ -358,6 +459,7 @@
     var params = mesclarParams(extraParams);
     salvarParams(params);
     salvarResultados([]);
+    try { sessionStorage.removeItem(JA_LEU_KEY); } catch (e) {}
     marcarScanAtivo(true);
 
     console.log(
@@ -444,7 +546,7 @@
     atualizarPainelRanking();
 
     if (scanAtivo()) {
-      setTimeout(processarPaginaScan, 900);
+      setTimeout(processarPaginaScan, 1200);
     }
   }
 })();
