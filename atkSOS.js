@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.73
+// @version      2.74
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -272,8 +272,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.73';
-  var SCRIPT_ATUALIZADO = '24/08/2026 18:10';
+  var SCRIPT_VERSAO = '2.74';
+  var SCRIPT_ATUALIZADO = '24/08/2026 18:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -508,6 +508,28 @@
 
     if (idx === -1) return contas[0];
     return contas[(idx + 1) % contas.length];
+  }
+
+  function marcarAtaqueIniciadoRotacao() {
+    if (!rotacaoAutomacaoAtiva()) return;
+    try { sessionStorage.setItem('BOT_ROTACAO_APOS_ATAQUE', String(Date.now())); } catch (e) {}
+  }
+
+  function consumirAtaqueRecenteRotacao() {
+    try {
+      var raw = sessionStorage.getItem('BOT_ROTACAO_APOS_ATAQUE');
+      if (!raw) return false;
+      sessionStorage.removeItem('BOT_ROTACAO_APOS_ATAQUE');
+      var ts = parseInt(raw, 10);
+      return !isNaN(ts) && Date.now() - ts < 180000;
+    } catch (e) {}
+    return false;
+  }
+
+  function deveRotacionarAutomacaoNoPortao(decisao) {
+    if (!rotacaoAutomacaoAtiva()) return false;
+    if (decisao.waitMs > 0) return true;
+    return consumirAtaqueRecenteRotacao();
   }
 
   function irParaRotacaoAutomacao(motivo) {
@@ -1148,6 +1170,12 @@
 
     console.log('[Caçadas] Portao — ' + decisao.motivo);
 
+    if (deveRotacionarAutomacaoNoPortao(decisao)) {
+      var seg = decisao.waitMs > 0 ? Math.round(decisao.waitMs / 1000) + 's cooldown' : 'ataque recente';
+      irParaRotacaoAutomacao('Portao (' + seg + ')');
+      return true;
+    }
+
     function irAposResolver() {
       if (decisao.waitMs <= 0) {
         irParaCacadasLiberado('portao-imediato');
@@ -1338,6 +1366,7 @@
     try {
       sessionStorage.removeItem(BOT_CACADAS_MODO_KEY);
       sessionStorage.removeItem(BOT_CACADAS_ALVO_NOME_KEY);
+      sessionStorage.removeItem('BOT_ROTACAO_APOS_ATAQUE');
     } catch (e) {}
   }
 
@@ -1666,7 +1695,10 @@
         ' | Diff nivel ' + d.diffNivel
       );
     }
-    if (btnAtacar) btnAtacar.click();
+    if (btnAtacar) {
+      marcarAtaqueIniciadoRotacao();
+      btnAtacar.click();
+    }
   }
 
   function pularAlvoInvalido(resultado) {
