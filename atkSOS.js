@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.68
+// @version      2.69
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.68';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:37';
+  var SCRIPT_VERSAO = '2.69';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:41';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1205,6 +1205,10 @@
     return '';
   }
 
+  function cacadaAtualPorNomeBlacklist() {
+    return obterModoCacadasSessao() === 'blacklist' && !!obterAlvoNomeCacadasSessao();
+  }
+
   function decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao) {
     // So apos esperar no portao: se o teto ocioso forcar caçada, evita blacklist (alvo pode estar em penalidade).
     // Ao chegar com caçada imediata (ja passou do teto), blacklist continua valendo.
@@ -1372,10 +1376,15 @@
   function validarAlvoAtacar() {
     var dados = extrairDadosAlvoAtacar();
     var motivos = [];
+    var porNomeBlacklist = cacadaAtualPorNomeBlacklist();
     var maxRyous = obterMaxRyousCacadas();
     var diffMin = obterDiffNivelCacadas();
     var whitelist = obterWhitelistCacadas();
     var whitelistCla = obterWhitelistClaCacadas();
+
+    if (porNomeBlacklist) {
+      console.log('[Atacar] Caçada por nome (blacklist) — validacao so nome/cla whitelist.');
+    }
 
     if (dados.inimigo === '(desconhecido)') {
       motivos.push('Nome do inimigo nao encontrado na pagina');
@@ -1393,34 +1402,39 @@
       }
     }
 
-    if (dados.ryous === null) {
-      motivos.push('Ryous faturados nao encontrados na pagina');
-    } else if (dados.ryous >= maxRyous) {
-      motivos.push(
-        'Ryous faturados ' + formatarNumeroBr(dados.ryous) +
-        ' >= limite ' + formatarNumeroBr(maxRyous)
-      );
-    }
-
-    if (dados.meuNivel === null) {
-      motivos.push('Nivel do jogador nao encontrado na sidebar');
-    } else if (dados.nivel === null) {
-      motivos.push('Nivel do inimigo nao encontrado (' + dados.nivelTexto + ')');
-    } else {
-      var diff = dados.meuNivel - dados.nivel;
-      dados.diffNivel = diff;
-      if (diff < diffMin) {
+    if (!porNomeBlacklist) {
+      if (dados.ryous === null) {
+        motivos.push('Ryous faturados nao encontrados na pagina');
+      } else if (dados.ryous >= maxRyous) {
         motivos.push(
-          'Inimigo nivel ' + dados.nivel + ' nao esta ' + diffMin +
-          '+ abaixo do seu (' + dados.meuNivel + ', diff=' + diff + ')'
+          'Ryous faturados ' + formatarNumeroBr(dados.ryous) +
+          ' >= limite ' + formatarNumeroBr(maxRyous)
         );
       }
+
+      if (dados.meuNivel === null) {
+        motivos.push('Nivel do jogador nao encontrado na sidebar');
+      } else if (dados.nivel === null) {
+        motivos.push('Nivel do inimigo nao encontrado (' + dados.nivelTexto + ')');
+      } else {
+        var diff = dados.meuNivel - dados.nivel;
+        dados.diffNivel = diff;
+        if (diff < diffMin) {
+          motivos.push(
+            'Inimigo nivel ' + dados.nivel + ' nao esta ' + diffMin +
+            '+ abaixo do seu (' + dados.meuNivel + ', diff=' + diff + ')'
+          );
+        }
+      }
+    } else if (dados.meuNivel !== null && dados.nivel !== null) {
+      dados.diffNivel = dados.meuNivel - dados.nivel;
     }
 
     return {
       ok: motivos.length === 0,
       motivos: motivos,
       dados: dados,
+      porNomeBlacklist: porNomeBlacklist,
       config: {
         whitelist: whitelist,
         whitelistCla: whitelistCla,
@@ -1476,11 +1490,20 @@
   }
 
   function atacarAlvoValido(resultado, btnAtacar) {
-    console.log(
-      '[Atacar] Alvo aprovado — ' + nomeExibicaoInimigo(resultado.dados) +
-      ' | Ryous ' + resultado.dados.ryousTexto +
-      ' | Diff nivel ' + resultado.dados.diffNivel
-    );
+    var d = resultado.dados;
+    if (resultado.porNomeBlacklist) {
+      console.log(
+        '[Atacar] Blacklist — alvo aprovado (so nome/cla): ' + nomeExibicaoInimigo(d) +
+        ' | Ryous ' + (d.ryousTexto || '?') +
+        ' | Nivel ' + (d.nivelTexto || '?')
+      );
+    } else {
+      console.log(
+        '[Atacar] Alvo aprovado — ' + nomeExibicaoInimigo(d) +
+        ' | Ryous ' + d.ryousTexto +
+        ' | Diff nivel ' + d.diffNivel
+      );
+    }
     if (btnAtacar) btnAtacar.click();
   }
 
