@@ -219,6 +219,23 @@
     return lerModoReferrer();
   }
 
+  function gravarUsuarioLoginParam(valor) {
+    if (!valor) return false;
+    var u = String(valor).trim();
+    if (!u) return false;
+    localStorage.setItem('BOT_USUARIO_LOGIN', u);
+    localStorage.setItem('BOT_USUARIO', u);
+    return true;
+  }
+
+  function lerUsuarioLoginArmazenado() {
+    try {
+      return localStorage.getItem('BOT_USUARIO_LOGIN') || localStorage.getItem('BOT_USUARIO') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   function aplicarCredenciaisReferrer() {
     try {
       var ref = document.referrer || '';
@@ -232,7 +249,7 @@
       var lm = rp.get('bot_lasthit_modo');
       var lsm = rp.get('bot_lasthit_sorteio_min');
       var lsx = rp.get('bot_lasthit_sorteio_max');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (u) gravarUsuarioLoginParam(u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
@@ -276,7 +293,7 @@
       var lm = params.get('bot_lasthit_modo');
       var lsm = params.get('bot_lasthit_sorteio_min');
       var lsx = params.get('bot_lasthit_sorteio_max');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (u) gravarUsuarioLoginParam(u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
@@ -442,7 +459,7 @@
     if (modo === 'invasor' || modo === 'cacadas') params.set('bot_modo', modo);
 
     try {
-      var u = localStorage.getItem('BOT_USUARIO');
+      var u = lerUsuarioLoginArmazenado();
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
@@ -498,7 +515,7 @@
 
   // Credenciais do Usuário
   var USUARIO_DEFAULT = 'Shiroe';
-  var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+  var USUARIO_FINAL = lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
@@ -537,16 +554,7 @@
   }
 
   function sincronizarUsuarioLocalStorage() {
-    var nomeLogado = extrairNomeUsuarioLogado();
-    if (!nomeLogado) return;
-
-    var nomeSalvo = localStorage.getItem('BOT_USUARIO');
-    if (nomeSalvo !== nomeLogado) {
-      localStorage.setItem('BOT_USUARIO', nomeLogado);
-      console.log('[Script Invasor] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
-    }
-
-    USUARIO_FINAL = nomeLogado;
+    USUARIO_FINAL = lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
   }
 
   // --- CHECA SESSÃO EXPIRADA OU REQUISICÃO INVÁLIDA ---
@@ -1128,7 +1136,7 @@
           console.log('[LastHit] Coord ja ativa (modo sorteio) — alvo=' +
             (coord.alvo_sorteado != null ? formatarNumeroInvasor(coord.alvo_sorteado) : '?') +
             ' fase=' + coord.fase);
-        } else {
+    } else {
           console.log('[LastHit] Coord ja ativa — base=' + coord.derrotados_base + ' fase=' + coord.fase);
         }
         return coord;
@@ -1170,7 +1178,7 @@
           novo.sorteado_por = USUARIO_FINAL;
           console.warn('[LastHit] Sorteio registrado! Alvo=' + formatarNumeroInvasor(novo.alvo_sorteado) +
             ' (atual ' + formatarNumeroInvasor(derrotadosAtual) + ')');
-        } else {
+      } else {
           console.warn('[LastHit] Sorteio registrado — aguardando ' + formatarNumeroInvasor(sortMin) +
             ' para sortear (atual ' + formatarNumeroInvasor(derrotadosAtual) + ')');
         }
@@ -1409,7 +1417,7 @@
         console.log('[Invasor] Pos-limite (modo sorteio) — aguardando >= ' +
           formatarNumeroInvasor(obterLastHitSorteioMin()) + ' derrotados (reload ' +
           descreverTempoReload(tempoPosLimite) + ').');
-      } else {
+    } else {
         console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload ' +
           descreverTempoReload(tempoPosLimite) + ').');
       }

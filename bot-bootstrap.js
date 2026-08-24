@@ -6,6 +6,24 @@
   if (window.__BOT_BOOTSTRAP_OK__) return;
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
+  var BOT_USUARIO_LOGIN_KEY = 'BOT_USUARIO_LOGIN';
+
+  function gravarUsuarioLoginParam(valor) {
+    if (!valor) return false;
+    var u = String(valor).trim();
+    if (!u) return false;
+    localStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
+    localStorage.setItem('BOT_USUARIO', u);
+    return true;
+  }
+
+  function lerUsuarioLoginArmazenado() {
+    try {
+      return localStorage.getItem(BOT_USUARIO_LOGIN_KEY) || localStorage.getItem('BOT_USUARIO') || '';
+    } catch (e) {
+      return '';
+    }
+  }
 
   try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
 
@@ -42,7 +60,7 @@
       var r = rp.get('bot_max_ryous_cacadas');
       var d = rp.get('bot_diff_nivel_cacadas');
       var v = rp.get('bot_min_ryous_vitoria_cacadas');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (u) gravarUsuarioLoginParam(u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') {
@@ -144,7 +162,7 @@
       }
       var label = (modo === 'invasor' || modo === 'cacadas') ? modo : 'manual';
       var login = '';
-      try { login = localStorage.getItem('BOT_USUARIO') || '?'; } catch (e) { login = '?'; }
+      try { login = lerUsuarioLoginArmazenado() || '?'; } catch (e) { login = '?'; }
       var rot = descreverRotacaoAutomacaoBootstrap();
       var nivel = '';
       var bl = '';
@@ -243,7 +261,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.2', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.3', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;

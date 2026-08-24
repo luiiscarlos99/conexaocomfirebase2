@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.76
+// @version      2.77
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -101,6 +101,25 @@
     return false;
   }
 
+  var BOT_USUARIO_LOGIN_KEY = 'BOT_USUARIO_LOGIN';
+
+  function gravarUsuarioLoginParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var u = String(valor).trim();
+    if (!u) return false;
+    localStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
+    localStorage.setItem('BOT_USUARIO', u);
+    return true;
+  }
+
+  function lerUsuarioLoginArmazenado() {
+    try {
+      return localStorage.getItem(BOT_USUARIO_LOGIN_KEY) || localStorage.getItem('BOT_USUARIO') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   function rotacaoAutomacaoAtiva() {
     return localStorage.getItem('BOT_ROTACAO_AUTOMACAO') === '1';
   }
@@ -171,7 +190,7 @@
       var n = rp.get('bot_nivel');
       var e = rp.get('bot_espera_cacadas');
       var l = rp.get('bot_limite_invasor');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (u) gravarUsuarioLoginParam(u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
@@ -211,7 +230,7 @@
       var n = params.get('bot_nivel');
       var e = params.get('bot_espera_cacadas');
       var l = params.get('bot_limite_invasor');
-      if (u) localStorage.setItem('BOT_USUARIO', u);
+      if (u) gravarUsuarioLoginParam(u);
       if (p) localStorage.setItem('BOT_SENHA', p);
       if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
@@ -253,8 +272,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.76';
-  var SCRIPT_ATUALIZADO = '24/08/2026 19:35';
+  var SCRIPT_VERSAO = '2.77';
+  var SCRIPT_ATUALIZADO = '24/08/2026 19:40';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -270,7 +289,7 @@
     if (modo === 'invasor' || modo === 'cacadas') params.set('bot_modo', modo);
 
     try {
-      var u = localStorage.getItem('BOT_USUARIO');
+      var u = lerUsuarioLoginArmazenado();
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
@@ -791,7 +810,7 @@
 
   // Credenciais do Usuário e Configuração de Caçadas
   var USUARIO_DEFAULT = 'Shiroe';
-  var USUARIO_FINAL = localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+  var USUARIO_FINAL = lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
   var USUARIO_EXIBICAO = USUARIO_FINAL;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
@@ -839,7 +858,7 @@
   }
 
   function obterUsuarioLogin() {
-    return localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT;
+    return lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
   }
 
   function obterUsuarioExibicao() {
@@ -852,35 +871,16 @@
   }
 
   function sincronizarUsuarioLocalStorage() {
-    var nomeLogado = extrairNomeUsuarioLogado();
     var loginSalvo = obterUsuarioLogin();
-
     USUARIO_FINAL = loginSalvo;
 
-    if (!nomeLogado) {
-      USUARIO_EXIBICAO = loginSalvo;
-      exibirModoAbaServerID();
-      return;
+    var nomeLogado = extrairNomeUsuarioLogado();
+    USUARIO_EXIBICAO = nomeLogado || loginSalvo;
+
+    if (nomeLogado && nomeLogado !== loginSalvo && (estaEmContaGerenciada() || rotacaoAutomacaoAtiva())) {
+      console.log('[Automacao] Conta ativa: ' + nomeLogado + ' | Login: ' + loginSalvo);
     }
 
-    USUARIO_EXIBICAO = nomeLogado;
-
-    if (estaEmContaGerenciada() || rotacaoAutomacaoAtiva()) {
-      if (nomeLogado !== loginSalvo) {
-        console.log(
-          '[Automacao] Conta ativa: ' + nomeLogado + ' | Login (nao alterado): ' + loginSalvo
-        );
-      }
-      exibirModoAbaServerID();
-      return;
-    }
-
-    if (loginSalvo !== nomeLogado) {
-      localStorage.setItem('BOT_USUARIO', nomeLogado);
-      console.log('[Script] BOT_USUARIO atualizado automaticamente: ' + nomeLogado);
-      USUARIO_FINAL = nomeLogado;
-      USUARIO_EXIBICAO = nomeLogado;
-    }
     exibirModoAbaServerID();
   }
 
@@ -2043,7 +2043,7 @@
 
   // --- FUNÇÃO PARA GERAR OU OBTER O CÓDIGO ÚNICO DO SERVIDOR/SESSÃO ---
   function obterCodigoServidor() {
-    var usuario = (localStorage.getItem('BOT_USUARIO') || USUARIO_DEFAULT).trim();
+    var usuario = obterUsuarioLogin().trim();
     var chave = 'BOT_CODIGO_SRV_' + usuario;
     var codigo = localStorage.getItem(chave);
     if (!codigo) {

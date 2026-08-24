@@ -17,7 +17,7 @@
       var modo = sessionStorage.getItem(BOT_MODO_KEY);
       if (modo === 'invasor' || modo === 'cacadas') params.set('bot_modo', modo);
 
-      var u = localStorage.getItem('BOT_USUARIO');
+      var u = localStorage.getItem('BOT_USUARIO_LOGIN') || localStorage.getItem('BOT_USUARIO');
       var p = localStorage.getItem('BOT_SENHA');
       var n = localStorage.getItem('BOT_NIVEL_CACADAS');
       var e = localStorage.getItem('BOT_ESPERA_CACADAS');
