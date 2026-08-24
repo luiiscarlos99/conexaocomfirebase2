@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.64
+// @version      2.65
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.64';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:01';
+  var SCRIPT_VERSAO = '2.65';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:07';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -453,6 +453,53 @@
   function processarCacadasBloqueadaPorMissao() {
     console.warn('[Missao] Caçadas bloqueadas — missao em andamento. Indo para /missoes...');
     window.location.href = URL_MISSOES;
+    return true;
+  }
+
+  function obterFormReceberCacadaTempo() {
+    var forms = document.querySelectorAll('form[action*="cacadas"]');
+    for (var i = 0; i < forms.length; i++) {
+      if (forms[i].querySelector('input[name="receber_missao"]')) return forms[i];
+    }
+    return null;
+  }
+
+  function paginaCacadasComMissaoTempo() {
+    if (document.getElementById('mn_timer')) return false;
+
+    if (document.getElementById('missao_timer') && obterFormReceberCacadaTempo()) return true;
+
+    var col = document.getElementById('col_direita');
+    if (!col) return false;
+    var texto = normalizarTextoCombate(col.innerText || col.textContent || '');
+    return texto.indexOf('missao especial de cacada') !== -1 &&
+      texto.indexOf('iniciou uma cacada') !== -1;
+  }
+
+  function cacadaTempoRecompensaPronta() {
+    var btn = document.getElementById('btn_receber');
+    if (btn && btn.style.display !== 'none') return true;
+
+    var aviso = document.getElementById('missao_aviso');
+    if (aviso) {
+      var t = normalizarTextoCombate(aviso.innerText || aviso.textContent || '');
+      if (t.indexOf('missao concluida') !== -1) return true;
+    }
+    return false;
+  }
+
+  function processarCacadasMissaoTempo() {
+    if (cacadaTempoRecompensaPronta()) {
+      var btn = document.getElementById('btn_receber');
+      if (btn) {
+        console.log('[Caçada tempo] Recompensa pronta — recebendo...');
+        btn.click();
+        return true;
+      }
+    }
+
+    console.log('[Caçada tempo] Em andamento (cooldown) — voltando ao portao de relatorios.');
+    irParaPortaoRelatorios('Caçada por tempo em andamento');
     return true;
   }
 
@@ -2290,6 +2337,10 @@
           executar: function() {
             if (paginaCacadasBloqueadaPorMissao()) {
               return processarCacadasBloqueadaPorMissao();
+            }
+
+            if (paginaCacadasComMissaoTempo()) {
+              return processarCacadasMissaoTempo();
             }
 
             if (!gateCacadasLiberado()) {
