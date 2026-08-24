@@ -46,11 +46,25 @@
     return '';
   }
 
+  function inferirModoPelaUrlBootstrap() {
+    try {
+      var path = (window.location.pathname || '').toLowerCase();
+      var qs = window.location.search || '';
+      if (path.indexOf('invasor') !== -1) return 'invasor';
+      if (path.indexOf('cacadas') !== -1 || qs.indexOf('relatorios_ataque') !== -1) return 'cacadas';
+    } catch (e) {}
+    return '';
+  }
+
   function lerModoReferrer() {
     try {
       var ref = document.referrer || '';
       if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return '';
-      return extrairModo(new URL(ref).search);
+      var modo = extrairModo(new URL(ref).search);
+      if (modo === 'invasor' || modo === 'cacadas') return modo;
+      var refPath = new URL(ref).pathname.toLowerCase();
+      if (refPath.indexOf('invasor') !== -1) return 'invasor';
+      if (refPath.indexOf('cacadas') !== -1 || ref.indexOf('relatorios_ataque') !== -1) return 'cacadas';
     } catch (e) {}
     return '';
   }
@@ -235,6 +249,14 @@
       sessionStorage.removeItem(BOT_MODO_KEY);
     } else {
       var modo = modoQuery || lerModoReferrer();
+      if (modo !== 'invasor' && modo !== 'cacadas') {
+        modo = inferirModoPelaUrlBootstrap();
+      }
+      if (modoQuery && modoQuery !== 'invasor' && modoQuery !== 'cacadas' &&
+          modoQuery !== 'off' && modoQuery !== 'manual' &&
+          modo !== 'invasor' && modo !== 'cacadas') {
+        console.warn('[Bot Bootstrap] bot_modo invalido: "' + modoQuery + '". Use invasor ou cacadas.');
+      }
 
       if (modo === 'invasor' || modo === 'cacadas') {
         sessionStorage.setItem(BOT_MODO_KEY, modo);
@@ -272,7 +294,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.4', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.5', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
