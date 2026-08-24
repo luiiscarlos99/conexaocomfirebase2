@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.70
+// @version      2.71
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -99,6 +99,15 @@
       return true;
     }
     return false;
+  }
+
+  function rotacaoAutomacaoAtiva() {
+    return localStorage.getItem('BOT_ROTACAO_AUTOMACAO') === '1';
+  }
+
+  function descreverRotacaoAutomacao() {
+    if (!rotacaoAutomacaoAtiva()) return 'desligada';
+    return 'ligada (bot_rotacao_automacao=1)';
   }
 
   function aplicarParamsCacadasAtacar(rp) {
@@ -263,8 +272,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.70';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:49';
+  var SCRIPT_VERSAO = '2.71';
+  var SCRIPT_ATUALIZADO = '24/08/2026 18:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -356,6 +365,15 @@
     window.botStatus = window.__BOT_CONTROLE__.status;
   }
 
+  window.botRotacaoAutomacao = function(ligar) {
+    if (arguments.length === 0) {
+      return descreverRotacaoAutomacao();
+    }
+    gravarRotacaoAutomacaoParam(ligar ? '1' : '0');
+    console.log('[Automacao] Rotacao: ' + descreverRotacaoAutomacao());
+    return descreverRotacaoAutomacao();
+  };
+
   window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
   console.log(
     '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
@@ -413,15 +431,6 @@
   var portaoRelatoriosAgendado = false;
   var missaoCancelamentoClicado = false;
   var automacaoAssumirEmAndamento = false;
-
-  function rotacaoAutomacaoAtiva() {
-    return localStorage.getItem('BOT_ROTACAO_AUTOMACAO') === '1';
-  }
-
-  function descreverRotacaoAutomacao() {
-    if (!rotacaoAutomacaoAtiva()) return 'desligada';
-    return 'ligada (bot_rotacao_automacao=1)';
-  }
 
   function marcarRotacaoCicloPendente() {
     try { sessionStorage.setItem(BOT_ROTACAO_CICLO_KEY, '1'); } catch (e) {}
@@ -1999,15 +2008,6 @@
     gravarBlacklistCacadasParam(lista);
     console.log('[Blacklist] Lista atualizada: ' + descreverBlacklistCacadas());
     return descreverBlacklistCacadas();
-  };
-
-  window.botRotacaoAutomacao = function(ligar) {
-    if (arguments.length === 0) {
-      return descreverRotacaoAutomacao();
-    }
-    gravarRotacaoAutomacaoParam(ligar ? '1' : '0');
-    console.log('[Automacao] Rotacao: ' + descreverRotacaoAutomacao());
-    return descreverRotacaoAutomacao();
   };
 
   function montarLinkPainelCaptcha(opcoes) {
