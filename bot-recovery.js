@@ -1,5 +1,5 @@
 // Recuperacao em paginas de erro (chrome-error://) — injetar PRIMEIRO no Inject Code.
-// window.name persiste na aba mesmo quando sessionStorage/localStorage ficam bloqueados.
+// window.name persiste na aba. Modo bot vem do sessionStorage desta aba (nao localStorage).
 (function() {
   'use strict';
 

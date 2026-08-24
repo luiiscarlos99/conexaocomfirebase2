@@ -1,5 +1,5 @@
 // Bootstrap minimo — injetar PRIMEIRO na Inject Code (document_start / o mais cedo possivel).
-// Grava bot_modo so quando veio na URL (query/referrer) — sessionStorage desta aba.
+// Modo bot: sessionStorage desta ABA (nao localStorage). So grava com ?bot_modo= na URL.
 (function() {
   'use strict';
 
@@ -36,35 +36,15 @@
     }
   }
 
-  try { localStorage.removeItem('BOT_MODO_ABA'); } catch (e) {}
+  try {
+    localStorage.removeItem('BOT_MODO_ABA');
+    localStorage.removeItem('BOT_MODO_PREFERIDO');
+  } catch (e) {}
 
   function extrairModo(search) {
     try {
       var modo = new URLSearchParams(search || '').get('bot_modo');
       if (modo === 'invasor' || modo === 'cacadas') return modo;
-    } catch (e) {}
-    return '';
-  }
-
-  function inferirModoPelaUrlBootstrap() {
-    try {
-      var path = (window.location.pathname || '').toLowerCase();
-      var qs = window.location.search || '';
-      if (path.indexOf('invasor') !== -1) return 'invasor';
-      if (path.indexOf('cacadas') !== -1 || qs.indexOf('relatorios_ataque') !== -1) return 'cacadas';
-    } catch (e) {}
-    return '';
-  }
-
-  function lerModoReferrer() {
-    try {
-      var ref = document.referrer || '';
-      if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return '';
-      var modo = extrairModo(new URL(ref).search);
-      if (modo === 'invasor' || modo === 'cacadas') return modo;
-      var refPath = new URL(ref).pathname.toLowerCase();
-      if (refPath.indexOf('invasor') !== -1) return 'invasor';
-      if (refPath.indexOf('cacadas') !== -1 || ref.indexOf('relatorios_ataque') !== -1) return 'cacadas';
     } catch (e) {}
     return '';
   }
@@ -241,89 +221,52 @@
     } catch (e) {}
   }
 
-  function lerModoPreferidoBootstrap() {
-    try {
-      var pref = localStorage.getItem('BOT_MODO_PREFERIDO');
-      if (pref === 'invasor' || pref === 'cacadas') return pref;
-    } catch (e) {}
-    return '';
-  }
-
-  function restaurarModoPreferidoBootstrap() {
-    try {
-      var atual = sessionStorage.getItem(BOT_MODO_KEY);
-      if (atual === 'invasor' || atual === 'cacadas') return;
-      var pref = lerModoPreferidoBootstrap();
-      if (pref) sessionStorage.setItem(BOT_MODO_KEY, pref);
-    } catch (e) {}
-  }
-
-  function urlSearchTemParamsBotBootstrap(search) {
-    try {
-      var rp = new URLSearchParams(search || '');
-      return !!(rp.get('bot_user') || rp.get('bot_pass') || rp.get('bot_modo') || rp.get('bot_nivel'));
-    } catch (e) {}
-    return false;
-  }
-
   try {
     var params = new URLSearchParams(window.location.search);
+    var modoRaw = params.get('bot_modo');
     var modoQuery = extrairModo(window.location.search);
 
-    if (modoQuery === 'off' || modoQuery === 'manual') {
+    if (modoRaw === 'off' || modoRaw === 'manual') {
       sessionStorage.removeItem(BOT_MODO_KEY);
-    } else {
-      var modo = modoQuery;
-      if ((modo !== 'invasor' && modo !== 'cacadas') &&
-          urlSearchTemParamsBotBootstrap(window.location.search)) {
-        modo = inferirModoPelaUrlBootstrap();
-      }
-      if (modoQuery && modoQuery !== 'invasor' && modoQuery !== 'cacadas' &&
-          modoQuery !== 'off' && modoQuery !== 'manual' &&
-          modo !== 'invasor' && modo !== 'cacadas') {
-        console.warn('[Bot Bootstrap] bot_modo invalido: "' + modoQuery + '". Use invasor ou cacadas.');
-      }
+    } else if (modoQuery === 'invasor' || modoQuery === 'cacadas') {
+      sessionStorage.setItem(BOT_MODO_KEY, modoQuery);
+    } else if (modoRaw && modoRaw !== 'off' && modoRaw !== 'manual') {
+      console.warn('[Bot Bootstrap] bot_modo invalido: "' + modoRaw + '". Use invasor ou cacadas.');
+    }
 
-      if (modo === 'invasor' || modo === 'cacadas') {
-        sessionStorage.setItem(BOT_MODO_KEY, modo);
-        try { localStorage.setItem('BOT_MODO_PREFERIDO', modo); } catch (ePref) {}
-      }
-
-      aplicarCredenciais(window.location.search);
-      var pathBoot = (window.location.pathname || '').replace(/\/+$/, '') || '/';
-      if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
-          (pathBoot === '/' || pathBoot.indexOf('status') !== -1) &&
-          !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
-          !params.get('bot_min_ataques_invasor') && !params.get('bot_lasthit_data') &&
-          !params.get('bot_lasthit_modo') && !params.get('bot_lasthit_sorteio_min') &&
-          !params.get('bot_lasthit_sorteio_max') &&
-          !params.get('bot_whitelist_cacadas') && !params.get('bot_whitelist_cla_cacadas') &&
-          !params.get('bot_blacklist_cacadas') && !params.get('bot_rotacao_automacao') &&
-          !params.get('bot_max_ryous_cacadas') &&
-          !params.get('bot_diff_nivel_cacadas') && !params.get('bot_min_ryous_vitoria_cacadas')) {
-        try {
-          var ref = document.referrer || '';
-          if (ref.indexOf('shadowofshinobi.com') !== -1) {
-            aplicarCredenciais(new URL(ref).search);
-          }
-        } catch (e) {}
-      }
-
-      // Salva URL de login em window.name (sobrevive a chrome-error://)
+    aplicarCredenciais(window.location.search);
+    var pathBoot = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+    if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
+        (pathBoot === '/' || pathBoot.indexOf('status') !== -1) &&
+        !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
+        !params.get('bot_min_ataques_invasor') && !params.get('bot_lasthit_data') &&
+        !params.get('bot_lasthit_modo') && !params.get('bot_lasthit_sorteio_min') &&
+        !params.get('bot_lasthit_sorteio_max') &&
+        !params.get('bot_whitelist_cacadas') && !params.get('bot_whitelist_cla_cacadas') &&
+        !params.get('bot_blacklist_cacadas') && !params.get('bot_rotacao_automacao') &&
+        !params.get('bot_max_ryous_cacadas') &&
+        !params.get('bot_diff_nivel_cacadas') && !params.get('bot_min_ryous_vitoria_cacadas')) {
       try {
-        if (window.__BOT_RECOVERY__) {
-          var modoSalvar = sessionStorage.getItem(BOT_MODO_KEY);
-          if (modoSalvar === 'invasor' || modoSalvar === 'cacadas') {
-            window.__BOT_RECOVERY__.salvar();
-          }
+        var ref = document.referrer || '';
+        if (ref.indexOf('shadowofshinobi.com') !== -1) {
+          aplicarCredenciais(new URL(ref).search);
         }
       } catch (e) {}
     }
+
+    try {
+      if (window.__BOT_RECOVERY__) {
+        var modoSalvar = sessionStorage.getItem(BOT_MODO_KEY);
+        if (modoSalvar === 'invasor' || modoSalvar === 'cacadas') {
+          window.__BOT_RECOVERY__.salvar();
+        }
+      }
+    } catch (e) {}
   } catch (e) {}
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.7', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '1.9', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
