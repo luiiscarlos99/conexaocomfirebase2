@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.67
+// @version      2.68
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.66';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:09';
+  var SCRIPT_VERSAO = '2.68';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:37';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1002,12 +1002,12 @@
         console.log('[Caçadas] Portao pos-espera — ' + decisaoPos.motivo);
         resolverBlacklistNoPortao(decisaoPos, function() {
           irParaCacadasLiberado('portao-pos-espera (' + segundos + 's)');
-        });
+        }, { aposEsperaNoPortao: true });
       }, decisao.waitMs);
     }
 
     if (decisao.waitMs <= 0) {
-      resolverBlacklistNoPortao(decisao, irAposResolver);
+      resolverBlacklistNoPortao(decisao, irAposResolver, { aposEsperaNoPortao: false });
     } else {
       irAposResolver();
     }
@@ -1205,12 +1205,17 @@
     return '';
   }
 
-  function decisaoIgnoraBlacklist(decisao) {
+  function decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao) {
+    // So apos esperar no portao: se o teto ocioso forcar caçada, evita blacklist (alvo pode estar em penalidade).
+    // Ao chegar com caçada imediata (ja passou do teto), blacklist continua valendo.
+    if (!aposEsperaNoPortao) return false;
     return !!(decisao && decisao.waitMs <= 0 && decisao.motivo &&
       decisao.motivo.indexOf('teto ocioso') !== -1);
   }
 
-  function resolverBlacklistNoPortao(decisao, callback) {
+  function resolverBlacklistNoPortao(decisao, callback, opcoes) {
+    var opts = opcoes || {};
+    var aposEsperaNoPortao = !!opts.aposEsperaNoPortao;
     limparEstadoModoCacadas();
 
     if (!blacklistCacadasAtiva()) {
@@ -1219,8 +1224,8 @@
       return;
     }
 
-    if (decisaoIgnoraBlacklist(decisao)) {
-      definirModoCacadasClasse('teto de espera atingido — evita penalidade, ignorando blacklist');
+    if (decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao)) {
+      definirModoCacadasClasse('teto apos espera no portao — evita penalidade, ignorando blacklist');
       callback();
       return;
     }
