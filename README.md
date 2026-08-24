@@ -8,6 +8,7 @@ Automação para [Shadow of Shinobi](https://shadowofshinobi.com/) via **Inject 
 
 | Arquivo | Descrição |
 |---|---|
+| `bot-ranking.js` | Scan ranking — detectar contas mult (manual via console) |
 | `bot-recovery.js` | Recuperação em erro 500 / `chrome-error://` via `window.name` |
 | `bot-bootstrap.js` | Bootstrap cedo — grava modo/credenciais + URL de recuperação |
 | `atkSOS.js` | Bot **Caçadas** — login, caçadas, captcha, atacar |
@@ -29,8 +30,9 @@ Injetar **nesta ordem** (auto-run ON em todos):
 |---|---|---|
 | 1 | `bot-recovery.js` | `.../bot-recovery.js` |
 | 2 | `bot-bootstrap.js` | `.../bot-bootstrap.js` |
-| 3 | Caçadas | `.../atkSOS.js` |
-| 4 | Invasor | `.../atkInvSOS.js` |
+| 3 | `bot-ranking.js` | `.../bot-ranking.js` *(opcional — so ranking)* |
+| 4 | Caçadas | `.../atkSOS.js` |
+| 5 | Invasor | `.../atkInvSOS.js` |
 
 | Regra | Auto-run | CDN |
 |---|---|---|
@@ -120,6 +122,27 @@ Captcha → caçadas trata → volta ao invasor
 - Exige `BOT_MODO_ABA=invasor` (mesma regra de aba — sem referrer/localStorage)
 - `/status` → `/invasor` | last hit scout/data/sorteio
 - Captcha delegado ao `atkSOS.js`
+
+### `bot-ranking.js` — v1.0
+
+- **Só na página** `/ranking` — Caçadas/Invasor não agem
+- **Manual:** console `botRankingScan()` (não roda sozinho)
+- Percorre ranking geral de personagens de **50 em 50** até página vazia
+- Filtra **lvl > 55** e **ryous < 1M** (contas mult) — parâmetros configuráveis
+- No fim: 2 logs — detalhado + lista pronta para `bot_blacklist_cacadas`
+
+**Parâmetros URL:**
+```
+/ranking?view=personagens&vila=geral&ranking=0&bot_ranking_max_ryous=1000000&bot_ranking_min_nivel=55
+```
+
+**Console:**
+```javascript
+botRankingScan()
+botRankingScan({ maxRyous: 999000, minNivel: 56 })
+botRankingParar()
+botRankingStatus()
+```
 
 ---
 

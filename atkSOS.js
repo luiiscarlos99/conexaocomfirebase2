@@ -443,6 +443,20 @@
     return descreverRotacaoAutomacao();
   };
 
+  function ehPaginaRankingCacadas() {
+    if (window.__BOT_RANKING_PAGINA__) return true;
+    try {
+      var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return path.indexOf('ranking') !== -1;
+    } catch (e) {}
+    return false;
+  }
+
+  if (ehPaginaRankingCacadas()) {
+    console.log('[Script Caçadas] Pagina ranking — sem acao (use botRankingScan() no bot-ranking.js).');
+    return;
+  }
+
   window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
   console.log(
     '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
