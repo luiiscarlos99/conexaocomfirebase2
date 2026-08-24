@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.84
+// @version      2.85
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -495,9 +495,13 @@
   var BOT_CAPTCHA_OCR_AUTO_KEY = 'BOT_CAPTCHA_OCR_AUTO_TENTATIVAS';
   var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
+  var URL_STATUS = 'https://shadowofshinobi.com/status';
   var URL_MISSOES = 'https://shadowofshinobi.com/missoes';
   var URL_AUTOMACAO = 'https://shadowofshinobi.com/automacao';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
+  var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
+  var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
+  var HP_MINIMO_ATACAR_RATIO = 0.5;
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var BOT_CACADAS_MODO_KEY = 'BOT_CACADAS_MODO';
@@ -972,6 +976,213 @@
     exibirModoAbaServerID();
   }
 
+  // --- HP minimo antes de atacar (caçadas) + Ichiraku em /status ---
+  function parseNumeroHp(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var s = String(valor).trim().replace(/\./g, '').replace(',', '.');
+    var n = parseFloat(s);
+    return isNaN(n) ? null : Math.round(n);
+  }
+
+  function salvarHpSnapshot(current, max) {
+    try {
+      sessionStorage.setItem(BOT_HP_SNAPSHOT_KEY, JSON.stringify({ current: current, max: max }));
+    } catch (e) {}
+  }
+
+  function lerHpSnapshot() {
+    try {
+      var raw = sessionStorage.getItem(BOT_HP_SNAPSHOT_KEY);
+      if (!raw) return null;
+      var s = JSON.parse(raw);
+      if (!s || !s.max || s.max <= 0) return null;
+      var current = parseNumeroHp(s.current);
+      var max = parseNumeroHp(s.max);
+      if (current === null || max === null || max <= 0) return null;
+      return { ok: true, current: current, max: max, pct: current / max };
+    } catch (e) {}
+    return null;
+  }
+
+  function extrairHpDaPagina() {
+    var raizes = [];
+    var col = document.getElementById('col_esquerda');
+    if (col) raizes.push(col);
+    if (document.body) raizes.push(document.body);
+
+    for (var r = 0; r < raizes.length; r++) {
+      var texto = raizes[r].innerText || raizes[r].textContent || '';
+      var m = texto.match(/HP:\s*([\d.,]+)\s*\/\s*([\d.,]+)/i);
+      if (!m) continue;
+      var current = parseNumeroHp(m[1]);
+      var max = parseNumeroHp(m[2]);
+      if (current === null || max === null || max <= 0) continue;
+      return { ok: true, current: current, max: max, pct: current / max };
+    }
+    return { ok: false };
+  }
+
+  function obterStatusHp() {
+    var parsed = extrairHpDaPagina();
+    if (parsed.ok) {
+      salvarHpSnapshot(parsed.current, parsed.max);
+      return parsed;
+    }
+    var snap = lerHpSnapshot();
+    if (snap) return snap;
+    return { ok: false };
+  }
+
+  function curarHpAtivo() {
+    try { return sessionStorage.getItem(BOT_HP_CURAR_ATIVO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarCurarHpAtivo() {
+    try { sessionStorage.setItem(BOT_HP_CURAR_ATIVO_KEY, '1'); } catch (e) {}
+  }
+
+  function limparCurarHpAtivo() {
+    try {
+      sessionStorage.removeItem(BOT_HP_CURAR_ATIVO_KEY);
+      sessionStorage.removeItem(BOT_HP_SNAPSHOT_KEY);
+    } catch (e) {}
+  }
+
+  function formatarHpLog(hp) {
+    if (!hp || !hp.ok) return '?/?';
+    return hp.current + '/' + hp.max + ' (' + Math.round(hp.pct * 100) + '%)';
+  }
+
+  function redirecionarParaCurarHp(motivo) {
+    if (obterModoAba() !== 'cacadas') return;
+    var hp = obterStatusHp();
+    marcarCurarHpAtivo();
+    if (hp.ok) salvarHpSnapshot(hp.current, hp.max);
+    console.log('[HP] ' + motivo + ' — ' + formatarHpLog(hp) + ' | indo para /status (Ichiraku)...');
+    consumirGateCacadas();
+    window.location.href = URL_STATUS;
+  }
+
+  function garantirHpParaAtacar(contexto) {
+    if (obterModoAba() !== 'cacadas') return true;
+    if (curarHpAtivo()) return false;
+
+    var hp = obterStatusHp();
+    if (!hp.ok) {
+      console.warn('[HP] Nao foi possivel ler HP — ' + contexto + ' (seguindo sem bloqueio).');
+      return true;
+    }
+    if (hp.pct >= HP_MINIMO_ATACAR_RATIO) return true;
+
+    redirecionarParaCurarHp(contexto);
+    return false;
+  }
+
+  function extrairItensIchirakuStatus() {
+    var out = [];
+    var inputs = document.querySelectorAll('form[action="status"] input[name="usar_item"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var input = inputs[i];
+      var form = input.closest('form');
+      if (!form) continue;
+
+      var nome = (input.value || '').trim();
+      if (!nome) continue;
+
+      var container = form.closest('td') || form.parentElement;
+      var texto = container ? (container.innerText || container.textContent || '') : '';
+
+      var healMatch = texto.match(/Recupera\s+([\d.,]+)\s+pontos de HP/i);
+      var quantMatch = texto.match(/Quant:\s*(\d+)/i);
+      var heal = healMatch ? parseNumeroHp(healMatch[1]) : null;
+      var quant = quantMatch ? parseInt(quantMatch[1], 10) : 0;
+
+      if (heal === null || heal <= 0 || isNaN(quant) || quant <= 0) continue;
+
+      out.push({ nome: nome, heal: heal, quant: quant, form: form });
+    }
+    return out;
+  }
+
+  function escolherItemIchirakuOptimo(itens, current, max) {
+    var meta = max * HP_MINIMO_ATACAR_RATIO;
+    var deficit = Math.ceil(meta - current);
+    if (deficit <= 0) return null;
+
+    var disponiveis = [];
+    for (var i = 0; i < itens.length; i++) {
+      if (itens[i].quant > 0 && itens[i].heal > 0) disponiveis.push(itens[i]);
+    }
+    if (!disponiveis.length) return null;
+
+    var suficientes = [];
+    for (var j = 0; j < disponiveis.length; j++) {
+      if (disponiveis[j].heal >= deficit) suficientes.push(disponiveis[j]);
+    }
+    if (suficientes.length) {
+      suficientes.sort(function(a, b) { return a.heal - b.heal; });
+      return suficientes[0];
+    }
+
+    disponiveis.sort(function(a, b) { return b.heal - a.heal; });
+    return disponiveis[0];
+  }
+
+  function processarCurarHpNaPaginaStatus() {
+    if (obterModoAba() !== 'cacadas') return false;
+
+    var hp = obterStatusHp();
+    var precisaCurar = hp.ok && hp.pct < HP_MINIMO_ATACAR_RATIO;
+
+    if (!curarHpAtivo()) {
+      if (!precisaCurar) return false;
+      marcarCurarHpAtivo();
+    } else if (hp.ok && hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+      console.log('[HP] Vida recuperada — ' + formatarHpLog(hp) + ' | voltando ao portao...');
+      limparCurarHpAtivo();
+      window.location.href = URL_RELATORIOS_ATAQUE;
+      return true;
+    }
+
+    if (!hp.ok) {
+      hp = lerHpSnapshot();
+    }
+    if (!hp || !hp.ok) {
+      console.warn('[HP] /status — HP ilegivel; aguardando snapshot ou reload.');
+      return true;
+    }
+
+    if (hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+      console.log('[HP] Vida OK — ' + formatarHpLog(hp) + ' | voltando ao portao...');
+      limparCurarHpAtivo();
+      window.location.href = URL_RELATORIOS_ATAQUE;
+      return true;
+    }
+
+    var itens = extrairItensIchirakuStatus();
+    var escolhido = escolherItemIchirakuOptimo(itens, hp.current, hp.max);
+
+    if (!escolhido) {
+      console.error('[HP] Sem Ichiraku util em /status — ' + formatarHpLog(hp) + '. Cure manualmente.');
+      agendarReloadFalha('HP baixo e sem Ichiraku disponivel', 60000);
+      return true;
+    }
+
+    var novoHp = Math.min(hp.current + escolhido.heal, hp.max);
+    salvarHpSnapshot(novoHp, hp.max);
+
+    console.log(
+      '[HP] Usando "' + escolhido.nome + '" (+' + escolhido.heal + ' HP) — ' +
+      hp.current + '/' + hp.max + ' -> ~' + novoHp + '/' + hp.max
+    );
+
+    var btn = escolhido.form.querySelector('input[type="submit"], input[name="btn"]');
+    if (btn) btn.click();
+    else escolhido.form.submit();
+    return true;
+  }
+
   function processarRotacaoContaPrincipal() {
     if (!rotacaoAutomacaoAtiva()) return false;
     if (obterModoAba() !== 'cacadas') return false;
@@ -1270,6 +1481,7 @@
   }
 
   function irParaCacadasLiberado(motivo) {
+    if (!garantirHpParaAtacar('portao -> caçadas (' + motivo + ')')) return;
     console.log('[Caçadas] ' + motivo + ' — redirecionando para caçadas.');
     liberarGateCacadas();
     window.location.href = URL_CACADAS;
@@ -2652,6 +2864,8 @@
   }
 
   function executarCacadaPorNome(nome) {
+    if (!garantirHpParaAtacar('caçada por nome')) return true;
+
     var input = document.getElementById('por_nome') ||
       document.querySelector('input[name="por_nome"]');
     if (!input) return false;
@@ -2672,6 +2886,8 @@
   }
 
   function executarCacadaPorNivel() {
+    if (!garantirHpParaAtacar('caçada por nivel')) return true;
+
     var selectNivel = document.getElementById('por_nivel');
     if (!selectNivel) return false;
 
@@ -2713,6 +2929,7 @@
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
+    ' | HP minimo ataque: ' + Math.round(HP_MINIMO_ATACAR_RATIO * 100) + '% (Ichiraku em /status)' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
@@ -2771,6 +2988,7 @@
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
           if (processarRotacaoContaPrincipal()) return;
+          if (processarCurarHpNaPaginaStatus()) return;
           console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
           window.location.href = URL_RELATORIOS_ATAQUE;
           return;
@@ -2917,14 +3135,17 @@
             if (!btnAtacar) return false;
 
             var resultado = validarAlvoAtacar();
-            atacarJaProcessado = true;
             salvarUltimoAlvo(resultado.dados);
 
             if (!resultado.ok) {
+              atacarJaProcessado = true;
               pularAlvoInvalido(resultado);
               return true;
             }
 
+            if (!garantirHpParaAtacar('pagina atacar')) return true;
+
+            atacarJaProcessado = true;
             atacarAlvoValido(resultado, btnAtacar);
             return true;
           }
