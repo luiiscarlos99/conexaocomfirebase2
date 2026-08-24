@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.65
+// @version      2.66
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -246,8 +246,8 @@
   exibirModoAbaServerID();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.65';
-  var SCRIPT_ATUALIZADO = '24/08/2026 17:07';
+  var SCRIPT_VERSAO = '2.66';
+  var SCRIPT_ATUALIZADO = '24/08/2026 17:09';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1086,6 +1086,58 @@
       ? ' (bot_blacklist_cacadas)'
       : '';
     return lista.join(', ') + sufixo;
+  }
+
+  function extrairNinjaNaoEncontradoCacadas() {
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('ninja nao encontrado') === -1) continue;
+
+      var m = texto.match(/ninja n[aã]o encontrado:\s*(.+)$/i);
+      return m ? m[1].trim() : null;
+    }
+
+    return null;
+  }
+
+  function removerNomeBlacklistCacadas(nome) {
+    if (!nome) return false;
+
+    var lista = obterBlacklistCacadas();
+    if (!lista.length) return false;
+
+    var normRemover = normalizarNomeCacadas(nome);
+    var nova = lista.filter(function(n) {
+      return normalizarNomeCacadas(n) !== normRemover;
+    });
+
+    if (nova.length === lista.length) return false;
+
+    if (nova.length === 0) {
+      try { localStorage.removeItem('BOT_BLACKLIST_CACADAS'); } catch (e) {}
+    } else {
+      localStorage.setItem('BOT_BLACKLIST_CACADAS', nova.join(','));
+    }
+
+    console.warn('[Blacklist] Removido da lista (ninja nao encontrado): ' + nome);
+    console.log('[Blacklist] Lista atual: ' + descreverBlacklistCacadas());
+    return true;
+  }
+
+  function processarNinjaNaoEncontradoCacadas() {
+    var nome = extrairNinjaNaoEncontradoCacadas();
+    if (!nome) return false;
+
+    removerNomeBlacklistCacadas(nome);
+    limparEstadoModoCacadas();
+    irParaPortaoRelatorios('Ninja nao encontrado: ' + nome);
+    return true;
   }
 
   function mapaAtacadosNoRelatorio(ataques) {
@@ -2341,6 +2393,10 @@
 
             if (paginaCacadasComMissaoTempo()) {
               return processarCacadasMissaoTempo();
+            }
+
+            if (processarNinjaNaoEncontradoCacadas()) {
+              return true;
             }
 
             if (!gateCacadasLiberado()) {
