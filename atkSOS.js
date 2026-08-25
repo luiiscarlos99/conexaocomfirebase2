@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.90
+// @version      2.91
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.89';
-  var SCRIPT_ATUALIZADO = '25/08/2026 18:00';
+  var SCRIPT_VERSAO = '2.91';
+  var SCRIPT_ATUALIZADO = '25/08/2026 18:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -490,6 +490,7 @@
     }
     gravarInvasorVivoParam(ligar ? '1' : '0');
     console.log('[InvasorVivo] ' + descreverInvasorVivo());
+    if (typeof atualizarPainelInvasorVivo === 'function') atualizarPainelInvasorVivo();
     return invasorVivoFlagAtiva();
   };
 
@@ -576,6 +577,7 @@
   var captchaRespostaProcessando = false;
   var loginJaEnviado = false;
   var portaoRelatoriosAgendado = false;
+  var invasorVivoPainel = null;
   var missaoCancelamentoClicado = false;
   var automacaoAssumirEmAndamento = false;
 
@@ -1714,6 +1716,92 @@
     return s.substring(0, lim - 3) + '...';
   }
 
+  function definirInvasorVivoPainel(dados) {
+    invasorVivoPainel = dados || null;
+    exibirModoAbaServerID();
+  }
+
+  function definirInvasorVivoPainelPausado(info) {
+    var reserva = info && info.reserva;
+    definirInvasorVivoPainel({
+      pausado: true,
+      reserva: reserva,
+      reservaTexto: (info && info.reservaTexto) ||
+        (reserva !== null && reserva !== undefined ? formatarNumeroBr(reserva) : '?'),
+      nomeInvasor: info && info.estado && info.estado.nomeInvasor ? info.estado.nomeInvasor : '',
+      releituraSeg: Math.round(INVASOR_VIVO_POLL_MS / 1000)
+    });
+  }
+
+  function definirInvasorVivoPainelAtivo(estado, reserva) {
+    definirInvasorVivoPainel({
+      pausado: false,
+      reserva: reserva,
+      reservaTexto: reserva !== null && reserva !== undefined ? formatarNumeroBr(reserva) : null,
+      nomeInvasor: estado && estado.nomeInvasor ? estado.nomeInvasor : '',
+      bossMorto: !!(estado && estado.invasorDerrotado),
+      bossVivo: !!(estado && (estado.temBotao || estado.temTimer))
+    });
+  }
+
+  function descreverInvasorVivoPainel() {
+    if (obterModoAba() !== 'cacadas') return '—';
+
+    if (!invasorVivoFlagAtiva()) return 'desligada';
+
+    if (estaEmContaGerenciada()) {
+      return 'ligada (ignorada — conta gerenciada)';
+    }
+
+    if (invasorVivoPainel && invasorVivoPainel.pausado) {
+      var pausa = 'PAUSADO — reserva ' + (invasorVivoPainel.reservaTexto || '?') + ', boss morto';
+      if (invasorVivoPainel.nomeInvasor) pausa += ' (' + invasorVivoPainel.nomeInvasor + ')';
+      if (invasorVivoPainel.releituraSeg) pausa += ', releitura ' + invasorVivoPainel.releituraSeg + 's';
+      return pausa;
+    }
+
+    var reserva = extrairReservaRyous();
+    var cache = lerCacheEstadoInvasor();
+    var reservaTxt = reserva !== null ? formatarNumeroBr(reserva) : '?';
+
+    if (invasorVivoPainel && !invasorVivoPainel.pausado) {
+      if (invasorVivoPainel.bossMorto && reserva !== null && reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+        var alta = 'ligada — boss morto, reserva ' + reservaTxt + ' (caçadas OK)';
+        if (invasorVivoPainel.nomeInvasor) alta += ' (' + invasorVivoPainel.nomeInvasor + ')';
+        return alta;
+      }
+      if (invasorVivoPainel.bossVivo) return 'ligada — boss vivo';
+    }
+
+    if (cache && cache.aguardandoProximoBoss && reserva !== null && reserva < RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+      var sync = 'PAUSADO — reserva ' + reservaTxt + ', boss morto';
+      if (cache.nomeInvasor) sync += ' (' + cache.nomeInvasor + ')';
+      return sync;
+    }
+
+    if (cache && cache.invasorDerrotado && reserva !== null && reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+      var ok = 'ligada — boss morto, reserva ' + reservaTxt + ' (caçadas OK)';
+      if (cache.nomeInvasor) ok += ' (' + cache.nomeInvasor + ')';
+      return ok;
+    }
+
+    if (cache && (cache.temBotao || cache.temTimer)) return 'ligada — boss vivo';
+    if (cache) return 'ligada — aguardando boss';
+    return 'ligada — lendo /invasor...';
+  }
+
+  function montarHtmlLinhaInvasorVivoPainel() {
+    var texto = descreverInvasorVivoPainel();
+    if (texto.indexOf('PAUSADO') === 0) {
+      return '<b style="color:#ff9999">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    return escHtmlPainelServer(texto);
+  }
+
+  function atualizarPainelInvasorVivo() {
+    exibirModoAbaServerID();
+  }
+
   function montarHtmlPainelServerID(el) {
     if (!el.dataset.botServerBase) {
       var primeira = (el.textContent || '').split('\n')[0];
@@ -1753,6 +1841,10 @@
     linhas.push(
       'WL cla: ' + escHtmlPainelServer(resumirTextoPainel(descreverWhitelistClaAtacar(), 40))
     );
+    linhas.push(
+      'HP min: ' + escHtmlPainelServer(String(Math.round(HP_MINIMO_ATACAR_RATIO * 100)) + '% (Ichiraku /status)')
+    );
+    linhas.push('InvasorVivo: ' + montarHtmlLinhaInvasorVivoPainel());
     linhas.push('v' + escHtmlPainelServer(SCRIPT_VERSAO));
 
     return linhas.join('<br>');
@@ -2216,20 +2308,34 @@
       tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva);
 
       if (!deveAplicarPausaInvasorVivo()) {
+        definirInvasorVivoPainelAtivo(estado, reserva);
         callback(false, { reserva: reserva, estado: estado, motivo: 'sem pausa invasor_vivo' });
         return;
       }
 
       if (reserva === null) {
+        definirInvasorVivoPainelAtivo(estado, reserva);
         callback(false, { motivo: 'reserva ilegivel' });
         return;
       }
       if (reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+        definirInvasorVivoPainelAtivo(estado, reserva);
         callback(false, { reserva: reserva, motivo: 'reserva >= 100k' });
         return;
       }
 
-      callback(!!(estado && estado.aguardandoProximoBoss), {
+      var pausado = !!(estado && estado.aguardandoProximoBoss);
+      if (pausado) {
+        definirInvasorVivoPainelPausado({
+          reserva: reserva,
+          reservaTexto: formatarNumeroBr(reserva),
+          estado: estado
+        });
+      } else {
+        definirInvasorVivoPainelAtivo(estado, reserva);
+      }
+
+      callback(pausado, {
         reserva: reserva,
         reservaTexto: formatarNumeroBr(reserva),
         estado: estado
@@ -2253,6 +2359,8 @@
     console.log('[InvasorVivo] Caçadas pausadas — reserva ' + (info && info.reservaTexto ? info.reservaTexto : '?') +
       extra + ' | aguardando proximo boss | releitura em ' + seg + 's');
 
+    definirInvasorVivoPainelPausado(info || {});
+
     setTimeout(function() {
       portaoRelatoriosAgendado = false;
       processarPortaoRelatoriosAtaque();
@@ -2261,6 +2369,13 @@
 
   function garantirCacadasLiberadaPorInvasor(contexto) {
     if (!cacadasPausadaPorInvasorSync()) return true;
+    var reserva = extrairReservaRyous();
+    var cache = lerCacheEstadoInvasor();
+    definirInvasorVivoPainelPausado({
+      reserva: reserva,
+      reservaTexto: reserva !== null ? formatarNumeroBr(reserva) : '?',
+      estado: cache
+    });
     console.log('[InvasorVivo] ' + contexto + ' bloqueado — reserva baixa, aguardando proximo boss.');
     window.location.href = URL_RELATORIOS_ATAQUE;
     return false;
