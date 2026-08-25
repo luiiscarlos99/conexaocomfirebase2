@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.88
+// @version      2.89
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.88';
-  var SCRIPT_ATUALIZADO = '25/08/2026 17:50';
+  var SCRIPT_VERSAO = '2.89';
+  var SCRIPT_ATUALIZADO = '25/08/2026 18:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -552,6 +552,7 @@
   var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
   var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
   var BOT_INVASOR_EVENTO_CACHE_KEY = 'BOT_INVASOR_EVENTO_CACHE';
+  var BOT_INVASOR_MORTO_AVISO_KEY = 'BOT_INVASOR_MORTO_AVISO';
   var HP_MINIMO_ATACAR_RATIO = 0.5;
   var RESERVA_RYOUS_MIN_INVASOR_VIVO = 100000;
   var INVASOR_VIVO_POLL_MS = 60000;
@@ -1559,7 +1560,7 @@
   function processarPortaoRelatoriosAtaque() {
     if (portaoRelatoriosAgendado) return true;
 
-    verificarPausaInvasorVivoCacadas(function(pausado, info) {
+    verificarInvasorNoPortao(function(pausado, info) {
       if (pausado) {
         agendarPortaoAguardandoInvasor(info);
         return;
@@ -2032,9 +2033,26 @@
     var temBotao = false;
     var temTimer = false;
     var derrotados = 0;
+    var nomeInvasor = '';
+
+    function extrairNomeInvasorDeDocumento(doc) {
+      if (!doc) return '';
+      var linhas = doc.querySelectorAll('tr');
+      for (var li = 0; li < linhas.length; li++) {
+        var tds = linhas[li].querySelectorAll('td');
+        if (tds.length < 2) continue;
+        var rotulo = (tds[0].textContent || '').trim().toLowerCase();
+        if (rotulo.indexOf('nome do inimigo') === -1) continue;
+        return (tds[1].textContent || '').replace(/^\|\s*/, '').trim();
+      }
+      var corpoDoc = doc.body ? (doc.body.textContent || '') : '';
+      var mNome = corpoDoc.match(/Nome do inimigo:\s*([^\n]+)/i);
+      return mNome ? mNome[1].trim() : '';
+    }
 
     try {
       var doc = new DOMParser().parseFromString(html, 'text/html');
+      nomeInvasor = extrairNomeInvasorDeDocumento(doc);
       var linhas = doc.querySelectorAll('tr');
       for (var i = 0; i < linhas.length; i++) {
         var textoLinha = linhas[i].textContent || '';
@@ -2063,6 +2081,8 @@
       temTimer = /inv_cd_timer_/i.test(texto);
       var m2 = texto.match(/Players derrotados:\s*([\d.]+)/i);
       if (m2) derrotados = parseInt(m2[1].replace(/\./g, ''), 10) || 0;
+      var mNome2 = texto.match(/Nome do inimigo:\s*([^\n<]+)/i);
+      if (mNome2) nomeInvasor = mNome2[1].trim();
     }
 
     var aguardandoProximoBoss = !!derrotado;
@@ -2078,8 +2098,79 @@
       temBotao: temBotao,
       temTimer: temTimer,
       derrotados: derrotados,
+      nomeInvasor: nomeInvasor,
       ts: Date.now()
     };
+  }
+
+  function normalizarNomeInvasor(nome) {
+    return String(nome || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function lerMapaAvisosInvasorMorto() {
+    try {
+      var raw = localStorage.getItem(BOT_INVASOR_MORTO_AVISO_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {};
+  }
+
+  function jaAvisouInvasorMortoReserva(conta, nomeInvasor) {
+    var mapa = lerMapaAvisosInvasorMorto();
+    var c = normalizarNomeCacadas(conta);
+    var n = normalizarNomeInvasor(nomeInvasor);
+    if (!c || !n) return false;
+    return !!(mapa[c] && mapa[c][n]);
+  }
+
+  function marcarAvisoInvasorMortoReserva(conta, nomeInvasor) {
+    var mapa = lerMapaAvisosInvasorMorto();
+    var c = normalizarNomeCacadas(conta);
+    var n = normalizarNomeInvasor(nomeInvasor);
+    if (!c || !n) return;
+    if (!mapa[c]) mapa[c] = {};
+    mapa[c][n] = Date.now();
+    try {
+      localStorage.setItem(BOT_INVASOR_MORTO_AVISO_KEY, JSON.stringify(mapa));
+    } catch (e) {}
+  }
+
+  function montarMensagemInvasorMortoReservaAlta(conta, nomeInvasor, reserva) {
+    return [
+      '**Invasor morto — reserva alta** — ' + conta,
+      'Inimigo: **' + nomeInvasor + '**',
+      'Reserva: ' + formatarNumeroBr(reserva) + ' (>= 100k)',
+      'Boss derrotado — aguardando proximo nascer.'
+    ].join('\n');
+  }
+
+  function tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva) {
+    if (obterModoAba() !== 'cacadas') return;
+    if (!estado || !estado.invasorDerrotado) return;
+    if (reserva === null || reserva < RESERVA_RYOUS_MIN_INVASOR_VIVO) return;
+
+    var nomeInvasor = (estado.nomeInvasor || '').trim();
+    if (!nomeInvasor) {
+      console.warn('[InvasorVivo] Boss morto e reserva alta, mas Nome do inimigo nao encontrado — sem Discord.');
+      return;
+    }
+
+    var conta = obterUsuarioExibicao();
+    if (jaAvisouInvasorMortoReserva(conta, nomeInvasor)) return;
+
+    var msg = montarMensagemInvasorMortoReservaAlta(conta, nomeInvasor, reserva);
+    console.log('[InvasorVivo] Enviando Discord — invasor morto, reserva alta: ' + nomeInvasor + ' (' + conta + ')');
+
+    enviarDiscordTexto(msg).then(function(ok) {
+      if (ok) {
+        marcarAvisoInvasorMortoReserva(conta, nomeInvasor);
+        console.log('[InvasorVivo] Aviso registrado — nao repete para ' + nomeInvasor + ' nesta conta.');
+      }
+    });
   }
 
   function obterEstadoInvasor(callback) {
@@ -2112,23 +2203,31 @@
     return !!(cache && cache.aguardandoProximoBoss);
   }
 
-  function verificarPausaInvasorVivoCacadas(callback) {
-    if (!deveAplicarPausaInvasorVivo()) {
+  function verificarInvasorNoPortao(callback) {
+    if (obterModoAba() !== 'cacadas') {
       callback(false, null);
       return;
     }
 
     var reserva = extrairReservaRyous();
-    if (reserva === null) {
-      callback(false, { motivo: 'reserva ilegivel' });
-      return;
-    }
-    if (reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
-      callback(false, { reserva: reserva, motivo: 'reserva >= 100k' });
-      return;
-    }
 
     obterEstadoInvasor(function(estado) {
+      tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva);
+
+      if (!deveAplicarPausaInvasorVivo()) {
+        callback(false, { reserva: reserva, estado: estado, motivo: 'sem pausa invasor_vivo' });
+        return;
+      }
+
+      if (reserva === null) {
+        callback(false, { motivo: 'reserva ilegivel' });
+        return;
+      }
+      if (reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+        callback(false, { reserva: reserva, motivo: 'reserva >= 100k' });
+        return;
+      }
+
       callback(!!(estado && estado.aguardandoProximoBoss), {
         reserva: reserva,
         reservaTexto: formatarNumeroBr(reserva),
@@ -2359,10 +2458,15 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     }).then(function(r) {
-      if (r.ok) console.log('[Discord] Aviso enviado.' + (silencioso ? ' (silencioso)' : ''));
-      else console.warn('[Discord] Falha ao enviar aviso:', r.status);
+      if (r.ok) {
+        console.log('[Discord] Aviso enviado.' + (silencioso ? ' (silencioso)' : ''));
+        return true;
+      }
+      console.warn('[Discord] Falha ao enviar aviso:', r.status);
+      return false;
     }).catch(function(e) {
       console.error('[Discord] Erro ao enviar aviso:', e);
+      return false;
     });
   }
 

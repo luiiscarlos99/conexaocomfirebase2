@@ -666,7 +666,21 @@
     return !checarInvasorDerrotadoExplicito();
   }
 
-  function publicarEstadoInvasorParaCacadas(invasorDerrotado, temBotao, temTimer, derrotados) {
+  function extrairNomeInvasorPagina() {
+    var linhas = document.querySelectorAll('tr');
+    for (var i = 0; i < linhas.length; i++) {
+      var tds = linhas[i].querySelectorAll('td');
+      if (tds.length < 2) continue;
+      var rotulo = (tds[0].textContent || '').trim().toLowerCase();
+      if (rotulo.indexOf('nome do inimigo') === -1) continue;
+      return (tds[1].textContent || '').replace(/^\|\s*/, '').trim();
+    }
+    var corpo = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+    var m = corpo.match(/Nome do inimigo:\s*([^\n]+)/i);
+    return m ? m[1].trim() : '';
+  }
+
+  function publicarEstadoInvasorParaCacadas(invasorDerrotado, temBotao, temTimer, derrotados, nomeInvasor) {
     try {
       var aguardandoProximoBoss = !!invasorDerrotado;
       if (!aguardandoProximoBoss && (temBotao || temTimer)) {
@@ -681,6 +695,7 @@
         temBotao: !!temBotao,
         temTimer: !!temTimer,
         derrotados: derrotados || 0,
+        nomeInvasor: nomeInvasor || extrairNomeInvasorPagina() || '',
         ts: Date.now()
       }));
     } catch (e) {}
@@ -1529,7 +1544,9 @@
         derrotados: derrotados
       });
 
-      publicarEstadoInvasorParaCacadas(invasorDerrotado, temBotao, temTimer, derrotados);
+      publicarEstadoInvasorParaCacadas(
+        invasorDerrotado, temBotao, temTimer, derrotados, extrairNomeInvasorPagina()
+      );
 
       if (invasorDerrotado) {
         return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
