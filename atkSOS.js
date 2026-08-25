@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.89
+// @version      2.90
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -2150,6 +2150,7 @@
 
   function tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva) {
     if (obterModoAba() !== 'cacadas') return;
+    if (estaEmContaGerenciada()) return;
     if (!estado || !estado.invasorDerrotado) return;
     if (reserva === null || reserva < RESERVA_RYOUS_MIN_INVASOR_VIVO) return;
 
