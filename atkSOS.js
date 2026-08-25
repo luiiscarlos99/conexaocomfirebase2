@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.85
+// @version      2.86
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -1722,7 +1722,7 @@
     return null;
   }
 
-  function removerNomeBlacklistCacadas(nome) {
+  function removerNomeBlacklistCacadas(nome, motivo) {
     if (!nome) return false;
 
     var lista = obterBlacklistCacadas();
@@ -1741,16 +1741,46 @@
       localStorage.setItem('BOT_BLACKLIST_CACADAS', nova.join(','));
     }
 
-    console.warn('[Blacklist] Removido da lista (ninja nao encontrado): ' + nome);
+    console.warn('[Blacklist] Removido da lista (' + (motivo || 'ninja nao encontrado') + '): ' + nome);
     console.log('[Blacklist] Lista atual: ' + descreverBlacklistCacadas());
     return true;
+  }
+
+  function resolverNomeAlvoCombate(dados) {
+    var nome = (dados && dados.inimigo && dados.inimigo !== '(desconhecido)') ? dados.inimigo : '';
+    if (!nome) {
+      var alvo = lerUltimoAlvo();
+      if (alvo && alvo.inimigo) nome = alvo.inimigo;
+    }
+    if (!nome) nome = obterAlvoNomeCacadasSessao();
+    return nome || '';
+  }
+
+  function processarBlacklistAposDerrotaCombate(dados) {
+    var nome = resolverNomeAlvoCombate(dados);
+    if (!nome) return;
+
+    var eraPorNome = cacadaAtualPorNomeBlacklist();
+    if (!eraPorNome) {
+      var norm = normalizarNomeCacadas(nome);
+      var lista = obterBlacklistCacadas();
+      for (var i = 0; i < lista.length; i++) {
+        if (normalizarNomeCacadas(lista[i]) === norm) {
+          eraPorNome = true;
+          break;
+        }
+      }
+    }
+    if (!eraPorNome) return;
+
+    removerNomeBlacklistCacadas(nome, 'derrota no combate');
   }
 
   function processarNinjaNaoEncontradoCacadas() {
     var nome = extrairNinjaNaoEncontradoCacadas();
     if (!nome) return false;
 
-    removerNomeBlacklistCacadas(nome);
+    removerNomeBlacklistCacadas(nome, 'ninja nao encontrado');
     limparEstadoModoCacadas();
     irParaPortaoRelatorios('Ninja nao encontrado: ' + nome, { rotacionarAutomacao: true });
     return true;
@@ -2335,6 +2365,10 @@
     dados.resumoCombate = parsed.texto;
     aplicarRyousDoResumoCombate(dados, parsed.texto, parsed.resultado);
     notificarCombateSeNecessario('combate', dados, parsed.resultado);
+
+    if (parsed.resultado === 'derrota') {
+      processarBlacklistAposDerrotaCombate(dados);
+    }
 
     console.log('[Combate] ' + parsed.resultado + ' detectado: ' + parsed.texto);
     irParaCacadasAposCombate('Resultado processado');
