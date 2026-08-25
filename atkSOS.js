@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.87
+// @version      2.88
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -185,7 +185,13 @@
 
   function descreverInvasorVivo() {
     return (invasorVivoFlagAtiva() ? 'ligada' : 'desligada') +
-      ' (reserva < 100k -> pausa caçadas ate proximo boss nascer)';
+      ' (reserva < 100k -> pausa ate proximo boss; ignora em conta gerenciada/automacao)';
+  }
+
+  function deveAplicarPausaInvasorVivo() {
+    if (!invasorVivoFlagAtiva() || obterModoAba() !== 'cacadas') return false;
+    if (estaEmContaGerenciada()) return false;
+    return true;
   }
 
   function aplicarParamsCacadasAtacar(rp) {
@@ -372,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.87';
-  var SCRIPT_ATUALIZADO = '25/08/2026 17:40';
+  var SCRIPT_VERSAO = '2.88';
+  var SCRIPT_ATUALIZADO = '25/08/2026 17:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2097,7 +2103,7 @@
   }
 
   function cacadasPausadaPorInvasorSync() {
-    if (!invasorVivoFlagAtiva() || obterModoAba() !== 'cacadas') return false;
+    if (!deveAplicarPausaInvasorVivo()) return false;
 
     var reserva = extrairReservaRyous();
     if (reserva === null || reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) return false;
@@ -2107,7 +2113,7 @@
   }
 
   function verificarPausaInvasorVivoCacadas(callback) {
-    if (!invasorVivoFlagAtiva() || obterModoAba() !== 'cacadas') {
+    if (!deveAplicarPausaInvasorVivo()) {
       callback(false, null);
       return;
     }
