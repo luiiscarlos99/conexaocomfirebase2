@@ -666,6 +666,26 @@
     return !checarInvasorDerrotadoExplicito();
   }
 
+  function publicarEstadoInvasorParaCacadas(invasorDerrotado, temBotao, temTimer, derrotados) {
+    try {
+      var aguardandoProximoBoss = !!invasorDerrotado;
+      if (!aguardandoProximoBoss && (temBotao || temTimer)) {
+        aguardandoProximoBoss = false;
+      } else if (!aguardandoProximoBoss && !temBotao && !temTimer) {
+        aguardandoProximoBoss = (derrotados || 0) === 0;
+      }
+
+      localStorage.setItem('BOT_INVASOR_EVENTO_CACHE', JSON.stringify({
+        aguardandoProximoBoss: aguardandoProximoBoss,
+        invasorDerrotado: !!invasorDerrotado,
+        temBotao: !!temBotao,
+        temTimer: !!temTimer,
+        derrotados: derrotados || 0,
+        ts: Date.now()
+      }));
+    } catch (e) {}
+  }
+
   // --- EXTRAIR QUANTIDADE DE PLAYERS DERROTADOS ---
   function obterPlayersDerrotados() {
     var textoCorpo = document.body ? document.body.innerText || document.body.textContent || '' : '';
@@ -1508,6 +1528,8 @@
         invasorDerrotado: invasorDerrotado,
         derrotados: derrotados
       });
+
+      publicarEstadoInvasorParaCacadas(invasorDerrotado, temBotao, temTimer, derrotados);
 
       if (invasorDerrotado) {
         return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
