@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.91
+// @version      2.92
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -185,7 +185,7 @@
 
   function descreverInvasorVivo() {
     return (invasorVivoFlagAtiva() ? 'ligada' : 'desligada') +
-      ' (reserva < 100k -> pausa ate proximo boss; ignora em conta gerenciada/automacao)';
+      ' (reserva < 100k -> pausa ate proximo boss; +3-6min no 1o ataque pos-respawn; ignora em conta gerenciada)';
   }
 
   function deveAplicarPausaInvasorVivo() {
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.91';
-  var SCRIPT_ATUALIZADO = '25/08/2026 18:05';
+  var SCRIPT_VERSAO = '2.92';
+  var SCRIPT_ATUALIZADO = '25/08/2026 19:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -557,7 +557,10 @@
   var HP_MINIMO_ATACAR_RATIO = 0.5;
   var RESERVA_RYOUS_MIN_INVASOR_VIVO = 100000;
   var INVASOR_VIVO_POLL_MS = 60000;
+  var INVASOR_POS_BOSS_ESPERA_MIN_MS = 3 * 60 * 1000;
+  var INVASOR_POS_BOSS_ESPERA_MAX_MS = 6 * 60 * 1000;
   var INVASOR_EVENTO_CACHE_TTL_MS = 90000;
+  var BOT_INVASOR_AGUARDANDO_BOSS_KEY = 'BOT_INVASOR_AGUARDANDO_BOSS';
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var BOT_CACADAS_MODO_KEY = 'BOT_CACADAS_MODO';
@@ -1564,7 +1567,12 @@
 
     verificarInvasorNoPortao(function(pausado, info) {
       if (pausado) {
+        marcarAguardandoBossMorto();
         agendarPortaoAguardandoInvasor(info);
+        return;
+      }
+      if (deveAplicarEsperaPosBossAtivo(info)) {
+        agendarEsperaPosBossAtivo(info);
         return;
       }
       processarPortaoRelatoriosAtaqueContinuar();
@@ -1753,6 +1761,13 @@
       return 'ligada (ignorada — conta gerenciada)';
     }
 
+    if (invasorVivoPainel && invasorVivoPainel.posBossEspera) {
+      var pos = 'ESPERA pos-respawn — boss vivo, 1o ataque em ~' +
+        Math.max(1, Math.round((invasorVivoPainel.posBossEsperaSeg || 0) / 60)) + 'min';
+      if (invasorVivoPainel.nomeInvasor) pos += ' (' + invasorVivoPainel.nomeInvasor + ')';
+      return pos;
+    }
+
     if (invasorVivoPainel && invasorVivoPainel.pausado) {
       var pausa = 'PAUSADO — reserva ' + (invasorVivoPainel.reservaTexto || '?') + ', boss morto';
       if (invasorVivoPainel.nomeInvasor) pausa += ' (' + invasorVivoPainel.nomeInvasor + ')';
@@ -1794,6 +1809,9 @@
     var texto = descreverInvasorVivoPainel();
     if (texto.indexOf('PAUSADO') === 0) {
       return '<b style="color:#ff9999">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    if (texto.indexOf('ESPERA pos-respawn') === 0) {
+      return '<b style="color:#ffcc66">' + escHtmlPainelServer(texto) + '</b>';
     }
     return escHtmlPainelServer(texto);
   }
@@ -2341,6 +2359,75 @@
         estado: estado
       });
     });
+  }
+
+  function marcarAguardandoBossMorto() {
+    try { sessionStorage.setItem(BOT_INVASOR_AGUARDANDO_BOSS_KEY, '1'); } catch (e) {}
+  }
+
+  function estaAguardandoBossMorto() {
+    try { return sessionStorage.getItem(BOT_INVASOR_AGUARDANDO_BOSS_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function consumirAguardandoBossMorto() {
+    try {
+      if (sessionStorage.getItem(BOT_INVASOR_AGUARDANDO_BOSS_KEY) === '1') {
+        sessionStorage.removeItem(BOT_INVASOR_AGUARDANDO_BOSS_KEY);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function sortearEsperaPosBossAtivo() {
+    return Math.floor(
+      Math.random() * (INVASOR_POS_BOSS_ESPERA_MAX_MS - INVASOR_POS_BOSS_ESPERA_MIN_MS + 1)
+    ) + INVASOR_POS_BOSS_ESPERA_MIN_MS;
+  }
+
+  function deveAplicarEsperaPosBossAtivo(info) {
+    if (!deveAplicarPausaInvasorVivo()) return false;
+    if (!estaAguardandoBossMorto()) return false;
+
+    var reserva = info && info.reserva !== undefined ? info.reserva : extrairReservaRyous();
+    if (reserva === null || reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) return false;
+
+    var estado = info && info.estado;
+    if (!estado || estado.aguardandoProximoBoss) return false;
+
+    return true;
+  }
+
+  function agendarEsperaPosBossAtivo(info) {
+    if (portaoRelatoriosAgendado) return;
+    portaoRelatoriosAgendado = true;
+    consumirAguardandoBossMorto();
+
+    var waitMs = sortearEsperaPosBossAtivo();
+    var seg = Math.round(waitMs / 1000);
+    var minTxt = (waitMs / 60000).toFixed(1).replace('.', ',');
+    var estado = info && info.estado ? info.estado : null;
+    var nome = estado && estado.nomeInvasor ? estado.nomeInvasor : '';
+
+    console.log(
+      '[InvasorVivo] Boss ativo — espera extra pos-respawn ' + minTxt + 'min (' + seg + 's) antes do 1o ataque' +
+      (nome ? ' | ' + nome : '')
+    );
+
+    definirInvasorVivoPainel({
+      pausado: false,
+      posBossEspera: true,
+      posBossEsperaSeg: seg,
+      reservaTexto: info && info.reservaTexto ? info.reservaTexto : null,
+      nomeInvasor: nome
+    });
+
+    setTimeout(function() {
+      portaoRelatoriosAgendado = false;
+      definirInvasorVivoPainelAtivo(estado, info && info.reserva);
+      processarPortaoRelatoriosAtaqueContinuar();
+    }, waitMs);
   }
 
   function agendarPortaoAguardandoInvasor(info) {
