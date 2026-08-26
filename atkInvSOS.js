@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.4
-// @description  Automação do Invasor: last hit scout, data (+3min) ou sorteio (36k-38k aleatorio).
+// @version      7.5
+// @description  Automação do Invasor: last hit sorteio (36k-38k, padrao), scout ou data (+3min).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -173,9 +173,9 @@
     if (modo === 'data') return 'data (+3min pos-janela)';
     if (modo === 'sorteio') {
       return 'sorteio (' + formatarNumeroInvasor(obterLastHitSorteioMin()) + '-' +
-        formatarNumeroInvasor(obterLastHitSorteioMax()) + ' aleatorio)';
+        formatarNumeroInvasor(obterLastHitSorteioMax()) + ' aleatorio, padrao)';
     }
-    return 'scout (derrotados, padrao)';
+    return 'scout (derrotados)';
   }
 
   var COMANDO_LASTHIT_SCOUT = 'botLastHitScout()';
@@ -193,7 +193,7 @@
 
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
-  var LASTHIT_MODO_DEFAULT = 'scout';
+  var LASTHIT_MODO_DEFAULT = 'sorteio';
   var LASTHIT_SORTEIO_MIN_DEFAULT = 36000;
   var LASTHIT_SORTEIO_MAX_DEFAULT = 38000;
 
@@ -383,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.4';
-  var SCRIPT_ATUALIZADO = '24/08/2026 21:55';
+  var SCRIPT_VERSAO = '7.5';
+  var SCRIPT_ATUALIZADO = '25/08/2026 23:00';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
