@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.93
-// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
+// @version      2.94
+// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5/12 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.93';
-  var SCRIPT_ATUALIZADO = '26/08/2026 00:00';
+  var SCRIPT_VERSAO = '2.94';
+  var SCRIPT_ATUALIZADO = '26/08/2026 07:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -542,7 +542,8 @@
   var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos — reload se ainda sem resposta
   var TEMPO_OCR_AUTO_CAPTCHA = 300000; // 5 min — 1a tentativa OCR auto
   var CAPTCHA_OCR_AUTO_INTERVALO_MS = 120000; // 2 min entre tentativas
-  var CAPTCHA_OCR_AUTO_MAX_TENTATIVAS = 3;
+  var CAPTCHA_OCR_AUTO_MAX_NORMAL = 5;
+  var CAPTCHA_OCR_AUTO_MAX_GERENCIADA = 12;
   var BOT_CAPTCHA_OCR_AUTO_KEY = 'BOT_CAPTCHA_OCR_AUTO_TENTATIVAS';
   var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
@@ -3067,6 +3068,16 @@
     return 'comandos/' + CODIGO_SERVIDOR + '/resposta';
   }
 
+  function obterMaxTentativasOcrAutoCaptcha() {
+    return estaEmContaGerenciada() ? CAPTCHA_OCR_AUTO_MAX_GERENCIADA : CAPTCHA_OCR_AUTO_MAX_NORMAL;
+  }
+
+  function descreverLimiteOcrAutoCaptcha() {
+    var max = obterMaxTentativasOcrAutoCaptcha();
+    var tipo = estaEmContaGerenciada() ? 'conta gerenciada' : 'conta normal';
+    return max + ' tentativas (' + tipo + ')';
+  }
+
   function lerTentativasOcrAutoCaptcha() {
     try {
       var n = parseInt(sessionStorage.getItem(BOT_CAPTCHA_OCR_AUTO_KEY), 10);
@@ -3083,10 +3094,11 @@
 
   function logOcrAutoNoConsole(origem) {
     var feitas = lerTentativasOcrAutoCaptcha();
-    var max = CAPTCHA_OCR_AUTO_MAX_TENTATIVAS;
+    var max = obterMaxTentativasOcrAutoCaptcha();
     var restantes = Math.max(0, max - feitas);
     var linha = '[Script Caçadas] OCR auto: ' + feitas + '/' + max +
-      ' tentativas (' + restantes + ' restantes)';
+      ' tentativas (' + restantes + ' restantes, ' +
+      (estaEmContaGerenciada() ? 'gerenciada' : 'normal') + ')';
     if (origem) linha += ' — ' + origem;
     console.log(linha);
     console.log(COMANDO_ZERAR_OCR_AUTO);
@@ -3142,9 +3154,10 @@
   function tentarOcrAutomaticoCaptcha() {
     if (captchaRespostaProcessando) return;
 
+    var max = obterMaxTentativasOcrAutoCaptcha();
     var feitas = lerTentativasOcrAutoCaptcha();
-    if (feitas >= CAPTCHA_OCR_AUTO_MAX_TENTATIVAS) {
-      console.warn('[Captcha] OCR auto — limite de ' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ' tentativas.');
+    if (feitas >= max) {
+      console.warn('[Captcha] OCR auto — limite de ' + max + ' tentativas.');
       logStatusOcrAutoCaptcha('limite atingido');
       return;
     }
@@ -3152,7 +3165,9 @@
     var tentativa = incrementarTentativasOcrAutoCaptcha();
     logStatusOcrAutoCaptcha('tentativa ' + tentativa);
     var link = montarLinkPainelCaptcha({ auto: true });
-    console.warn('[Captcha] OCR automatico ' + tentativa + '/' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ': ' + link);
+    console.warn('[Captcha] OCR automatico ' + tentativa + '/' + max + ': ' + link);
+
+    notificarDiscordCaptchaOcr('tentativa OCR ' + tentativa + '/' + max);
 
     var novaAba = null;
     try {
@@ -3179,7 +3194,8 @@
     }
 
     var feitas = lerTentativasOcrAutoCaptcha();
-    if (feitas >= CAPTCHA_OCR_AUTO_MAX_TENTATIVAS || captchaRespostaProcessando) {
+    var max = obterMaxTentativasOcrAutoCaptcha();
+    if (feitas >= max || captchaRespostaProcessando) {
       return;
     }
 
@@ -3187,17 +3203,17 @@
     var minutos = (delay / 60000).toFixed(1);
 
     console.log('[Captcha] Proxima tentativa OCR auto em ' + minutos + ' min (' +
-      (feitas + 1) + '/' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ')...');
+      (feitas + 1) + '/' + max + ')...');
 
     timerCaptchaOcrAuto = setTimeout(function() {
       timerCaptchaOcrAuto = null;
       if (captchaRespostaProcessando) return;
-      if (lerTentativasOcrAutoCaptcha() >= CAPTCHA_OCR_AUTO_MAX_TENTATIVAS) return;
+      if (lerTentativasOcrAutoCaptcha() >= obterMaxTentativasOcrAutoCaptcha()) return;
 
       tentarOcrAutomaticoCaptcha();
 
       if (!captchaRespostaProcessando &&
-          lerTentativasOcrAutoCaptcha() < CAPTCHA_OCR_AUTO_MAX_TENTATIVAS) {
+          lerTentativasOcrAutoCaptcha() < obterMaxTentativasOcrAutoCaptcha()) {
         agendarProximaTentativaOcrAuto();
       }
     }, delay);
@@ -3206,8 +3222,8 @@
   function agendarTimersCaptcha() {
     limparTimersCaptcha();
 
-    console.log('[Captcha] OCR auto: ate ' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS +
-      ' tentativas (1a em ' + (TEMPO_OCR_AUTO_CAPTCHA / 60000) + ' min) | reload em ' +
+    console.log('[Captcha] OCR auto: ate ' + descreverLimiteOcrAutoCaptcha() +
+      ' (1a em ' + (TEMPO_OCR_AUTO_CAPTCHA / 60000) + ' min) | reload em ' +
       (TEMPO_TIMEOUT_CAPTCHA / 60000) + ' min...');
 
     agendarProximaTentativaOcrAuto();
@@ -3295,6 +3311,11 @@
   }
 
   function montarDescricaoDiscordCaptcha() {
+    var max = obterMaxTentativasOcrAutoCaptcha();
+    var feitas = lerTentativasOcrAutoCaptcha();
+    var restantes = Math.max(0, max - feitas);
+    var tipo = estaEmContaGerenciada() ? 'conta gerenciada' : 'conta normal';
+
     return [
       'Verificacao de seguranca — **a imagem abaixo e a valida** (salva no Firebase).',
       'O navegador pode mostrar numeros diferentes; resolva pela imagem desta mensagem.',
@@ -3302,10 +3323,21 @@
       '**Conta:** ' + obterUsuarioExibicao(),
       '**Codigo:** `' + CODIGO_SERVIDOR + '`',
       '',
-      'OCR automatico: ate ' + CAPTCHA_OCR_AUTO_MAX_TENTATIVAS + ' tentativas (1a aos 5 min).',
+      '**OCR automatico:** ' + feitas + '/' + max + ' tentativas (' + restantes + ' restantes, ' + tipo + ')',
+      'Limite: ' + max + ' (' + tipo + ') | 1a tentativa aos 5 min, depois a cada 2 min.',
       '',
       '[**Abrir painel (OCR + confirmar)**](' + montarLinkPainelCaptcha() + ')'
     ].join('\n');
+  }
+
+  function notificarDiscordCaptchaOcr(origem) {
+    capturarBlobCaptcha(function(blob) {
+      if (!blob) {
+        console.warn('[Captcha] Discord OCR — imagem indisponivel (' + (origem || '?') + ').');
+        return;
+      }
+      enviarDiscordCaptchaBlob(blob, montarDescricaoDiscordCaptcha());
+    });
   }
 
   function enviarDiscordCaptchaBlob(blob, descricao, callback) {
@@ -3318,7 +3350,8 @@
         color: corDecimal,
         timestamp: new Date().toISOString(),
         image: { url: 'attachment://captcha.png' },
-        footer: { text: 'Usuario: ' + obterUsuarioExibicao() + ' | ' + CODIGO_SERVIDOR }
+        footer: { text: 'Usuario: ' + obterUsuarioExibicao() + ' | ' + CODIGO_SERVIDOR +
+          ' | OCR ' + lerTentativasOcrAutoCaptcha() + '/' + obterMaxTentativasOcrAutoCaptcha() }
       }]
     };
 
@@ -3365,7 +3398,7 @@
             .then(function() {
               database.ref('codigo_servidor').set(CODIGO_SERVIDOR).catch(function() {});
               iniciarEscutaFirebaseCaptcha(database);
-              enviarDiscordCaptchaBlob(blob, montarDescricaoDiscordCaptcha());
+              notificarDiscordCaptchaOcr('captcha detectado');
             })
             .catch(function(err) {
               console.error('[Captcha] Erro ao salvar Firebase:', err);
