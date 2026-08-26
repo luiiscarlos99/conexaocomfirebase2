@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.92
+// @version      2.93
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5min) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.92';
-  var SCRIPT_ATUALIZADO = '25/08/2026 19:00';
+  var SCRIPT_VERSAO = '2.93';
+  var SCRIPT_ATUALIZADO = '26/08/2026 00:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1126,9 +1126,27 @@
 
   function garantirHpParaAtacar(contexto) {
     if (obterModoAba() !== 'cacadas') return true;
-    if (curarHpAtivo()) return false;
 
     var hp = obterStatusHp();
+    var url = window.location.href || '';
+    var naPaginaStatus = url.indexOf('status') !== -1;
+
+    if (curarHpAtivo()) {
+      if (naPaginaStatus) return false;
+      if (hp.ok && hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+        limparCurarHpAtivo();
+        return true;
+      }
+      if (hp.ok && hp.pct < HP_MINIMO_ATACAR_RATIO) {
+        console.log('[HP] Cura pendente — retomando /status (' + contexto + ') — ' + formatarHpLog(hp));
+        redirecionarParaCurarHp(contexto);
+        return false;
+      }
+      console.warn('[HP] Flag de cura ativa sem HP legivel — limpando (' + contexto + ')');
+      limparCurarHpAtivo();
+      hp = obterStatusHp();
+    }
+
     if (!hp.ok) {
       console.warn('[HP] Nao foi possivel ler HP — ' + contexto + ' (seguindo sem bloqueio).');
       return true;
@@ -1540,8 +1558,29 @@
     try { sessionStorage.removeItem(BOT_CACADAS_GATE_KEY); } catch (e) {}
   }
 
+  function agendarRetentativaPortao(motivo, delayMs) {
+    if (portaoRelatoriosAgendado) return;
+    portaoRelatoriosAgendado = true;
+    var seg = Math.round((delayMs || 5000) / 1000);
+    console.log('[Caçadas] Portao — ' + motivo + ' | nova tentativa em ' + seg + 's...');
+    setTimeout(function() {
+      portaoRelatoriosAgendado = false;
+      processarPortaoRelatoriosAtaque();
+    }, delayMs || 5000);
+  }
+
   function irParaCacadasLiberado(motivo) {
-    if (!garantirHpParaAtacar('portao -> caçadas (' + motivo + ')')) return;
+    var urlAntes = window.location.href;
+    if (!garantirHpParaAtacar('portao -> caçadas (' + motivo + ')')) {
+      setTimeout(function() {
+        var aindaNoPortao = window.location.href === urlAntes && (
+          window.location.href.indexOf('relatorios_ataque') !== -1 ||
+          !!document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]')
+        );
+        if (aindaNoPortao) agendarRetentativaPortao('bloqueio HP/cura no portao');
+      }, 4000);
+      return;
+    }
     if (!garantirCacadasLiberadaPorInvasor('portao -> caçadas (' + motivo + ')')) return;
     console.log('[Caçadas] ' + motivo + ' — redirecionando para caçadas.');
     liberarGateCacadas();
@@ -1820,6 +1859,23 @@
     exibirModoAbaServerID();
   }
 
+  function descreverHpPainel() {
+    var hp = obterStatusHp();
+    if (!hp.ok) return '?';
+    var pct = Math.round(hp.pct * 100);
+    var txt = hp.current + '/' + hp.max + ' (' + pct + '%)';
+    if (pct < Math.round(HP_MINIMO_ATACAR_RATIO * 100)) return txt + ' — CURAR';
+    return txt;
+  }
+
+  function montarHtmlLinhaHpPainel() {
+    var texto = descreverHpPainel();
+    if (texto.indexOf('CURAR') !== -1) {
+      return '<b style="color:#ff9999">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    return escHtmlPainelServer(texto);
+  }
+
   function montarHtmlPainelServerID(el) {
     if (!el.dataset.botServerBase) {
       var primeira = (el.textContent || '').split('\n')[0];
@@ -1859,6 +1915,7 @@
     linhas.push(
       'WL cla: ' + escHtmlPainelServer(resumirTextoPainel(descreverWhitelistClaAtacar(), 40))
     );
+    linhas.push('HP: ' + montarHtmlLinhaHpPainel());
     linhas.push(
       'HP min: ' + escHtmlPainelServer(String(Math.round(HP_MINIMO_ATACAR_RATIO * 100)) + '% (Ichiraku /status)')
     );
