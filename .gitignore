@@ -17,3 +17,6 @@ scripts/discord-pc-ligado.config.ps1
 
 # Config local das contas do jogo (senhas)
 scripts/contas-jogo.config.ps1
+
+# Amostras locais de captcha (templates ja extraidos no OCR do painel)
+captcha SOS/
