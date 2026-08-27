@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.96
+// @version      2.97
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5/12 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.96';
-  var SCRIPT_ATUALIZADO = '27/08/2026 11:25';
+  var SCRIPT_VERSAO = '2.97';
+  var SCRIPT_ATUALIZADO = '27/08/2026 15:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1465,20 +1465,50 @@
       iv.minutos + ')';
   }
 
+  function textoCelulaRelatorio(celula) {
+    return String((celula && (celula.innerText || celula.textContent)) || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function matchTextoDataHoraRelatorio(texto) {
+    var s = String(texto || '').trim();
+    var comAno = s.match(/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/);
+    if (comAno) return comAno[1];
+    var semAno = s.match(/(\d{2}\/\d{2}\s+\d{2}:\d{2}(?::\d{2})?)/);
+    return semAno ? semAno[1] : null;
+  }
+
   function parseDataHoraRelatorioAtaque(texto) {
-    var m = String(texto || '').trim().match(/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/);
+    var s = String(texto || '').trim();
+    var agora = new Date();
+    var m = s.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (m) {
+      var dtAno = new Date(
+        parseInt(m[3], 10),
+        parseInt(m[2], 10) - 1,
+        parseInt(m[1], 10),
+        parseInt(m[4], 10),
+        parseInt(m[5], 10),
+        m[6] ? parseInt(m[6], 10) : 0,
+        0
+      );
+      return isNaN(dtAno.getTime()) ? null : dtAno.getTime();
+    }
+
+    m = s.match(/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
     if (!m) return null;
 
     var dia = parseInt(m[1], 10);
     var mes = parseInt(m[2], 10) - 1;
     var hora = parseInt(m[3], 10);
     var minuto = parseInt(m[4], 10);
-    var agora = new Date();
+    var segundo = m[5] ? parseInt(m[5], 10) : 0;
     var ano = agora.getFullYear();
-    var dt = new Date(ano, mes, dia, hora, minuto, 0, 0);
+    var dt = new Date(ano, mes, dia, hora, minuto, segundo, 0);
 
     if (dt.getTime() > agora.getTime() + 86400000) {
-      dt = new Date(ano - 1, mes, dia, hora, minuto, 0, 0);
+      dt = new Date(ano - 1, mes, dia, hora, minuto, segundo, 0);
     }
     if (dt.getTime() > agora.getTime() + 3600000) {
       dt.setDate(dt.getDate() - 1);
@@ -1487,32 +1517,107 @@
     return dt.getTime();
   }
 
-  function extrairUltimoAtaqueRelatorios() {
+  function obterTabelaRelatoriosAtaque() {
     var col = document.getElementById('col_direita') || document;
-    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
+    var linhas = col.querySelectorAll('tr');
 
+    for (var i = 0; i < linhas.length; i++) {
+      var celulas = linhas[i].cells;
+      if (!celulas || celulas.length < 2) continue;
+
+      var idxAtacante = -1;
+      var idxData = -1;
+      for (var c = 0; c < celulas.length; c++) {
+        var t = normalizarTextoCombate(textoCelulaRelatorio(celulas[c]));
+        if (t === 'atacante') idxAtacante = c;
+        if (t === 'data') idxData = c;
+      }
+
+      if (idxAtacante === -1 || idxData === -1) continue;
+
+      var tabela = linhas[i].closest ? linhas[i].closest('table') : linhas[i].parentNode;
+      if (tabela && tabela.tagName && tabela.tagName.toLowerCase() !== 'table') {
+        tabela = tabela.parentNode;
+      }
+      if (!tabela || !tabela.rows) continue;
+
+      return { tabela: tabela, idxData: idxData, idxAtacante: idxAtacante };
+    }
+
+    return null;
+  }
+
+  function coletarRelatoriosAtaque() {
+    var col = document.getElementById('col_direita') || document;
+    var lista = [];
+    var vistos = {};
+
+    function adicionar(item) {
+      if (!item) return;
+      var temTs = item.ts !== null && item.ts !== undefined && !isNaN(item.ts);
+      if (!temTs && !item.vitima) return;
+      var chave = String(temTs ? item.ts : '') + '|' + (item.dataTexto || '') + '|' + (item.vitima || '');
+      if (vistos[chave]) return;
+      vistos[chave] = true;
+      lista.push(item);
+    }
+
+    var infoTabela = obterTabelaRelatoriosAtaque();
+    if (infoTabela) {
+      var rows = infoTabela.tabela.rows;
+      for (var r = 0; r < rows.length; r++) {
+        var celulas = rows[r].cells;
+        if (!celulas || celulas.length <= infoTabela.idxData) continue;
+        if (normalizarTextoCombate(textoCelulaRelatorio(celulas[infoTabela.idxAtacante])) === 'atacante') {
+          continue;
+        }
+
+        var dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(celulas[infoTabela.idxData]));
+        if (!dataTexto) dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rows[r]));
+        if (!dataTexto) continue;
+
+        var ts = parseDataHoraRelatorioAtaque(dataTexto);
+        var resumo = textoCelulaRelatorio(rows[r]);
+        adicionar({
+          ts: ts,
+          dataTexto: dataTexto,
+          vitima: extrairVitimaDoRelatorioAtaque(resumo),
+          resumo: resumo
+        });
+      }
+    }
+
+    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
     for (var i = 0; i < links.length; i++) {
       var href = links[i].getAttribute('href') || '';
       if (href.indexOf('ver=') === -1) continue;
 
       var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
-      var textoNorm = normalizarTextoCombate(texto);
-      if (textoNorm.indexOf('voce atacou') === -1) continue;
+      var matchData = matchTextoDataHoraRelatorio(texto);
+      var vitima = extrairVitimaDoRelatorioAtaque(texto);
+      if (!matchData && !vitima) continue;
 
-      var matchData = texto.match(/(\d{2}\/\d{2}\s+\d{2}:\d{2})/);
-      if (!matchData) continue;
-
-      var ts = parseDataHoraRelatorioAtaque(matchData[1]);
-      if (ts === null) continue;
-
-      return {
-        ts: ts,
-        dataTexto: matchData[1],
+      adicionar({
+        ts: matchData ? parseDataHoraRelatorioAtaque(matchData) : null,
+        dataTexto: matchData,
+        vitima: vitima,
         resumo: texto
-      };
+      });
     }
 
-    return null;
+    return lista;
+  }
+
+  function extrairUltimoAtaqueRelatorios() {
+    var lista = coletarRelatoriosAtaque();
+    var melhor = null;
+
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i].ts === null || lista[i].ts === undefined || isNaN(lista[i].ts)) continue;
+      if (!melhor || lista[i].ts > melhor.ts) melhor = lista[i];
+    }
+
+    return melhor;
   }
 
   function extrairVitimaDoRelatorioAtaque(texto) {
@@ -1527,27 +1632,18 @@
   }
 
   function extrairAtaquesRelatorios() {
-    var col = document.getElementById('col_direita') || document;
-    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
+    var lista = coletarRelatoriosAtaque();
     var ataques = [];
 
-    for (var i = 0; i < links.length; i++) {
-      var href = links[i].getAttribute('href') || '';
-      if (href.indexOf('ver=') === -1) continue;
-
-      var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
-      var vitima = extrairVitimaDoRelatorioAtaque(texto);
-      if (!vitima) continue;
-
-      var matchData = texto.match(/(\d{2}\/\d{2}\s+\d{2}:\d{2})/);
-      var ts = matchData ? parseDataHoraRelatorioAtaque(matchData[1]) : null;
-
+    for (var i = 0; i < lista.length; i++) {
+      var item = lista[i];
+      if (!item.vitima) continue;
       ataques.push({
-        ts: ts,
-        vitima: vitima,
-        vitimaNorm: normalizarNomeCacadas(vitima),
-        dataTexto: matchData ? matchData[1] : null,
-        resumo: texto
+        ts: item.ts,
+        vitima: item.vitima,
+        vitimaNorm: normalizarNomeCacadas(item.vitima),
+        dataTexto: item.dataTexto,
+        resumo: item.resumo
       });
     }
 
@@ -1715,7 +1811,7 @@
     if (ultimo) {
       console.log('[Caçadas] Ultimo ataque: ' + ultimo.dataTexto + ' — ' + ultimo.resumo);
     } else {
-      console.warn('[Caçadas] Nenhum relatorio "Voce atacou" encontrado.');
+      console.warn('[Caçadas] Nenhum relatorio de ataque com data encontrado.');
     }
 
     console.log('[Caçadas] Portao — ' + decisao.motivo);
