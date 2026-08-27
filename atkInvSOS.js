@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.5
-// @description  Automação do Invasor: last hit sorteio (36k-38k, padrao), scout ou data (+3min).
+// @version      7.6
+// @description  Automação do Invasor: last hit sorteio (32k-33k, padrao), scout ou data (+3min).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -194,8 +194,8 @@
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
   var LASTHIT_MODO_DEFAULT = 'sorteio';
-  var LASTHIT_SORTEIO_MIN_DEFAULT = 36000;
-  var LASTHIT_SORTEIO_MAX_DEFAULT = 38000;
+  var LASTHIT_SORTEIO_MIN_DEFAULT = 32000;
+  var LASTHIT_SORTEIO_MAX_DEFAULT = 33000;
 
   function extrairModoDeUrlString(urlStr) {
     try {
@@ -383,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.5';
-  var SCRIPT_ATUALIZADO = '25/08/2026 23:00';
+  var SCRIPT_VERSAO = '7.6';
+  var SCRIPT_ATUALIZADO = '27/08/2026 11:30';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
