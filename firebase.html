@@ -330,8 +330,6 @@
   <!-- Firebase JavaScript SDK v8 -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCn92W9swCRMJfomc30lSn4GckgA2Esjm0",
@@ -380,7 +378,6 @@
     var SOS_GRID_W = 16;
     var SOS_GRID_H = 24;
     var SOS_SCALE = 1;
-    var SOS_TESS_SCALE = 6;
     var SOS_MIN_AREA_COMPONENTE = 4;
 
     var SOS_DIGIT_TEMPLATES = {
@@ -804,24 +801,6 @@
       };
     }
 
-    function gridParaCanvasAmpliado(grid, escala) {
-      const c = document.createElement('canvas');
-      c.width = SOS_GRID_W * escala;
-      c.height = SOS_GRID_H * escala;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.fillStyle = '#000';
-      for (let y = 0; y < SOS_GRID_H; y++) {
-        for (let x = 0; x < SOS_GRID_W; x++) {
-          if (grid[y][x] === '1') {
-            ctx.fillRect(x * escala, y * escala, escala, escala);
-          }
-        }
-      }
-      return c;
-    }
-
     function canvasMascaraSos(img) {
       const base = escalaImagemCaptcha(img, SOS_SCALE);
       const imgData = base.ctx.getImageData(0, 0, base.w, base.h);
@@ -844,20 +823,7 @@
       return { canvas: out, mask: mask, w: base.w, h: base.h };
     }
 
-    async function classificarGridComTesseract(grid) {
-      const canvas = gridParaCanvasAmpliado(grid, 5);
-      const psms = ['10', '8'];
-      for (let i = 0; i < psms.length; i++) {
-        try {
-          const parsed = await reconhecerCanvas(canvas, psms[i]);
-          const ch = extrairDigitosOcr(parsed.digits).charAt(0);
-          if (ch) return { char: ch, score: Math.max(0.48, parsed.confidence / 100) };
-        } catch (e) {}
-      }
-      return null;
-    }
-
-    async function ocrSosGame(img) {
+    function ocrSosGame(img) {
       const proc = canvasMascaraSos(img);
       const segmentos = segmentarCincoDigitosSos(proc.mask, proc.w, proc.h);
       if (!segmentos || segmentos.length !== 5) {
@@ -867,536 +833,32 @@
 
       let codigo = '';
       let confTotal = 0;
-      const posicoes = [];
 
       for (let i = 0; i < 5; i++) {
         const grid = extrairGridDigitoSos(proc.mask, proc.w, proc.h, segmentos[i]);
         if (!grid) return null;
 
-        let cls = classificarGridDigitoSos(grid);
-
-        if (cls.score < 0.55 || (cls.scoreSegundo > 0 && cls.score - cls.scoreSegundo < 0.05)) {
-          const tesseract = await classificarGridComTesseract(grid);
-          if (tesseract && tesseract.score > cls.score) {
-            cls = { char: tesseract.char, score: tesseract.score, segundo: cls.segundo, scoreSegundo: cls.score };
-          }
-        }
-
+        const cls = classificarGridDigitoSos(grid);
         if (!cls.char) return null;
         codigo += cls.char;
         confTotal += cls.score;
-        posicoes.push({
-          char: cls.char,
-          conf: cls.score,
-          alternativas: cls.segundo ? [{ char: cls.segundo, conf: cls.scoreSegundo }] : []
-        });
       }
 
       return {
         digits: codigo,
         confidence: (confTotal / 5) * 100,
-        posicoes: posicoes,
-        psm: 'sos-template',
-        variantId: 'sos-game',
-        peso: 45,
         metodo: 'sos-template'
       };
     }
 
-    function obterCinza(r, g, b) {
-      return Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    }
-
-    function calcularOtsuThreshold(cinzas) {
-      const hist = new Array(256).fill(0);
-      for (let i = 0; i < cinzas.length; i++) hist[cinzas[i]]++;
-
-      const total = cinzas.length;
-      let sum = 0;
-      for (let i = 0; i < 256; i++) sum += i * hist[i];
-
-      let sumB = 0;
-      let wB = 0;
-      let maxVar = 0;
-      let threshold = 128;
-
-      for (let t = 0; t < 256; t++) {
-        wB += hist[t];
-        if (wB === 0) continue;
-        const wF = total - wB;
-        if (wF === 0) break;
-
-        sumB += t * hist[t];
-        const mB = sumB / wB;
-        const mF = (sum - sumB) / wF;
-        const varBetween = wB * wF * (mB - mF) * (mB - mF);
-
-        if (varBetween > maxVar) {
-          maxVar = varBetween;
-          threshold = t;
-        }
-      }
-
-      return threshold;
-    }
-
-    function aplicarMascaraPixels(ctx, w, h, fnPixel) {
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const v = fnPixel(d[i], d[i + 1], d[i + 2]);
-        d[i] = d[i + 1] = d[i + 2] = v;
-        d[i + 3] = 255;
-      }
-      ctx.putImageData(imgData, 0, 0);
-      return ctx.canvas;
-    }
-
-    function variantAmarelo(ctx, w, h) {
-      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        return ehPixelDigitoSos(r, g, b) ? 0 : 255;
-      });
-    }
-
-    function variantOtsu(ctx, w, h, inverter) {
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      const cinzas = [];
-
-      for (let i = 0; i < d.length; i += 4) {
-        cinzas.push(obterCinza(d[i], d[i + 1], d[i + 2]));
-      }
-
-      const limiar = calcularOtsuThreshold(cinzas);
-      let idx = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const escuro = cinzas[idx++] <= limiar;
-        const v = inverter ? (escuro ? 255 : 0) : (escuro ? 0 : 255);
-        d[i] = d[i + 1] = d[i + 2] = v;
-        d[i + 3] = 255;
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-      return ctx.canvas;
-    }
-
-    function variantContraste(ctx, w, h) {
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      let min = 255;
-      let max = 0;
-
-      for (let i = 0; i < d.length; i += 4) {
-        const c = obterCinza(d[i], d[i + 1], d[i + 2]);
-        if (c < min) min = c;
-        if (c > max) max = c;
-      }
-
-      const faixa = Math.max(1, max - min);
-      for (let i = 0; i < d.length; i += 4) {
-        const c = obterCinza(d[i], d[i + 1], d[i + 2]);
-        const norm = Math.round(((c - min) / faixa) * 255);
-        const v = norm > 128 ? 0 : 255;
-        d[i] = d[i + 1] = d[i + 2] = v;
-        d[i + 3] = 255;
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-      return ctx.canvas;
-    }
-
-    function variantCinza(ctx, w, h) {
-      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        return obterCinza(r, g, b);
-      });
-    }
-
-    function variantAmareloStrict(ctx, w, h) {
-      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        return ehPixelDigitoSos(r, g, b) ? 0 : 255;
-      });
-    }
-
-    function variantOtsuErosion(ctx, w, h) {
-      variantOtsu(ctx, w, h, false);
-      const src = ctx.getImageData(0, 0, w, h);
-      const d = src.data;
-      const out = new Uint8ClampedArray(d.length);
-      out.set(d);
-
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = (y * w + x) * 4;
-          if (d[i] !== 0) continue;
-          let todosPretos = true;
-          for (let dy = -1; dy <= 1 && todosPretos; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const ni = ((y + dy) * w + (x + dx)) * 4;
-              if (d[ni] !== 0) { todosPretos = false; break; }
-            }
-          }
-          if (!todosPretos) {
-            out[i] = out[i + 1] = out[i + 2] = 255;
-          }
-        }
-      }
-
-      ctx.putImageData(new ImageData(out, w, h), 0, 0);
-      return ctx.canvas;
-    }
-
-    function variantLimiarFixo(ctx, w, h, limiar) {
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const c = obterCinza(d[i], d[i + 1], d[i + 2]);
-        const v = c <= limiar ? 0 : 255;
-        d[i] = d[i + 1] = d[i + 2] = v;
-        d[i + 3] = 255;
-      }
-      ctx.putImageData(imgData, 0, 0);
-      return ctx.canvas;
-    }
-
-    function variantAmareloSuave(ctx, w, h) {
-      return aplicarMascaraPixels(ctx, w, h, function(r, g, b) {
-        const lum = obterCinza(r, g, b);
-        const ehDigito =
-          (r > 85 && g > 60 && b < 155 && r > b * 0.8) ||
-          (lum > 120 && r > 80 && g > 60) ||
-          (r + g > 220 && b < 140);
-        return ehDigito ? 0 : 255;
-      });
-    }
-
-    function variantOtsuDilatado(ctx, w, h) {
-      variantOtsu(ctx, w, h, false);
-      const src = ctx.getImageData(0, 0, w, h);
-      const d = src.data;
-      const out = new Uint8ClampedArray(d.length);
-      out.set(d);
-
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = (y * w + x) * 4;
-          if (d[i] === 0) continue;
-          let vizinhoPreto = false;
-          for (let dy = -1; dy <= 1 && !vizinhoPreto; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const ni = ((y + dy) * w + (x + dx)) * 4;
-              if (d[ni] === 0) { vizinhoPreto = true; break; }
-            }
-          }
-          if (vizinhoPreto) {
-            out[i] = out[i + 1] = out[i + 2] = 0;
-          }
-        }
-      }
-
-      ctx.putImageData(new ImageData(out, w, h), 0, 0);
-      return ctx.canvas;
-    }
-
-    function gerarVariantesOcr(img) {
-      const scale = SOS_TESS_SCALE;
-      const base = escalaImagemCaptcha(img, scale);
-      const copia = function(processar) {
-        const c = document.createElement('canvas');
-        c.width = base.w;
-        c.height = base.h;
-        c.getContext('2d').drawImage(base.canvas, 0, 0);
-        return processar(c.getContext('2d'), base.w, base.h);
-      };
-
-      const proc = canvasMascaraSos(img);
-
-      return [
-        { id: 'sos-mask', canvas: proc.canvas, peso: 18 },
-        { id: 'amarelo', canvas: copia(variantAmarelo), peso: 16 },
-        { id: 'amarelo-strict', canvas: copia(variantAmareloStrict), peso: 15 },
-        { id: 'otsu-ero', canvas: copia(variantOtsuErosion), peso: 10 },
-        { id: 'otsu-dil', canvas: copia(variantOtsuDilatado), peso: 10 }
-      ];
-    }
-
-    const MAPA_CONFUSAO_DIGITO = {
-      'O': '0', 'o': '0', 'D': '0', 'Q': '0',
-      'l': '1', 'I': '1', 'i': '1', '|': '1', '!': '1',
-      'Z': '2', 'z': '2',
-      'S': '5', 's': '5',
-      'G': '6', 'b': '6',
-      'B': '8', 'g': '9', 'q': '9'
-    };
-
-    function normalizarCharDigito(ch) {
-      if (!ch) return '';
-      if (MAPA_CONFUSAO_DIGITO[ch]) return MAPA_CONFUSAO_DIGITO[ch];
-      if (ch >= '0' && ch <= '9') return ch;
-      return '';
-    }
-
     function extrairDigitosOcr(texto) {
-      let out = '';
-      const s = String(texto || '');
-      for (let i = 0; i < s.length; i++) {
-        out += normalizarCharDigito(s[i]);
-      }
-      return out;
-    }
-
-    function repararParaCincoDigitos(digits) {
-      if (!digits) return null;
-      if (digits.length === 5) return digits;
-
-      if (digits.length > 5) {
-        let melhor = null;
-        let melhorScore = -1;
-        for (let i = 0; i <= digits.length - 5; i++) {
-          const fatia = digits.substring(i, i + 5);
-          const score = 5 - i * 0.1;
-          if (score > melhorScore) {
-            melhorScore = score;
-            melhor = fatia;
-          }
-        }
-        return melhor;
-      }
-
-      return null;
-    }
-
-    function segmentarCincoDigitos(canvas) {
-      const w = canvas.width;
-      const h = canvas.height;
-      const margem = Math.max(1, Math.floor(w * 0.02));
-      const areaW = w - margem * 2;
-      const sliceW = Math.floor(areaW / 5);
-      const segmentos = [];
-
-      for (let i = 0; i < 5; i++) {
-        const seg = document.createElement('canvas');
-        seg.width = sliceW;
-        seg.height = h;
-        const ctx = seg.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, sliceW, h);
-        ctx.drawImage(
-          canvas,
-          margem + i * sliceW, 0, sliceW, h,
-          0, 0, sliceW, h
-        );
-        segmentos.push(seg);
-      }
-
-      return segmentos;
-    }
-
-    function acumularMatrizPosicional(resultados) {
-      const matriz = [{}, {}, {}, {}, {}];
-
-      for (let r = 0; r < resultados.length; r++) {
-        const item = resultados[r];
-        if (!item.digits || item.digits.length !== 5) continue;
-
-        const pesoBase = (item.peso || 10) * (item.metodo === 'segmentado' ? 2.2 : 1);
-        const pesoVariante = pesoBase;
-
-        for (let pos = 0; pos < 5; pos++) {
-          const ch = item.digits.charAt(pos);
-          if (!ch) continue;
-          matriz[pos][ch] = (matriz[pos][ch] || 0) + pesoVariante;
-          if (item.confidence) {
-            matriz[pos][ch] += item.confidence * 0.05;
-          }
-        }
-
-        if (item.posicoes && item.posicoes.length === 5) {
-          for (let pos = 0; pos < 5; pos++) {
-            const alt = item.posicoes[pos].alternativas || [];
-            for (let a = 0; a < alt.length; a++) {
-              if (!alt[a].char) continue;
-              matriz[pos][alt[a].char] = (matriz[pos][alt[a].char] || 0) + pesoVariante * 0.45;
-            }
-          }
-        }
-      }
-
-      return matriz;
-    }
-
-    function montarCodigoDaMatriz(matriz) {
-      let codigo = '';
-      for (let pos = 0; pos < 5; pos++) {
-        const votos = matriz[pos];
-        let melhorChar = '';
-        let melhorPeso = -1;
-        for (const ch in votos) {
-          if (votos[ch] > melhorPeso) {
-            melhorPeso = votos[ch];
-            melhorChar = ch;
-          }
-        }
-        if (!melhorChar) return null;
-        codigo += melhorChar;
-      }
-      return codigo.length === 5 ? codigo : null;
+      return String(texto || '').replace(/\D/g, '');
     }
 
     let ocrUltimaSugestao = null;
 
     function resetarEstadoOcrSessao() {
       ocrUltimaSugestao = null;
-    }
-
-    function pontuarCandidatoOcr(digits, confidence, pesoVariante, votos, metodo) {
-      if (!digits || digits.length !== 5) return -1;
-      const conf = typeof confidence === 'number' ? confidence : 0;
-      const bonusVoto = (votos - 1) * 200;
-      const bonusSeg = metodo === 'segmentado' ? 350 : 0;
-      const bonusSos = metodo === 'sos-template' ? 1200 : 0;
-      return 3000 + conf + pesoVariante + bonusVoto + bonusSeg + bonusSos;
-    }
-
-    async function reconhecerCanvas(canvas, psm) {
-      const result = await Tesseract.recognize(canvas, 'eng', {
-        tessedit_char_whitelist: '0123456789',
-        tessedit_pageseg_mode: String(psm)
-      });
-      const data = result.data || {};
-      return {
-        digits: extrairDigitosOcr(data.text),
-        confidence: data.confidence || 0
-      };
-    }
-
-    async function ocrSegmentadoCinco(canvas, variantId, peso) {
-      const segmentos = segmentarCincoDigitos(canvas);
-
-      const porPosicao = await Promise.all(segmentos.map(async function(seg) {
-        const candidatos = {};
-        const psms = ['10', '8', '13'];
-
-        for (let p = 0; p < psms.length; p++) {
-          try {
-            const parsed = await reconhecerCanvas(seg, psms[p]);
-            const chars = extrairDigitosOcr(parsed.digits);
-            if (chars.length >= 1) {
-              const ch = chars.charAt(0);
-              if (!candidatos[ch] || parsed.confidence > candidatos[ch]) {
-                candidatos[ch] = parsed.confidence;
-              }
-            }
-          } catch (err) {
-            console.warn('[OCR seg]', variantId, err);
-          }
-        }
-
-        const ranking = Object.keys(candidatos).map(function(ch) {
-          return { char: ch, conf: candidatos[ch] };
-        }).sort(function(a, b) { return b.conf - a.conf; });
-
-        return {
-          char: ranking.length ? ranking[0].char : '',
-          conf: ranking.length ? ranking[0].conf : -1,
-          alternativas: ranking.slice(1, 3)
-        };
-      }));
-
-      let codigo = '';
-      let confTotal = 0;
-
-      for (let i = 0; i < porPosicao.length; i++) {
-        if (!porPosicao[i].char) return null;
-        codigo += porPosicao[i].char;
-        confTotal += porPosicao[i].conf;
-      }
-
-      if (codigo.length !== 5) return null;
-
-      return {
-        digits: codigo,
-        confidence: confTotal / 5,
-        posicoes: porPosicao,
-        psm: 'seg',
-        variantId: variantId,
-        peso: peso,
-        metodo: 'segmentado'
-      };
-    }
-
-    async function ocrVariante(variante) {
-      const resultados = [];
-
-      try {
-        const seg = await ocrSegmentadoCinco(variante.canvas, variante.id, variante.peso);
-        if (seg) resultados.push(seg);
-      } catch (err) {
-        console.warn('[OCR] segmentado', variante.id, err);
-      }
-
-      const psms = ['7', '8', '13'];
-      for (let i = 0; i < psms.length; i++) {
-        try {
-          const parsed = await reconhecerCanvas(variante.canvas, psms[i]);
-          const reparado = repararParaCincoDigitos(parsed.digits);
-          if (reparado) {
-            resultados.push({
-              digits: reparado,
-              confidence: parsed.confidence,
-              psm: psms[i],
-              variantId: variante.id,
-              peso: variante.peso,
-              metodo: 'linha'
-            });
-          }
-          if (reparado && parsed.confidence >= 85) break;
-        } catch (err) {
-          console.warn('[OCR]', variante.id, psms[i], err);
-        }
-      }
-
-      return resultados;
-    }
-
-    function consensoPosicionalSegmentado(todos) {
-      const segmentados = todos.filter(function(item) {
-        return item.metodo === 'segmentado' && item.digits && item.digits.length === 5;
-      });
-      if (segmentados.length < 2) return null;
-
-      let codigo = '';
-      let confTotal = 0;
-
-      for (let pos = 0; pos < 5; pos++) {
-        const votos = {};
-        for (let i = 0; i < segmentados.length; i++) {
-          const ch = segmentados[i].digits.charAt(pos);
-          if (!ch) continue;
-          votos[ch] = (votos[ch] || 0) + 1;
-        }
-
-        let melhorChar = '';
-        let melhorVotos = 0;
-        for (const ch in votos) {
-          if (votos[ch] > melhorVotos) {
-            melhorVotos = votos[ch];
-            melhorChar = ch;
-          }
-        }
-
-        if (!melhorChar) return null;
-        codigo += melhorChar;
-        confTotal += melhorVotos / segmentados.length * 100;
-      }
-
-      return {
-        digits: codigo,
-        confidence: confTotal / 5,
-        variantId: 'consenso-pos',
-        peso: 20,
-        metodo: 'segmentado',
-        votosSegmentados: segmentados.length
-      };
     }
 
     let ocrEmAndamento = false;
@@ -1472,83 +934,24 @@
       if (ocrEmAndamento) return Promise.resolve(null);
       ocrEmAndamento = true;
       if (btnOcr) btnOcr.disabled = true;
-      status.textContent = 'Lendo numeros (OCR SOS + fallback)...';
+      status.textContent = 'Lendo numeros (templates SOS)...';
 
       return new Promise(function(resolve) {
         const img = new Image();
         img.crossOrigin = 'anonymous';
 
-        img.onload = async function() {
+        img.onload = function() {
           let resultado = { codigoFinal: null, confOk: false };
           try {
-            const todos = [];
-
             status.textContent = 'OCR SOS (templates captcha)...';
-            const sos = await ocrSosGame(img);
-            if (sos && sos.digits && sos.digits.length === 5) {
-              todos.push(sos);
-              console.log('[OCR SOS]', sos.digits, 'conf', sos.confidence.toFixed(1));
-            }
-
-            const variantes = gerarVariantesOcr(img);
-
-            for (let i = 0; i < variantes.length; i++) {
-              status.textContent = 'OCR fallback ' + (i + 1) + '/' + variantes.length + ' (' + variantes[i].id + ')...';
-              const parciais = await ocrVariante(variantes[i]);
-              for (let j = 0; j < parciais.length; j++) {
-                todos.push(parciais[j]);
-              }
-            }
-
-            const consenso = consensoPosicionalSegmentado(todos);
-            if (consenso) todos.push(consenso);
-
-            let matriz = acumularMatrizPosicional(todos);
-            const codigoMatriz = montarCodigoDaMatriz(matriz);
-
-            const contagem = {};
-            for (let k = 0; k < todos.length; k++) {
-              const d = todos[k].digits;
-              if (d && d.length === 5) {
-                contagem[d] = (contagem[d] || 0) + 1;
-              }
-            }
-
-            let escolhido = null;
-            let melhorPontuacao = -1;
-
-            for (let m = 0; m < todos.length; m++) {
-              const item = todos[m];
-              if (!item.digits || item.digits.length !== 5) continue;
-              const votos = contagem[item.digits] || 0;
-              const pontos = pontuarCandidatoOcr(
-                item.digits, item.confidence, item.peso, votos, item.metodo
-              );
-              if (pontos > melhorPontuacao) {
-                melhorPontuacao = pontos;
-                escolhido = item;
-              }
-            }
-
-            let codigoFinal = codigoMatriz;
-            if (codigoFinal && escolhido && codigoFinal !== escolhido.digits) {
-              const votosEscolhido = contagem[escolhido.digits] || 0;
-              const votosMatriz = contagem[codigoFinal] || 0;
-              if (votosEscolhido > votosMatriz + 1) codigoFinal = escolhido.digits;
-            } else if (!codigoFinal && escolhido) {
-              codigoFinal = escolhido.digits;
+            const sos = ocrSosGame(img);
+            const codigoFinal = sos && sos.digits && sos.digits.length === 5 ? sos.digits : null;
+            if (codigoFinal) {
+              console.log('[OCR SOS]', codigoFinal, 'conf', sos.confidence.toFixed(1));
             }
 
             ocrUltimaSugestao = codigoFinal;
-
-            const votosEscolhido = codigoFinal ? (contagem[codigoFinal] || 0) : 0;
-            const confOk = codigoFinal && (
-              (sos && sos.digits === codigoFinal && sos.confidence >= 55) ||
-              (escolhido && escolhido.metodo === 'sos-template') ||
-              (escolhido && escolhido.metodo === 'segmentado') ||
-              votosEscolhido >= 2 ||
-              (escolhido && escolhido.confidence >= 72)
-            );
+            const confOk = !!(codigoFinal && sos.confidence >= 50);
 
             if (codigoFinal && confOk) {
               valorInput.value = codigoFinal;

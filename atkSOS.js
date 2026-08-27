@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.97
-// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5/12 tent.) e Firebase (captcha).
+// @version      2.98
+// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.97';
-  var SCRIPT_ATUALIZADO = '27/08/2026 15:55';
+  var SCRIPT_VERSAO = '2.98';
+  var SCRIPT_ATUALIZADO = '27/08/2026 16:42';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -553,11 +553,12 @@
 
   var TEMPO_ESPERA = 2000;
   var TEMPO_RELOAD_FALHA = TEMPO_RECUPERACAO_FALHA;
-  var TEMPO_TIMEOUT_CAPTCHA = 600000; // 10 minutos — reload se ainda sem resposta
-  var TEMPO_OCR_AUTO_CAPTCHA = 300000; // 5 min — 1a tentativa OCR auto
-  var CAPTCHA_OCR_AUTO_INTERVALO_MS = 120000; // 2 min entre tentativas
-  var CAPTCHA_OCR_AUTO_MAX_NORMAL = 5;
-  var CAPTCHA_OCR_AUTO_MAX_GERENCIADA = 12;
+  var TEMPO_TIMEOUT_CAPTCHA = 300000; // 5 min — reload apos OCR auto esgotado
+  var CAPTCHA_OCR_AUTO_DELAY_MIN_MS = 10000; // 10s
+  var CAPTCHA_OCR_AUTO_DELAY_MAX_MS = 30000; // 30s
+  var TEMPO_ESPERA_APOS_OCR_ESGOTADO_MS = 25000; // espera o ultimo painel OCR responder
+  var CAPTCHA_OCR_AUTO_MAX_NORMAL = 3;
+  var CAPTCHA_OCR_AUTO_MAX_GERENCIADA = 5;
   var BOT_CAPTCHA_OCR_AUTO_KEY = 'BOT_CAPTCHA_OCR_AUTO_TENTATIVAS';
   var COMANDO_ZERAR_OCR_AUTO = 'botZerarOcrAuto()';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
@@ -592,6 +593,7 @@
   var BOT_COMBATE_NOTIFICADO_KEY = 'BOT_COMBATE_NOTIFICADO';
   var timerCaptchaTimeout = null;
   var timerCaptchaOcrAuto = null;
+  var timerCaptchaPosTentativas = null;
   var captchaRespostaProcessando = false;
   var loginJaEnviado = false;
   var portaoRelatoriosAgendado = false;
@@ -3362,6 +3364,12 @@
     return url;
   }
 
+  function delayAleatorioOcrCaptchaMs() {
+    return CAPTCHA_OCR_AUTO_DELAY_MIN_MS + Math.floor(
+      Math.random() * (CAPTCHA_OCR_AUTO_DELAY_MAX_MS - CAPTCHA_OCR_AUTO_DELAY_MIN_MS + 1)
+    );
+  }
+
   function limparTimersCaptcha() {
     if (timerCaptchaTimeout) {
       clearTimeout(timerCaptchaTimeout);
@@ -3371,6 +3379,32 @@
       clearTimeout(timerCaptchaOcrAuto);
       timerCaptchaOcrAuto = null;
     }
+    if (timerCaptchaPosTentativas) {
+      clearTimeout(timerCaptchaPosTentativas);
+      timerCaptchaPosTentativas = null;
+    }
+  }
+
+  function agendarReloadCaptchaEsgotado() {
+    if (timerCaptchaTimeout) {
+      clearTimeout(timerCaptchaTimeout);
+      timerCaptchaTimeout = null;
+    }
+    console.warn('[Captcha] OCR auto esgotado — reload em ' +
+      (TEMPO_TIMEOUT_CAPTCHA / 60000) + ' min se nao houver resposta...');
+    timerCaptchaTimeout = setTimeout(function() {
+      timerCaptchaTimeout = null;
+      var destino = urlAposCaptcha();
+      console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
+      window.location.href = destino;
+    }, TEMPO_TIMEOUT_CAPTCHA);
+  }
+
+  function avisarDiscordOcrEsgotado(origem) {
+    if (captchaRespostaProcessando) return;
+    console.warn('[Captcha] Avisando Discord — ' + (origem || 'tentativas esgotadas'));
+    notificarDiscordCaptchaOcr(origem || 'tentativas esgotadas');
+    agendarReloadCaptchaEsgotado();
   }
 
   function tentarOcrAutomaticoCaptcha() {
@@ -3389,8 +3423,6 @@
     var link = montarLinkPainelCaptcha({ auto: true });
     console.warn('[Captcha] OCR automatico ' + tentativa + '/' + max + ': ' + link);
 
-    notificarDiscordCaptchaOcr('tentativa OCR ' + tentativa + '/' + max);
-
     var novaAba = null;
     try {
       novaAba = window.open(link, 'bot_ocr_' + CODIGO_SERVIDOR + '_' + tentativa, 'noopener,noreferrer');
@@ -3407,6 +3439,19 @@
         try { iframe.remove(); } catch (e) {}
       }, 180000);
     }
+
+    if (tentativa >= max) {
+      if (timerCaptchaPosTentativas) {
+        clearTimeout(timerCaptchaPosTentativas);
+        timerCaptchaPosTentativas = null;
+      }
+      console.log('[Captcha] Ultima tentativa OCR auto — aguardando ' +
+        (TEMPO_ESPERA_APOS_OCR_ESGOTADO_MS / 1000) + 's antes do Discord...');
+      timerCaptchaPosTentativas = setTimeout(function() {
+        timerCaptchaPosTentativas = null;
+        avisarDiscordOcrEsgotado('tentativas OCR esgotadas');
+      }, TEMPO_ESPERA_APOS_OCR_ESGOTADO_MS);
+    }
   }
 
   function agendarProximaTentativaOcrAuto() {
@@ -3421,10 +3466,10 @@
       return;
     }
 
-    var delay = feitas === 0 ? TEMPO_OCR_AUTO_CAPTCHA : CAPTCHA_OCR_AUTO_INTERVALO_MS;
-    var minutos = (delay / 60000).toFixed(1);
+    var delay = delayAleatorioOcrCaptchaMs();
+    var segundos = Math.round(delay / 1000);
 
-    console.log('[Captcha] Proxima tentativa OCR auto em ' + minutos + ' min (' +
+    console.log('[Captcha] Proxima tentativa OCR auto em ' + segundos + 's (' +
       (feitas + 1) + '/' + max + ')...');
 
     timerCaptchaOcrAuto = setTimeout(function() {
@@ -3444,19 +3489,22 @@
   function agendarTimersCaptcha() {
     limparTimersCaptcha();
 
+    var feitas = lerTentativasOcrAutoCaptcha();
+    var max = obterMaxTentativasOcrAutoCaptcha();
+
+    if (feitas >= max) {
+      console.warn('[Captcha] Tentativas OCR auto ja esgotadas nesta sessao (' +
+        feitas + '/' + max + ') — Discord + reload em 5 min.');
+      logStatusOcrAutoCaptcha('esgotado apos reload');
+      avisarDiscordOcrEsgotado('reload com tentativas ja esgotadas');
+      return;
+    }
+
     console.log('[Captcha] OCR auto: ate ' + descreverLimiteOcrAutoCaptcha() +
-      ' (1a em ' + (TEMPO_OCR_AUTO_CAPTCHA / 60000) + ' min) | reload em ' +
-      (TEMPO_TIMEOUT_CAPTCHA / 60000) + ' min...');
+      ' (1a em 10-30s, intervalo 10-30s) | Discord so ao esgotar | reload 5 min depois...');
 
     agendarProximaTentativaOcrAuto();
     logStatusOcrAutoCaptcha('timers iniciados');
-
-    timerCaptchaTimeout = setTimeout(function() {
-      timerCaptchaTimeout = null;
-      var destino = urlAposCaptcha();
-      console.warn('[Captcha] Tempo limite esgotado! Redirecionando...');
-      window.location.href = destino;
-    }, TEMPO_TIMEOUT_CAPTCHA);
   }
 
   function obterImagemCaptcha() {
@@ -3535,7 +3583,6 @@
   function montarDescricaoDiscordCaptcha() {
     var max = obterMaxTentativasOcrAutoCaptcha();
     var feitas = lerTentativasOcrAutoCaptcha();
-    var restantes = Math.max(0, max - feitas);
     var tipo = estaEmContaGerenciada() ? 'conta gerenciada' : 'conta normal';
 
     return [
@@ -3545,8 +3592,8 @@
       '**Conta:** ' + obterUsuarioExibicao(),
       '**Codigo:** `' + CODIGO_SERVIDOR + '`',
       '',
-      '**OCR automatico:** ' + feitas + '/' + max + ' tentativas (' + restantes + ' restantes, ' + tipo + ')',
-      'Limite: ' + max + ' (' + tipo + ') | 1a tentativa aos 5 min, depois a cada 2 min.',
+      '**OCR automatico esgotado:** ' + feitas + '/' + max + ' tentativas (' + tipo + ')',
+      'Resolva pelo painel. Se nao houver resposta, a pagina recarrega em 5 min.',
       '',
       '[**Abrir painel (OCR + confirmar)**](' + montarLinkPainelCaptcha() + ')'
     ].join('\n');
@@ -3567,7 +3614,7 @@
     var payloadData = {
       username: 'Bot Shadow of Shinobi',
       embeds: [{
-        title: 'CAPTCHA DETECTADO',
+        title: 'CAPTCHA — OCR esgotado',
         description: descricao,
         color: corDecimal,
         timestamp: new Date().toISOString(),
@@ -3620,7 +3667,6 @@
             .then(function() {
               database.ref('codigo_servidor').set(CODIGO_SERVIDOR).catch(function() {});
               iniciarEscutaFirebaseCaptcha(database);
-              notificarDiscordCaptchaOcr('captcha detectado');
             })
             .catch(function(err) {
               console.error('[Captcha] Erro ao salvar Firebase:', err);
