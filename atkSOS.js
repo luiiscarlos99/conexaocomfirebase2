@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.95
+// @version      2.96
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5/12 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -265,11 +265,25 @@
       var l = rp.get('bot_limite_invasor');
       if (u) gravarUsuarioLoginParam(u);
       if (p) gravarSenhaLoginParam(p);
-      if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if (n) gravarNivelCacadasParam(n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       aplicarParamsCacadasAtacar(rp);
     } catch (e) {}
+  }
+
+  function gravarNivelCacadasParam(valor, opcoes) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return false;
+    try {
+      localStorage.setItem('BOT_NIVEL_CACADAS', String(n));
+      if (!opcoes || opcoes.definirBase !== false) {
+        localStorage.setItem('BOT_NIVEL_CACADAS_BASE', String(n));
+      }
+    } catch (e) { return false; }
+    if (typeof sincronizarNivelCacadasFinal === 'function') sincronizarNivelCacadasFinal();
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return true;
   }
 
   function logDiagnosticoModo(rotulo) {
@@ -302,7 +316,7 @@
       var l = params.get('bot_limite_invasor');
       if (u) gravarUsuarioLoginParam(u);
       if (p) gravarSenhaLoginParam(p);
-      if (n) localStorage.setItem('BOT_NIVEL_CACADAS', n);
+      if (n) gravarNivelCacadasParam(n);
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       aplicarParamsCacadasAtacar(params);
@@ -378,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.95';
-  var SCRIPT_ATUALIZADO = '27/08/2026 11:15';
+  var SCRIPT_VERSAO = '2.96';
+  var SCRIPT_ATUALIZADO = '27/08/2026 11:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1286,9 +1300,81 @@
     return true;
   }
 
-  // Nível da Caçada (Lê do localStorage ou usa '3' como padrão)
+  // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
   var NIVEL_CACADAS_DEFAULT = '1';
-  var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+  var BOT_NIVEL_CACADAS_BASE_KEY = 'BOT_NIVEL_CACADAS_BASE';
+  var BOT_NIVEL_ESCALADO_PAGINA_KEY = 'BOT_NIVEL_ESCALADO_PAGINA';
+  var NIVEL_CACADAS_ESCALONAMENTO_MAX = 3;
+  var NIVEL_CACADAS_FINAL = NIVEL_CACADAS_DEFAULT;
+
+  function parseNivelCacadas(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return null;
+    return n;
+  }
+
+  function obterNivelCacadasBase() {
+    var base = parseNivelCacadas(localStorage.getItem(BOT_NIVEL_CACADAS_BASE_KEY));
+    if (base !== null) return base;
+    var atual = parseNivelCacadas(localStorage.getItem('BOT_NIVEL_CACADAS'));
+    if (atual !== null) return atual;
+    return parseInt(NIVEL_CACADAS_DEFAULT, 10);
+  }
+
+  function obterNivelCacadasAtual() {
+    var n = parseNivelCacadas(localStorage.getItem('BOT_NIVEL_CACADAS'));
+    if (n !== null) return n;
+    return obterNivelCacadasBase();
+  }
+
+  function obterNivelCacadasMaximo() {
+    return obterNivelCacadasBase() + NIVEL_CACADAS_ESCALONAMENTO_MAX;
+  }
+
+  function descreverNivelCacadasPainel() {
+    var atual = obterNivelCacadasAtual();
+    var base = obterNivelCacadasBase();
+    var max = obterNivelCacadasMaximo();
+    return atual + ' (base ' + base + ', max ' + max + ')';
+  }
+
+  function garantirNivelCacadasBaseInicial() {
+    try {
+      if (!localStorage.getItem(BOT_NIVEL_CACADAS_BASE_KEY)) {
+        var n = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
+        localStorage.setItem(BOT_NIVEL_CACADAS_BASE_KEY, n);
+      }
+      if (!localStorage.getItem('BOT_NIVEL_CACADAS')) {
+        localStorage.setItem(
+          'BOT_NIVEL_CACADAS',
+          localStorage.getItem(BOT_NIVEL_CACADAS_BASE_KEY) || NIVEL_CACADAS_DEFAULT
+        );
+      }
+    } catch (e) {}
+    sincronizarNivelCacadasFinal();
+  }
+
+  function sincronizarNivelCacadasFinal() {
+    NIVEL_CACADAS_FINAL = String(obterNivelCacadasAtual());
+  }
+
+  function escalarNivelCacadasIndisponivel(motivo) {
+    var atual = obterNivelCacadasAtual();
+    var base = obterNivelCacadasBase();
+    var max = obterNivelCacadasMaximo();
+    var proximo = atual >= max ? base : atual + 1;
+
+    try { localStorage.setItem('BOT_NIVEL_CACADAS', String(proximo)); } catch (e) {}
+    sincronizarNivelCacadasFinal();
+    console.warn(
+      '[Caçadas] Classe indisponivel (' + motivo + ') — nivel ' + atual + ' -> ' + proximo +
+      ' (base ' + base + ', max ' + max + ')'
+    );
+    exibirModoAbaServerID();
+    return proximo;
+  }
+
+  garantirNivelCacadasBaseInicial();
 
   // Intervalo apos ultimo ataque (relatorios) — bot_espera_cacadas (minutos) via URL ou localStorage
   // Penalidade fixa 5min pos-ataque + extra aleatorio: comercial +2-4 (7-9 total); madrugada +8-15 (13-20 total)
@@ -1900,7 +1986,7 @@
 
     linhas.push('<span style="opacity:.65">—</span>');
     linhas.push(
-      'Nivel: ' + escHtmlPainelServer(NIVEL_CACADAS_FINAL) +
+      'Nivel: ' + escHtmlPainelServer(descreverNivelCacadasPainel()) +
       ' | Rotacao: ' + escHtmlPainelServer(descreverRotacaoAutomacao())
     );
     linhas.push('Espera: ' + escHtmlPainelServer(resumirTextoPainel(descreverEsperaCacadas(), 48)));
@@ -2011,6 +2097,46 @@
     if (!eraPorNome) return;
 
     removerNomeBlacklistCacadas(nome, 'derrota no combate');
+  }
+
+  function extrairClasseIndisponivelCacadas() {
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('nenhum ninja de nivel') === -1) continue;
+      if (norm.indexOf('disponivel') === -1) continue;
+
+      var m = texto.match(/n[ií]vel\s+(.+?)\s+dispon[ií]vel/i);
+      return m ? m[1].trim() : texto;
+    }
+
+    return null;
+  }
+
+  function processarClasseIndisponivelCacadas() {
+    var classe = extrairClasseIndisponivelCacadas();
+    if (!classe) return false;
+
+    var atual = obterNivelCacadasAtual();
+    try {
+      var chave = BOT_NIVEL_ESCALADO_PAGINA_KEY + ':' + atual + ':' + normalizarTextoCombate(classe);
+      if (sessionStorage.getItem(chave) === '1') return false;
+      sessionStorage.setItem(chave, '1');
+    } catch (e) {}
+
+    escalarNivelCacadasIndisponivel(classe);
+    definirModoCacadasClasse('classe indisponivel — proximo nivel');
+    liberarGateCacadas();
+
+    if (executarCacadaPorNivel()) return true;
+
+    irParaPortaoRelatorios('Classe indisponivel — falha ao retentar nivel ' + NIVEL_CACADAS_FINAL);
+    return true;
   }
 
   function processarNinjaNaoEncontradoCacadas() {
@@ -3583,9 +3709,9 @@
     var btnNivel = formNivel.querySelector('input[type="submit"]');
     if (!btnNivel) return false;
 
-    selectNivel.value = NIVEL_CACADAS_FINAL;
+    selectNivel.value = String(obterNivelCacadasAtual());
     selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
-    console.log('[Caçadas] Gate OK — caçada por nivel ' + NIVEL_CACADAS_FINAL + ', clicando Caçar...');
+    console.log('[Caçadas] Gate OK — caçada por nivel ' + obterNivelCacadasAtual() + ', clicando Caçar...');
     btnNivel.click();
     return true;
   }
@@ -3606,7 +3732,7 @@
 
   console.log(
     '[Script Caçadas] Login: ' + obterUsuarioLogin() + ' | Ativo: ' + obterUsuarioExibicao() +
-    ' | Nível: ' + NIVEL_CACADAS_FINAL +
+    ' | Nível: ' + descreverNivelCacadasPainel() +
     ' | Espera caçadas: ' + descreverEsperaCacadas() +
     ' | Whitelist: ' + descreverWhitelistAtacar() +
     ' | ' + descreverWhitelistClaAtacar() +
@@ -3773,6 +3899,10 @@
 
             if (paginaCacadasComMissaoTempo()) {
               return processarCacadasMissaoTempo();
+            }
+
+            if (processarClasseIndisponivelCacadas()) {
+              return true;
             }
 
             if (processarNinjaNaoEncontradoCacadas()) {
