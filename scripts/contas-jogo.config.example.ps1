@@ -6,7 +6,7 @@ $OperaExe  = "C:\Users\SEU_USUARIO\AppData\Local\Programs\Opera GX\opera.exe"
 # O script usa launcher.exe na mesma pasta (melhor para --private + URL)
 
 $UrlBase = 'https://shadowofshinobi.com'
-$NivelCacadas = '4'
+$NivelCacadas = '1'
 
 # Favoritos manuais no navegador (se nao usar o launcher):
 #   Caçadas:  $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas

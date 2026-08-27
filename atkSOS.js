@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.94
+// @version      2.95
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (5/12 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -378,8 +378,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.94';
-  var SCRIPT_ATUALIZADO = '26/08/2026 07:35';
+  var SCRIPT_VERSAO = '2.95';
+  var SCRIPT_ATUALIZADO = '27/08/2026 11:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1287,7 +1287,7 @@
   }
 
   // Nível da Caçada (Lê do localStorage ou usa '3' como padrão)
-  var NIVEL_CACADAS_DEFAULT = '4';
+  var NIVEL_CACADAS_DEFAULT = '1';
   var NIVEL_CACADAS_FINAL = localStorage.getItem('BOT_NIVEL_CACADAS') || NIVEL_CACADAS_DEFAULT;
 
   // Intervalo apos ultimo ataque (relatorios) — bot_espera_cacadas (minutos) via URL ou localStorage
