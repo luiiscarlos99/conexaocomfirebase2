@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.00
+// @version      3.01
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.00';
-  var SCRIPT_ATUALIZADO = '28/08/2026 00:35';
+  var SCRIPT_VERSAO = '3.01';
+  var SCRIPT_ATUALIZADO = '28/08/2026 14:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2035,8 +2035,15 @@
       return pausa;
     }
 
-    var reserva = extrairReservaRyous();
     var cache = lerCacheEstadoInvasor();
+    var reserva = null;
+    if (invasorVivoPainel && invasorVivoPainel.reserva !== null && invasorVivoPainel.reserva !== undefined) {
+      reserva = invasorVivoPainel.reserva;
+    } else if (cache && cache.reserva !== null && cache.reserva !== undefined) {
+      reserva = cache.reserva;
+    } else {
+      reserva = extrairReservaRyous();
+    }
     var reservaTxt = reserva !== null ? formatarNumeroBr(reserva) : '?';
 
     if (invasorVivoPainel && !invasorVivoPainel.pausado) {
@@ -2410,31 +2417,52 @@
     }
   }
 
-  function extrairReservaRyous() {
-    var textos = [];
-    var col = document.getElementById('col_esquerda');
-    if (col) textos.push(col.innerText || col.textContent || '');
-    if (document.body) textos.push(document.body.innerText || document.body.textContent || '');
+  function textoElementoReserva(el) {
+    if (!el) return '';
+    return (el.innerText || el.textContent || '');
+  }
 
+  function extrairReservaRyousDeTexto(texto) {
+    if (!texto) return null;
     var patterns = [
       /Reserva(?:\s+de\s+[Rr]yous)?:\s*([\d.,]+)/i,
       /Ryous\s+reserva:\s*([\d.,]+)/i,
       /Reserva:\s*([\d.,]+)/i
     ];
-
-    for (var t = 0; t < textos.length; t++) {
-      for (var i = 0; i < patterns.length; i++) {
-        var m = textos[t].match(patterns[i]);
-        if (m) return parseNumeroBr(m[1]);
-      }
+    for (var i = 0; i < patterns.length; i++) {
+      var m = texto.match(patterns[i]);
+      if (m) return parseNumeroBr(m[1]);
     }
+    var mRyous = texto.match(/Ryous:\s*([\d.,]+)/i);
+    return mRyous ? parseNumeroBr(mRyous[1]) : null;
+  }
 
-    for (var j = 0; j < textos.length; j++) {
-      var mRyous = textos[j].match(/Ryous:\s*([\d.,]+)/i);
-      if (mRyous) return parseNumeroBr(mRyous[1]);
-    }
+  function extrairReservaRyousDeDocumento(doc) {
+    if (!doc) return null;
+    var col = doc.getElementById ? doc.getElementById('col_esquerda') : null;
+    var reserva = extrairReservaRyousDeTexto(textoElementoReserva(col));
+    if (reserva !== null) return reserva;
+    return extrairReservaRyousDeTexto(textoElementoReserva(doc.body));
+  }
 
-    return null;
+  function extrairReservaRyousDeHtml(html) {
+    if (!html) return null;
+    try {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var reserva = extrairReservaRyousDeDocumento(doc);
+      if (reserva !== null) return reserva;
+    } catch (e) {}
+    return extrairReservaRyousDeTexto(String(html));
+  }
+
+  function extrairReservaRyous() {
+    return extrairReservaRyousDeDocumento(document);
+  }
+
+  function reservaDoEstado(estado) {
+    if (!estado) return null;
+    if (estado.reserva === null || estado.reserva === undefined) return null;
+    return estado.reserva;
   }
 
   function salvarCacheEstadoInvasor(estado) {
@@ -2462,6 +2490,7 @@
     var temTimer = false;
     var derrotados = 0;
     var nomeInvasor = '';
+    var reserva = null;
 
     function extrairNomeInvasorDeDocumento(doc) {
       if (!doc) return '';
@@ -2480,6 +2509,7 @@
 
     try {
       var doc = new DOMParser().parseFromString(html, 'text/html');
+      reserva = extrairReservaRyousDeDocumento(doc);
       nomeInvasor = extrairNomeInvasorDeDocumento(doc);
       var linhas = doc.querySelectorAll('tr');
       for (var i = 0; i < linhas.length; i++) {
@@ -2504,6 +2534,7 @@
       if (m) derrotados = parseInt(m[1].replace(/\./g, ''), 10) || 0;
     } catch (e) {
       var texto = String(html || '');
+      if (reserva === null) reserva = extrairReservaRyousDeTexto(texto);
       derrotado = /Derrotado por:/i.test(texto) && !/AINDA N[AÃ]O foi derrotado/i.test(texto);
       temBotao = /value=["']Atacar["']/i.test(texto) || /name=["']atacar["']/i.test(texto);
       temTimer = /inv_cd_timer_/i.test(texto);
@@ -2527,6 +2558,7 @@
       temTimer: temTimer,
       derrotados: derrotados,
       nomeInvasor: nomeInvasor,
+      reserva: reserva,
       ts: Date.now()
     };
   }
@@ -2602,11 +2634,13 @@
     });
   }
 
-  function obterEstadoInvasor(callback) {
-    var cache = lerCacheEstadoInvasor();
-    if (cache) {
-      callback(cache);
-      return;
+  function obterEstadoInvasor(callback, forcar) {
+    if (!forcar) {
+      var cache = lerCacheEstadoInvasor();
+      if (cache) {
+        callback(cache);
+        return;
+      }
     }
 
     fetch(URL_INVASOR, { credentials: 'include', cache: 'no-store' })
@@ -2622,13 +2656,46 @@
       });
   }
 
+  function buscarReservaRyousCacadas(callback) {
+    fetch(URL_CACADAS, { credentials: 'include', cache: 'no-store' })
+      .then(function(res) { return res.text(); })
+      .then(function(html) {
+        callback(extrairReservaRyousDeHtml(html));
+      })
+      .catch(function(err) {
+        console.warn('[InvasorVivo] Falha ao ler reserva em /cacadas:', err);
+        callback(null);
+      });
+  }
+
+  function resolverReservaRyous(estado, callback) {
+    var reserva = reservaDoEstado(estado);
+    if (reserva !== null) {
+      callback(reserva, '/invasor');
+      return;
+    }
+
+    buscarReservaRyousCacadas(function(reservaCacadas) {
+      if (reservaCacadas !== null) {
+        if (estado) {
+          estado.reserva = reservaCacadas;
+          salvarCacheEstadoInvasor(estado);
+        }
+        callback(reservaCacadas, '/cacadas');
+        return;
+      }
+      callback(extrairReservaRyous(), 'tela');
+    });
+  }
+
   function cacadasPausadaPorInvasorSync() {
     if (!deveAplicarPausaInvasorVivo()) return false;
 
-    var reserva = extrairReservaRyous();
+    var cache = lerCacheEstadoInvasor();
+    var reserva = reservaDoEstado(cache);
+    if (reserva === null) reserva = extrairReservaRyous();
     if (reserva === null || reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) return false;
 
-    var cache = lerCacheEstadoInvasor();
     return !!(cache && cache.aguardandoProximoBoss);
   }
 
@@ -2638,45 +2705,50 @@
       return;
     }
 
-    var reserva = extrairReservaRyous();
-
     obterEstadoInvasor(function(estado) {
-      tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva);
+      resolverReservaRyous(estado, function(reserva, fonte) {
+        console.log(
+          '[InvasorVivo] Reserva ' + (reserva !== null ? formatarNumeroBr(reserva) : '?') +
+          ' lida em ' + (fonte || '?')
+        );
 
-      if (!deveAplicarPausaInvasorVivo()) {
-        definirInvasorVivoPainelAtivo(estado, reserva);
-        callback(false, { reserva: reserva, estado: estado, motivo: 'sem pausa invasor_vivo' });
-        return;
-      }
+        tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva);
 
-      if (reserva === null) {
-        definirInvasorVivoPainelAtivo(estado, reserva);
-        callback(false, { motivo: 'reserva ilegivel' });
-        return;
-      }
-      if (reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
-        definirInvasorVivoPainelAtivo(estado, reserva);
-        callback(false, { reserva: reserva, motivo: 'reserva >= 100k' });
-        return;
-      }
+        if (!deveAplicarPausaInvasorVivo()) {
+          definirInvasorVivoPainelAtivo(estado, reserva);
+          callback(false, { reserva: reserva, estado: estado, motivo: 'sem pausa invasor_vivo' });
+          return;
+        }
 
-      var pausado = !!(estado && estado.aguardandoProximoBoss);
-      if (pausado) {
-        definirInvasorVivoPainelPausado({
+        if (reserva === null) {
+          definirInvasorVivoPainelAtivo(estado, reserva);
+          callback(false, { motivo: 'reserva ilegivel' });
+          return;
+        }
+        if (reserva >= RESERVA_RYOUS_MIN_INVASOR_VIVO) {
+          definirInvasorVivoPainelAtivo(estado, reserva);
+          callback(false, { reserva: reserva, motivo: 'reserva >= 100k' });
+          return;
+        }
+
+        var pausado = !!(estado && estado.aguardandoProximoBoss);
+        if (pausado) {
+          definirInvasorVivoPainelPausado({
+            reserva: reserva,
+            reservaTexto: formatarNumeroBr(reserva),
+            estado: estado
+          });
+        } else {
+          definirInvasorVivoPainelAtivo(estado, reserva);
+        }
+
+        callback(pausado, {
           reserva: reserva,
           reservaTexto: formatarNumeroBr(reserva),
           estado: estado
         });
-      } else {
-        definirInvasorVivoPainelAtivo(estado, reserva);
-      }
-
-      callback(pausado, {
-        reserva: reserva,
-        reservaTexto: formatarNumeroBr(reserva),
-        estado: estado
       });
-    });
+    }, true);
   }
 
   function marcarAguardandoBossMorto() {
@@ -2774,8 +2846,9 @@
 
   function garantirCacadasLiberadaPorInvasor(contexto) {
     if (!cacadasPausadaPorInvasorSync()) return true;
-    var reserva = extrairReservaRyous();
     var cache = lerCacheEstadoInvasor();
+    var reserva = reservaDoEstado(cache);
+    if (reserva === null) reserva = extrairReservaRyous();
     definirInvasorVivoPainelPausado({
       reserva: reserva,
       reservaTexto: reserva !== null ? formatarNumeroBr(reserva) : '?',
