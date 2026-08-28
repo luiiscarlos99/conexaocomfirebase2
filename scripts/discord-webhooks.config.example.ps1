@@ -1,12 +1,16 @@
-# Copie para discord-webhooks.config.ps1 (esta copia local fica no .gitignore).
+# Copie para discord-webhooks.config.ps1 (essa copia local fica no .gitignore).
 #
-# Canais Discord:
-#   geral   — PC ligado, abrir navegadores, avisos de sistema
-#   captcha — atkSOS.js (Inject Code)
-#   cacadas — atkSOS.js (Inject Code)
-#   invasor — atkInvSOS.js (Inject Code)
+# Canais:
+#   geral   — scripts locais (PC ligado, abrir navegadores)
+#   captcha / cacadas / invasor — Inject Code le do Firebase (nao deste arquivo)
+#
+# Para gravar captcha/cacadas/invasor/geral no Firebase:
+#   powershell -ExecutionPolicy Bypass -File .\subir-webhooks-firebase.ps1
 
-$DiscordWebhookGeral = "https://discord.com/api/webhooks/1539273777236549732/dk6e8TcLeiSTlOnKQpBX3APe8UqzpecojIk7oVbMLyKS_WZn1HccnJel3zviSgs9rTHP"
+$DiscordWebhookGeral = "COLE_O_WEBHOOK_GERAL_AQUI"
+$DiscordWebhookCaptcha = "COLE_O_WEBHOOK_CAPTCHA_AQUI"
+$DiscordWebhookCacadas = "COLE_O_WEBHOOK_CACADAS_AQUI"
+$DiscordWebhookInvasor = "COLE_O_WEBHOOK_INVASOR_AQUI"
 
 # true = posta no canal #geral sem notificacao push (flag 4096)
 $DiscordGeralSilencioso = $false

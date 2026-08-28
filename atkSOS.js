@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      2.98
+// @version      3.00
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '2.98';
-  var SCRIPT_ATUALIZADO = '27/08/2026 16:42';
+  var SCRIPT_VERSAO = '3.00';
+  var SCRIPT_ATUALIZADO = '28/08/2026 00:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -583,8 +583,9 @@
   var BOT_CACADAS_ALVO_NOME_KEY = 'BOT_CACADAS_ALVO_NOME';
   var BOT_ROTACAO_CICLO_KEY = 'BOT_ROTACAO_CICLO_PENDENTE';
   var BOT_ROTACAO_ASSUMIDA_KEY = 'BOT_AUTO_ROT_ASSUMIDA';
-  var DISCORD_WEBHOOK_CAPTCHA = 'https://discord.com/api/webhooks/1539267966741389332/ZGwiXDDDTh4e698YVUvobQQL8FvNDREjVm0ph4tzxISa53c-7TLfF_BhiR6pl7DXt6vw';
-  var DISCORD_WEBHOOK_CACADAS = 'https://discord.com/api/webhooks/1539268065190084779/9KxMifl2A0HkdvPAm5lxR6QK_oEGkvP98dtUSVyeDyxrekaNjyT5n0PcqRtE5-Xr2bWQ';
+  var DISCORD_WEBHOOK_CAPTCHA = '';
+  var DISCORD_WEBHOOK_CACADAS = '';
+  var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
   var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
   var captchaJaNotificado = false;
@@ -976,6 +977,41 @@
     appId: "1:558853797700:web:71e454196334d2a5be8911",
     measurementId: "G-LDVNCKS73Z"
   };
+
+  var webhooksDiscordPromise = null;
+  var webhooksDiscordCarregados = false;
+
+  function aplicarWebhooksDiscordFirebase(dados) {
+    if (!dados || typeof dados !== 'object') return;
+    if (dados.captcha) DISCORD_WEBHOOK_CAPTCHA = String(dados.captcha);
+    if (dados.cacadas) DISCORD_WEBHOOK_CACADAS = String(dados.cacadas);
+  }
+
+  function garantirWebhooksDiscord() {
+    if (webhooksDiscordCarregados) return Promise.resolve();
+    if (webhooksDiscordPromise) return webhooksDiscordPromise;
+
+    var url = FIREBASE_CONFIG.databaseURL + '/' + FIREBASE_WEBHOOKS_PATH + '.json';
+    webhooksDiscordPromise = fetch(url)
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(dados) {
+        aplicarWebhooksDiscordFirebase(dados);
+        webhooksDiscordCarregados = true;
+        console.log('[Discord] Webhooks do Firebase: captcha=' +
+          (DISCORD_WEBHOOK_CAPTCHA ? 'ok' : 'ausente') + ' cacadas=' +
+          (DISCORD_WEBHOOK_CACADAS ? 'ok' : 'ausente'));
+      })
+      .catch(function(err) {
+        console.warn('[Discord] Falha ao ler ' + FIREBASE_WEBHOOKS_PATH + ':', err);
+        webhooksDiscordPromise = null;
+      });
+    return webhooksDiscordPromise;
+  }
+
+  garantirWebhooksDiscord();
 
   // Credenciais do Usuário e Configuração de Caçadas
   var USUARIO_DEFAULT = 'Shiroe';
@@ -2929,29 +2965,34 @@
   }
 
   function enviarDiscordTexto(mensagem, webhookUrl, silencioso) {
-    var url = webhookUrl || DISCORD_WEBHOOK_CACADAS;
-    if (!url) return Promise.resolve();
-    var payload = {
-      username: 'Bot Shadow of Shinobi',
-      content: mensagem
-    };
-    if (silencioso) {
-      payload.flags = 4096; // SUPPRESS_NOTIFICATIONS — posta no canal sem notificar
-    }
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).then(function(r) {
-      if (r.ok) {
-        console.log('[Discord] Aviso enviado.' + (silencioso ? ' (silencioso)' : ''));
-        return true;
+    return garantirWebhooksDiscord().then(function() {
+      var url = webhookUrl || DISCORD_WEBHOOK_CACADAS;
+      if (!url) {
+        console.warn('[Discord] Webhook cacadas ausente no Firebase (' + FIREBASE_WEBHOOKS_PATH + ').');
+        return false;
       }
-      console.warn('[Discord] Falha ao enviar aviso:', r.status);
-      return false;
-    }).catch(function(e) {
-      console.error('[Discord] Erro ao enviar aviso:', e);
-      return false;
+      var payload = {
+        username: 'Bot Shadow of Shinobi',
+        content: mensagem
+      };
+      if (silencioso) {
+        payload.flags = 4096; // SUPPRESS_NOTIFICATIONS — posta no canal sem notificar
+      }
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(r) {
+        if (r.ok) {
+          console.log('[Discord] Aviso enviado.' + (silencioso ? ' (silencioso)' : ''));
+          return true;
+        }
+        console.warn('[Discord] Falha ao enviar aviso:', r.status);
+        return false;
+      }).catch(function(e) {
+        console.error('[Discord] Erro ao enviar aviso:', e);
+        return false;
+      });
     });
   }
 
@@ -3628,15 +3669,22 @@
     formData.append('payload_json', JSON.stringify(payloadData));
     formData.append('file', blob, 'captcha.png');
 
-    fetch(DISCORD_WEBHOOK_CAPTCHA, { method: 'POST', body: formData })
-      .then(function(r) {
-        if (r.ok) console.log('[Discord] Captcha enviado (recorte, sem html2canvas).');
+    garantirWebhooksDiscord().then(function() {
+      if (!DISCORD_WEBHOOK_CAPTCHA) {
+        console.warn('[Discord] Webhook captcha ausente no Firebase (' + FIREBASE_WEBHOOKS_PATH + ').');
         if (callback) callback();
-      })
-      .catch(function(e) {
-        console.error('[Discord] Erro:', e);
-        if (callback) callback();
-      });
+        return;
+      }
+      fetch(DISCORD_WEBHOOK_CAPTCHA, { method: 'POST', body: formData })
+        .then(function(r) {
+          if (r.ok) console.log('[Discord] Captcha enviado (recorte, sem html2canvas).');
+          if (callback) callback();
+        })
+        .catch(function(e) {
+          console.error('[Discord] Erro:', e);
+          if (callback) callback();
+        });
+    });
   }
 
   function processarCaptchaDetectado() {
@@ -3645,7 +3693,6 @@
       return;
     }
     captchaJaNotificado = true;
-    tocarAlertaSonoro();
 
     capturarBlobCaptcha(function(blob) {
       if (!blob) {
@@ -3750,34 +3797,6 @@
     }
 
     garantirFirebase(conectarEListen);
-  }
-
-  // --- ALERTA SONORO ---
-  function tocarAlertaSonoro() {
-    try {
-      var AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-
-      var ctx = new AudioContext();
-      [0, 0.3, 0.6].forEach(function(delay) {
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, ctx.currentTime + delay);
-
-        gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
-        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + delay + 0.2);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        osc.start(ctx.currentTime + delay);
-        osc.stop(ctx.currentTime + delay + 0.2);
-      });
-    } catch (e) {
-      console.warn('[Script] Erro ao tocar alerta sonoro:', e);
-    }
   }
 
   function agendarReloadFalha(motivo, delayMs) {

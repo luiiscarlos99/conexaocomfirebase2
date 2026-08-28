@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.6
+// @version      7.7
 // @description  Automação do Invasor: last hit sorteio (32k-33k, padrao), scout ou data (+3min).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -383,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.6';
-  var SCRIPT_ATUALIZADO = '27/08/2026 11:30';
+  var SCRIPT_VERSAO = '7.7';
+  var SCRIPT_ATUALIZADO = '28/08/2026 00:30';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -510,7 +510,8 @@
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var URL_HOME = 'https://shadowofshinobi.com/';
-  var DISCORD_WEBHOOK_INVASOR = 'https://discord.com/api/webhooks/1539268145745895516/YLx8PWr2YwMwHflKqSM8docpJzKdcdNuYHyzyYRrSRMgrioGEhzc4OKp83Q-gLrAuUTH';
+  var DISCORD_WEBHOOK_INVASOR = '';
+  var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
   var DISCORD_COMBATE_SILENCIOSO = true; // flags 4096 = sem @ping/notificação push
 
   function montarUrlLoginComParams() {
@@ -576,6 +577,39 @@
     appId: "1:558853797700:web:71e454196334d2a5be8911",
     measurementId: "G-LDVNCKS73Z"
   };
+
+  var webhooksDiscordPromise = null;
+  var webhooksDiscordCarregados = false;
+
+  function aplicarWebhooksDiscordFirebase(dados) {
+    if (!dados || typeof dados !== 'object') return;
+    if (dados.invasor) DISCORD_WEBHOOK_INVASOR = String(dados.invasor);
+  }
+
+  function garantirWebhooksDiscord() {
+    if (webhooksDiscordCarregados) return Promise.resolve();
+    if (webhooksDiscordPromise) return webhooksDiscordPromise;
+
+    var url = FIREBASE_CONFIG.databaseURL + '/' + FIREBASE_WEBHOOKS_PATH + '.json';
+    webhooksDiscordPromise = fetch(url)
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(dados) {
+        aplicarWebhooksDiscordFirebase(dados);
+        webhooksDiscordCarregados = true;
+        console.log('[Discord] Webhook invasor do Firebase: ' +
+          (DISCORD_WEBHOOK_INVASOR ? 'ok' : 'ausente'));
+      })
+      .catch(function(err) {
+        console.warn('[Discord] Falha ao ler ' + FIREBASE_WEBHOOKS_PATH + ':', err);
+        webhooksDiscordPromise = null;
+      });
+    return webhooksDiscordPromise;
+  }
+
+  garantirWebhooksDiscord();
 
   // Credenciais do Usuário
   var USUARIO_DEFAULT = 'Shiroe';
@@ -757,7 +791,11 @@
 
   // --- ROLA A TELA E ENVIA PRINT PRO DISCORD ---
   async function capturarEEnviarPrintInferiorDiscord(motivo, silencioso) {
-    if (!DISCORD_WEBHOOK_INVASOR) return;
+    await garantirWebhooksDiscord();
+    if (!DISCORD_WEBHOOK_INVASOR) {
+      console.warn('[Discord] Webhook invasor ausente no Firebase (' + FIREBASE_WEBHOOKS_PATH + ').');
+      return;
+    }
 
     try {
       window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);
@@ -1183,9 +1221,15 @@
   }
 
   function enviarDiscordLastHitBaseline(coord) {
-    if (!DISCORD_WEBHOOK_INVASOR || !coord) return;
+    if (!coord) return;
 
-    var conteudo;
+    garantirWebhooksDiscord().then(function() {
+      if (!DISCORD_WEBHOOK_INVASOR) {
+        console.warn('[Discord] Webhook invasor ausente no Firebase (' + FIREBASE_WEBHOOKS_PATH + ').');
+        return;
+      }
+
+      var conteudo;
     if (coordEhModoData(coord)) {
       conteudo = [
         '🎯 **Janela Last Hit aberta (modo data)**',
@@ -1222,6 +1266,7 @@
       body: JSON.stringify({ content: conteudo })
     }).catch(function(err) {
       console.warn('[Discord] Falha ao avisar last hit:', err);
+    });
     });
   }
 
