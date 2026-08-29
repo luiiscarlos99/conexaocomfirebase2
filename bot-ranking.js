@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      1.10
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.9';
+      var SCRIPT_VERSAO = '1.10';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -391,6 +391,14 @@
           view: DEFAULTS_WATCH.view
         };
         try {
+          var rp = new URLSearchParams(window.location.search);
+          var mnWatch = rp.get('bot_ranking_watch_min_nivel');
+          if (mnWatch !== null && mnWatch !== '') {
+            var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
+            if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
+          }
+        } catch (e) {}
+        try {
           var raw = localStorage.getItem(WATCH_PARAMS_KEY);
           if (raw) {
             var saved = JSON.parse(raw);
@@ -400,14 +408,6 @@
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
-          }
-        } catch (e) {}
-        try {
-          var rp = new URLSearchParams(window.location.search);
-          var mnWatch = rp.get('bot_ranking_watch_min_nivel');
-          if (mnWatch !== null && mnWatch !== '') {
-            var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
-            if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
           }
         } catch (e) {}
         if (!extra || typeof extra !== 'object') return base;
