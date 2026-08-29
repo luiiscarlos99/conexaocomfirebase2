@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.09
+// @version      3.10
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -209,9 +209,13 @@
     return minutos >= (17 * 60 + 50) && minutos < (20 * 60);
   }
 
+  function doujutsuDesejadoPorFirebaseFila() {
+    return cacadasFirebaseFilaFlagAtiva() && cacadaAtualPorNomeFirebase();
+  }
+
   function doujutsuDesejado() {
     if (obterModoAba() !== 'cacadas') return false;
-    if (cacadasFirebaseFilaFlagAtiva()) return true;
+    if (doujutsuDesejadoPorFirebaseFila()) return true;
     if (doujutsuFlagManualAtiva()) return true;
     if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada() && dentroJanelaDoujutsuSabado()) {
       return true;
@@ -240,7 +244,7 @@
 
   function descreverCacadasFirebaseFila() {
     return cacadasFirebaseFilaFlagAtiva()
-      ? 'ligada (ranking_ryous_fila + doujutsu)'
+      ? 'ligada (ranking_ryous_fila + doujutsu c/ alvo na fila)'
       : 'desligada';
   }
 
@@ -496,8 +500,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.09';
-  var SCRIPT_ATUALIZADO = '29/08/2026 14:10';
+  var SCRIPT_VERSAO = '3.10';
+  var SCRIPT_ATUALIZADO = '29/08/2026 14:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
