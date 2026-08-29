@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.8';
+      var SCRIPT_VERSAO = '1.9';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -49,6 +49,7 @@
         view: 'personagens'
       };
 
+      var DISCORD_WATCH_RYOUS_SILENCIOSO = true;
       var DISCORD_WEBHOOK_GERAL = '';
       var DISCORD_WEBHOOK_CACADAS = '';
       var webhooksDiscordPromise = null;
@@ -713,16 +714,22 @@
               ' | vit ' + s.vitorias + ' | der ' + s.derrotas
             );
           }
+          var payload = {
+            username: 'Bot Shadow of Shinobi',
+            content: linhas.join('\n')
+          };
+          if (DISCORD_WATCH_RYOUS_SILENCIOSO) {
+            payload.flags = 4096;
+          }
           fetch(webhook, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              username: 'Bot Shadow of Shinobi',
-              content: linhas.join('\n')
-            })
+            body: JSON.stringify(payload)
           }).then(function(r) {
             if (r.ok) {
-              console.log('[Bot Ranking Watch] Discord enviado — ' + suspeitos.length + ' jogador(es) ranking=' + offset);
+              console.log('[Bot Ranking Watch] Discord enviado' +
+                (DISCORD_WATCH_RYOUS_SILENCIOSO ? ' (silencioso)' : '') +
+                ' — ' + suspeitos.length + ' jogador(es) ranking=' + offset);
             } else {
               console.warn('[Bot Ranking Watch] Discord HTTP ' + r.status);
             }
