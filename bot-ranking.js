@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.7';
+      var SCRIPT_VERSAO = '1.8';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -43,6 +43,7 @@
       var DEFAULTS_WATCH = {
         maxRyous: 150000000,
         minDeltaRyous: 100000,
+        minNivel: 74,
         intervaloMs: 600000,
         vila: 'geral',
         view: 'personagens'
@@ -383,6 +384,7 @@
         var base = {
           maxRyous: DEFAULTS_WATCH.maxRyous,
           minDeltaRyous: DEFAULTS_WATCH.minDeltaRyous,
+          minNivel: DEFAULTS_WATCH.minNivel,
           intervaloMs: DEFAULTS_WATCH.intervaloMs,
           vila: DEFAULTS_WATCH.vila,
           view: DEFAULTS_WATCH.view
@@ -393,9 +395,18 @@
             var saved = JSON.parse(raw);
             if (saved.maxRyous != null) base.maxRyous = saved.maxRyous;
             if (saved.minDeltaRyous != null) base.minDeltaRyous = saved.minDeltaRyous;
+            if (saved.minNivel != null) base.minNivel = saved.minNivel;
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
+          }
+        } catch (e) {}
+        try {
+          var rp = new URLSearchParams(window.location.search);
+          var mnWatch = rp.get('bot_ranking_watch_min_nivel');
+          if (mnWatch !== null && mnWatch !== '') {
+            var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
+            if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
           }
         } catch (e) {}
         if (!extra || typeof extra !== 'object') return base;
@@ -406,6 +417,10 @@
         if (extra.minDeltaRyous != null) {
           var md = parseNumeroRanking(extra.minDeltaRyous);
           if (md !== null && md > 0) base.minDeltaRyous = md;
+        }
+        if (extra.minNivel != null) {
+          var mn = parseInt(String(extra.minNivel).replace(/\./g, ''), 10);
+          if (!isNaN(mn)) base.minNivel = mn;
         }
         if (extra.intervaloMs != null) {
           var iv = parseInt(String(extra.intervaloMs).replace(/\./g, ''), 10);
@@ -521,6 +536,7 @@
         qs.set('view', p.view || 'personagens');
         qs.set('vila', p.vila || 'geral');
         qs.set('ranking', String(typeof offset === 'number' ? offset : 0));
+        if (p.minNivel != null) qs.set('bot_ranking_watch_min_nivel', String(p.minNivel));
         return 'https://shadowofshinobi.com/ranking?' + qs.toString();
       }
 
@@ -637,6 +653,7 @@
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
           if (!j || j.ryous === null || j.ryous > params.maxRyous) continue;
+          if (j.nivel === null || j.nivel < params.minNivel) continue;
 
           var prev = snapshotMap[j.nome.toLowerCase()];
           if (!prev || prev.ryous === null) continue;
@@ -683,7 +700,8 @@
           var fim = offset + PASSO_RANKING - 1;
           var linhas = [
             '⚠️ **Ranking — ryous subiu sem vit/der** (pos ' + offset + '–' + fim + ')',
-            'Filtro: +>=' + formatarNumeroBr(params.minDeltaRyous) + ' ryous | max ' +
+            'Filtro: lvl>=' + params.minNivel +
+              ' | +>=' + formatarNumeroBr(params.minDeltaRyous) + ' ryous | max ' +
               formatarNumeroBr(params.maxRyous)
           ];
           for (var i = 0; i < suspeitos.length; i++) {
@@ -724,7 +742,8 @@
         var qtdSnap = snap.jogadores ? Object.keys(snap.jogadores).length : 0;
         console.log('%c[Bot Ranking Watch] v' + SCRIPT_VERSAO + ' — scan em andamento', 'color:#e67e22;font-weight:bold');
         console.log('[Bot Ranking Watch] ranking=' + offset + ' | modo=' + estado.modo +
-          ' | snapshot=' + qtdSnap + ' jogadores | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
+          ' | snapshot=' + qtdSnap + ' jogadores | lvl>=' + params.minNivel +
+          ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous));
       }
 
@@ -856,7 +875,8 @@
         console.log('%c[Bot Ranking Watch] Iniciado — baseline + a cada ' +
           Math.round(params.intervaloMs / 60000) + ' min', 'color:#e67e22;font-weight:bold');
         console.log('[Bot Ranking Watch] maxRyous=' + formatarNumeroBr(params.maxRyous) +
-          ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous));
+          ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous) +
+          ' | minNivel=' + params.minNivel);
         iniciarCicloWatchScan('baseline');
         atualizarPainelRanking();
         return true;
@@ -934,9 +954,10 @@
         console.log('  botRankingParar()               — cancela scan mult');
         console.log('  botRankingStatus()              — status scan mult');
         console.log('  botRankingWatchRyous()          — watch ryous (+100k sem vit/der, a cada 10min)');
-        console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,intervaloMin:10})');
+        console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');
+        console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
         console.log('[Bot Ranking] Exemplo URL:');
