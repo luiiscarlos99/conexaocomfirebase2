@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.8
+// @version      7.9
 // @description  Automação do Invasor: last hit sorteio (2k-3k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -383,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.8';
-  var SCRIPT_ATUALIZADO = '29/08/2026 02:25';
+  var SCRIPT_VERSAO = '7.9';
+  var SCRIPT_ATUALIZADO = '29/08/2026 12:05';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -680,19 +680,53 @@
       .replace(/[\u0300-\u036f]/g, '');
   }
 
+  function textoIndicaInvasorAindaVivo(texto) {
+    if (!texto) return false;
+    var s = String(texto);
+    if (/ainda\s+n[aã]?o\s+(foi\s+)?derrotado/i.test(s)) return true;
+    if (/derrotado\s+por:[^\n]*ainda\s+n[aã]?o/i.test(s)) return true;
+    return false;
+  }
+
+  function invasorSinaisBossVivo(temBotao, temTimer, texto) {
+    if (temBotao || temTimer) return true;
+    return textoIndicaInvasorAindaVivo(texto);
+  }
+
   function vencedorInvasorValido(vencedor) {
     var v = String(vencedor || '').trim();
     if (!v) return false;
-    if (/^[-—–|\s]+$/.test(v)) return false;
+    if (/^[-—–|\s.:]+$/i.test(v)) return false;
+    if (/ainda\s+n[aã]?o/i.test(v)) return false;
+    if (/nao\s+derrotado|não\s+derrotado/i.test(v)) return false;
 
     var norm = normalizarTextoInvasor(v);
     if (norm.indexOf('ainda n') !== -1) return false;
-    if (norm.indexOf('nao derrotado') !== -1 || norm.indexOf('não derrotado') !== -1) return false;
+    if (norm.indexOf('nao derrotado') !== -1) return false;
+    if (norm.replace(/[^a-z0-9]/g, '').length < 2) return false;
     return true;
   }
 
   function derrotadoEmValido(em) {
-    return /\d{2}\/\d{2}\/\d{4}/.test(String(em || ''));
+    var s = String(em || '').trim();
+    if (!/\d{2}\/\d{2}\/\d{4}/.test(s)) return false;
+    return /\d{1,2}:\d{2}/.test(s);
+  }
+
+  function derrotaInvasorInfoValida(info) {
+    if (!info) return false;
+    return vencedorInvasorValido(info.vencedor) && derrotadoEmValido(info.em);
+  }
+
+  function invasorDerrotaConfirmada(info, temBotao, temTimer, textoCorpo) {
+    if (!derrotaInvasorInfoValida(info)) return false;
+    if (invasorSinaisBossVivo(temBotao, temTimer, textoCorpo)) return false;
+    return true;
+  }
+
+  function payloadBossMortoValido(payload) {
+    if (!payload || !payload.boss || !payload.vencedor || !payload.em) return false;
+    return derrotaInvasorInfoValida({ vencedor: payload.vencedor, em: payload.em });
   }
 
   function extrairDerrotadoPorTexto(texto) {
@@ -763,7 +797,8 @@
     garantirFirebaseDatabase(function(db) {
       var ref = db.ref(INVASOR_MORTO_AVISO_FB_PATH + '/' + chave);
       ref.transaction(function(current) {
-        if (current && current.vencedor) return undefined;
+        if (current && current.vencedor && vencedorInvasorValido(current.vencedor)) return undefined;
+        if (!payloadBossMortoValido(payload)) return undefined;
         return payload;
       }, function(error, committed, snapshot) {
         if (error) {
@@ -782,8 +817,20 @@
     var nomeInvasor = (dados && dados.nomeInvasor ? dados.nomeInvasor : '').trim();
     var vencedor = (dados && dados.vencedor ? dados.vencedor : '').trim();
     var derrotadoEm = (dados && dados.derrotadoEm ? dados.derrotadoEm : '').trim();
-    if (!nomeInvasor || !vencedorInvasorValido(vencedor) || !derrotadoEmValido(derrotadoEm)) {
-      console.warn('[Invasor] Derrota invalida ou boss ainda vivo — sem Discord.');
+    var temBotao = dados && dados.temBotao;
+    var temTimer = dados && dados.temTimer;
+    if (temBotao === undefined && (window.location.href || '').indexOf('invasor') !== -1) {
+      temBotao = !!obterBotaoAtaque();
+      temTimer = !!document.querySelector('[id^="inv_cd_timer_"]');
+    }
+    var corpo = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+
+    if (!nomeInvasor || !derrotaInvasorInfoValida({ vencedor: vencedor, em: derrotadoEm })) {
+      console.warn('[Invasor] Derrota invalida — sem Discord (' + (nomeInvasor || '?') + ').');
+      return;
+    }
+    if (invasorSinaisBossVivo(!!temBotao, !!temTimer, corpo)) {
+      console.warn('[Invasor] Boss vivo (botao/timer/placeholder) — sem Discord (' + nomeInvasor + ').');
       return;
     }
 
@@ -1732,13 +1779,14 @@
 
   function processarPaginaInvasor() {
     return limparComandoAtacarLegadoSeNecessario().then(function() {
-      var derrotaInfo = extrairDerrotadoPorInvasorPagina();
-      var invasorDerrotado = !!derrotaInfo;
       var derrotados = obterPlayersDerrotados();
       var btnAtacar = obterBotaoAtaque();
       var elementoTimer = document.querySelector('[id^="inv_cd_timer_"]');
       var temBotao = !!btnAtacar;
       var temTimer = elementoTimer !== null;
+      var textoCorpo = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+      var derrotaInfo = extrairDerrotadoPorInvasorPagina();
+      var invasorDerrotado = invasorDerrotaConfirmada(derrotaInfo, temBotao, temTimer, textoCorpo);
 
       console.log('[Invasor Checklist]', {
         temBotao: temBotao,
@@ -1755,7 +1803,9 @@
         tentarAvisarDiscordBossMorto({
           nomeInvasor: extrairNomeInvasorPagina(),
           vencedor: derrotaInfo.vencedor,
-          derrotadoEm: derrotaInfo.em
+          derrotadoEm: derrotaInfo.em,
+          temBotao: temBotao,
+          temTimer: temTimer
         });
         return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
           return resolverTempoReloadInvasor(null);
@@ -1989,11 +2039,14 @@
       if (pagina.ehCombate) {
         if (checarInvasorDerrotadoNoCombate()) {
           var derrotaCombate = extrairDerrotadoPorInvasorPagina();
-          if (derrotaCombate) {
+          var textoCombate = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+          if (invasorDerrotaConfirmada(derrotaCombate, false, false, textoCombate)) {
             tentarAvisarDiscordBossMorto({
               nomeInvasor: extrairNomeInvasorPagina(),
               vencedor: derrotaCombate.vencedor,
-              derrotadoEm: derrotaCombate.em
+              derrotadoEm: derrotaCombate.em,
+              temBotao: false,
+              temTimer: false
             });
           }
           limparEstadoFirebaseInvasor('boss derrotado na pagina de combate');

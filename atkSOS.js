@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.04
+// @version      3.05
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -467,8 +467,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.04';
-  var SCRIPT_ATUALIZADO = '29/08/2026 11:50';
+  var SCRIPT_VERSAO = '3.05';
+  var SCRIPT_ATUALIZADO = '29/08/2026 12:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2752,19 +2752,47 @@
     return null;
   }
 
+  function textoIndicaInvasorAindaVivo(texto) {
+    if (!texto) return false;
+    var s = String(texto);
+    if (/ainda\s+n[aã]?o\s+(foi\s+)?derrotado/i.test(s)) return true;
+    if (/derrotado\s+por:[^\n]*ainda\s+n[aã]?o/i.test(s)) return true;
+    return false;
+  }
+
+  function invasorSinaisBossVivo(temBotao, temTimer, texto) {
+    if (temBotao || temTimer) return true;
+    return textoIndicaInvasorAindaVivo(texto);
+  }
+
   function vencedorInvasorValido(vencedor) {
     var v = String(vencedor || '').trim();
     if (!v) return false;
-    if (/^[-—–|\s]+$/.test(v)) return false;
+    if (/^[-—–|\s.:]+$/i.test(v)) return false;
+    if (/ainda\s+n[aã]?o/i.test(v)) return false;
+    if (/nao\s+derrotado|não\s+derrotado/i.test(v)) return false;
 
     var norm = normalizarNomeInvasor(v);
     if (norm.indexOf('ainda n') !== -1) return false;
     if (norm.indexOf('nao derrotado') !== -1) return false;
+    if (norm.replace(/[^a-z0-9]/g, '').length < 2) return false;
     return true;
   }
 
   function derrotadoEmValido(em) {
-    return /\d{2}\/\d{2}\/\d{4}/.test(String(em || ''));
+    var s = String(em || '').trim();
+    if (!/\d{2}\/\d{2}\/\d{4}/.test(s)) return false;
+    return /\d{1,2}:\d{2}/.test(s);
+  }
+
+  function derrotaInvasorInfoValida(info) {
+    if (!info) return false;
+    return vencedorInvasorValido(info.vencedor) && derrotadoEmValido(info.em);
+  }
+
+  function payloadBossMortoValido(payload) {
+    if (!payload || !payload.boss || !payload.vencedor || !payload.em) return false;
+    return derrotaInvasorInfoValida({ vencedor: payload.vencedor, em: payload.em });
   }
 
   function parseEstadoInvasorHtml(html) {
@@ -2865,15 +2893,30 @@
       var corpo = doc.body ? (doc.body.textContent || '') : String(html || '');
       var m = corpo.match(/Players derrotados:\s*([\d.]+)/i);
       if (m) derrotados = parseInt(m[1].replace(/\./g, ''), 10) || 0;
+
+      if (invasorSinaisBossVivo(temBotao, temTimer, corpo)) {
+        derrotado = false;
+        vencedor = '';
+        derrotadoEm = '';
+      } else if (derrotado && !derrotaInvasorInfoValida({ vencedor: vencedor, em: derrotadoEm })) {
+        derrotado = false;
+        vencedor = '';
+        derrotadoEm = '';
+      }
     } catch (e) {
       var texto = String(html || '');
       if (reserva === null) reserva = extrairReservaRyousDeTexto(texto);
-      if (!/ainda n[aã]o/i.test(texto)) {
+      if (!textoIndicaInvasorAindaVivo(texto)) {
         var infoTxt = extrairDerrotadoPorTexto(texto);
         if (infoTxt) aplicarDerrota(infoTxt);
       }
       temBotao = /value=["']Atacar["']/i.test(texto) || /name=["']atacar["']/i.test(texto);
       temTimer = /inv_cd_timer_/i.test(texto);
+      if (invasorSinaisBossVivo(temBotao, temTimer, texto)) {
+        derrotado = false;
+        vencedor = '';
+        derrotadoEm = '';
+      }
       var m2 = texto.match(/Players derrotados:\s*([\d.]+)/i);
       if (m2) derrotados = parseInt(m2[1].replace(/\./g, ''), 10) || 0;
       var mNome2 = texto.match(/Nome do inimigo:\s*([^\n<]+)/i);
@@ -2929,7 +2972,8 @@
     garantirFirebase(function(db) {
       var ref = db.ref(INVASOR_MORTO_AVISO_FB_PATH + '/' + chave);
       ref.transaction(function(current) {
-        if (current && current.vencedor) return undefined;
+        if (current && current.vencedor && vencedorInvasorValido(current.vencedor)) return undefined;
+        if (!payloadBossMortoValido(payload)) return undefined;
         return payload;
       }, function(error, committed, snapshot) {
         if (error) {
@@ -2945,13 +2989,22 @@
   }
 
   function tentarAvisarDiscordBossMorto(estado) {
-    if (!estado || !estado.invasorDerrotado) return;
+    if (!estado) return;
 
     var nomeInvasor = (estado.nomeInvasor || '').trim();
     var vencedor = (estado.vencedor || '').trim();
     var derrotadoEm = (estado.derrotadoEm || '').trim();
-    if (!nomeInvasor || !vencedorInvasorValido(vencedor) || !derrotadoEmValido(derrotadoEm)) {
-      console.warn('[Invasor] Derrota invalida ou boss ainda vivo — sem Discord.');
+
+    if (!derrotaInvasorInfoValida({ vencedor: vencedor, em: derrotadoEm })) {
+      console.warn('[Invasor] Derrota invalida — sem Discord (' + (nomeInvasor || '?') + ').');
+      return;
+    }
+    if (invasorSinaisBossVivo(!!estado.temBotao, !!estado.temTimer, '')) {
+      console.warn('[Invasor] Boss vivo (botao/timer) — sem Discord (' + nomeInvasor + ').');
+      return;
+    }
+    if (!nomeInvasor) {
+      console.warn('[Invasor] Boss morto sem nome — sem Discord.');
       return;
     }
 
