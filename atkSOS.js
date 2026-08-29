@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.08
+// @version      3.09
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -496,8 +496,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.08';
-  var SCRIPT_ATUALIZADO = '29/08/2026 14:05';
+  var SCRIPT_VERSAO = '3.09';
+  var SCRIPT_ATUALIZADO = '29/08/2026 14:10';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -719,16 +719,17 @@
   var BOT_INVASOR_MORTO_AVISO_KEY = 'BOT_INVASOR_MORTO_AVISO';
   var DOUJUTSU_CUSTO_RYOUS = 10000;
   var HP_MINIMO_ATACAR_RATIO = 0.5;
+  var HP_MINIMO_FIREBASE_FILA_RATIO = 0.8;
 
   function obterHpMinimoAtacarRatio() {
-    if (cacadasFirebaseFilaFlagAtiva()) return 1;
+    if (cacadasFirebaseFilaFlagAtiva()) return HP_MINIMO_FIREBASE_FILA_RATIO;
     return HP_MINIMO_ATACAR_RATIO;
   }
 
   function descreverHpMinimoAtacar() {
     var pct = Math.round(obterHpMinimoAtacarRatio() * 100);
     if (cacadasFirebaseFilaFlagAtiva()) {
-      return pct + '% (Firebase fila — cura ate cheio)';
+      return pct + '% (Firebase fila — Ichiraku /status)';
     }
     return pct + '% (Ichiraku /status)';
   }
