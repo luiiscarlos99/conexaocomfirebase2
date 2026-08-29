@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.07
+// @version      3.08
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -496,8 +496,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.07';
-  var SCRIPT_ATUALIZADO = '29/08/2026 14:00';
+  var SCRIPT_VERSAO = '3.08';
+  var SCRIPT_ATUALIZADO = '29/08/2026 14:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -719,6 +719,19 @@
   var BOT_INVASOR_MORTO_AVISO_KEY = 'BOT_INVASOR_MORTO_AVISO';
   var DOUJUTSU_CUSTO_RYOUS = 10000;
   var HP_MINIMO_ATACAR_RATIO = 0.5;
+
+  function obterHpMinimoAtacarRatio() {
+    if (cacadasFirebaseFilaFlagAtiva()) return 1;
+    return HP_MINIMO_ATACAR_RATIO;
+  }
+
+  function descreverHpMinimoAtacar() {
+    var pct = Math.round(obterHpMinimoAtacarRatio() * 100);
+    if (cacadasFirebaseFilaFlagAtiva()) {
+      return pct + '% (Firebase fila — cura ate cheio)';
+    }
+    return pct + '% (Ichiraku /status)';
+  }
   var RESERVA_RYOUS_MIN_INVASOR_VIVO = 100000;
   var INVASOR_VIVO_POLL_MS = 60000;
   var INVASOR_POS_BOSS_ESPERA_MIN_MS = 3 * 60 * 1000;
@@ -1341,11 +1354,11 @@
 
     if (curarHpAtivo()) {
       if (naPaginaStatus) return false;
-      if (hp.ok && hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+      if (hp.ok && hp.pct >= obterHpMinimoAtacarRatio()) {
         limparCurarHpAtivo();
         return true;
       }
-      if (hp.ok && hp.pct < HP_MINIMO_ATACAR_RATIO) {
+      if (hp.ok && hp.pct < obterHpMinimoAtacarRatio()) {
         console.log('[HP] Cura pendente — retomando /status (' + contexto + ') — ' + formatarHpLog(hp));
         redirecionarParaCurarHp(contexto);
         return false;
@@ -1359,7 +1372,7 @@
       console.warn('[HP] Nao foi possivel ler HP — ' + contexto + ' (seguindo sem bloqueio).');
       return true;
     }
-    if (hp.pct >= HP_MINIMO_ATACAR_RATIO) return true;
+    if (hp.pct >= obterHpMinimoAtacarRatio()) return true;
 
     redirecionarParaCurarHp(contexto);
     return false;
@@ -1392,7 +1405,7 @@
   }
 
   function escolherItemIchirakuOptimo(itens, current, max) {
-    var meta = max * HP_MINIMO_ATACAR_RATIO;
+    var meta = max * obterHpMinimoAtacarRatio();
     var deficit = Math.ceil(meta - current);
     if (deficit <= 0) return null;
 
@@ -1419,12 +1432,12 @@
     if (obterModoAba() !== 'cacadas') return false;
 
     var hp = obterStatusHp();
-    var precisaCurar = hp.ok && hp.pct < HP_MINIMO_ATACAR_RATIO;
+    var precisaCurar = hp.ok && hp.pct < obterHpMinimoAtacarRatio();
 
     if (!curarHpAtivo()) {
       if (!precisaCurar) return false;
       marcarCurarHpAtivo();
-    } else if (hp.ok && hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+    } else if (hp.ok && hp.pct >= obterHpMinimoAtacarRatio()) {
       console.log('[HP] Vida recuperada — ' + formatarHpLog(hp) + ' | voltando ao portao...');
       limparCurarHpAtivo();
       if (tentarAtivarDoujutsuAposHpOk('pos-cura HP')) return true;
@@ -1440,7 +1453,7 @@
       return true;
     }
 
-    if (hp.pct >= HP_MINIMO_ATACAR_RATIO) {
+    if (hp.pct >= obterHpMinimoAtacarRatio()) {
       console.log('[HP] Vida OK — ' + formatarHpLog(hp) + ' | voltando ao portao...');
       limparCurarHpAtivo();
       if (tentarAtivarDoujutsuAposHpOk('HP OK em /status')) return true;
@@ -2413,7 +2426,7 @@
     if (!hp.ok) return '?';
     var pct = Math.round(hp.pct * 100);
     var txt = hp.current + '/' + hp.max + ' (' + pct + '%)';
-    if (pct < Math.round(HP_MINIMO_ATACAR_RATIO * 100)) return txt + ' — CURAR';
+    if (pct < Math.round(obterHpMinimoAtacarRatio() * 100)) return txt + ' — CURAR';
     return txt;
   }
 
@@ -2466,7 +2479,7 @@
     );
     linhas.push('HP: ' + montarHtmlLinhaHpPainel());
     linhas.push(
-      'HP min: ' + escHtmlPainelServer(String(Math.round(HP_MINIMO_ATACAR_RATIO * 100)) + '% (Ichiraku /status)')
+      'HP min: ' + escHtmlPainelServer(descreverHpMinimoAtacar())
     );
     linhas.push('Doujutsu: ' + montarHtmlLinhaDoujutsuPainel());
     linhas.push('Firebase Fila: ' + montarHtmlLinhaFirebaseFilaPainel());
@@ -4726,7 +4739,7 @@
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
-    ' | HP minimo ataque: ' + Math.round(HP_MINIMO_ATACAR_RATIO * 100) + '% (Ichiraku em /status)' +
+    ' | HP minimo ataque: ' + descreverHpMinimoAtacar() +
     ' | Doujutsu: ' + descreverDoujutsu() +
     ' | InvasorVivo: ' + descreverInvasorVivo() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
