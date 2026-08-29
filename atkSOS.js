@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.01
+// @version      3.02
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.01';
-  var SCRIPT_ATUALIZADO = '28/08/2026 14:45';
+  var SCRIPT_VERSAO = '3.02';
+  var SCRIPT_ATUALIZADO = '29/08/2026 01:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -585,6 +585,8 @@
   var BOT_ROTACAO_ASSUMIDA_KEY = 'BOT_AUTO_ROT_ASSUMIDA';
   var DISCORD_WEBHOOK_CAPTCHA = '';
   var DISCORD_WEBHOOK_CACADAS = '';
+  var DISCORD_WEBHOOK_INVASOR = '';
+  var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
   var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
   var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
@@ -985,6 +987,7 @@
     if (!dados || typeof dados !== 'object') return;
     if (dados.captcha) DISCORD_WEBHOOK_CAPTCHA = String(dados.captcha);
     if (dados.cacadas) DISCORD_WEBHOOK_CACADAS = String(dados.cacadas);
+    if (dados.invasor) DISCORD_WEBHOOK_INVASOR = String(dados.invasor);
   }
 
   function garantirWebhooksDiscord() {
@@ -1002,7 +1005,8 @@
         webhooksDiscordCarregados = true;
         console.log('[Discord] Webhooks do Firebase: captcha=' +
           (DISCORD_WEBHOOK_CAPTCHA ? 'ok' : 'ausente') + ' cacadas=' +
-          (DISCORD_WEBHOOK_CACADAS ? 'ok' : 'ausente'));
+          (DISCORD_WEBHOOK_CACADAS ? 'ok' : 'ausente') + ' invasor=' +
+          (DISCORD_WEBHOOK_INVASOR ? 'ok' : 'ausente'));
       })
       .catch(function(err) {
         console.warn('[Discord] Falha ao ler ' + FIREBASE_WEBHOOKS_PATH + ':', err);
@@ -2490,7 +2494,26 @@
     var temTimer = false;
     var derrotados = 0;
     var nomeInvasor = '';
+    var vencedor = '';
+    var derrotadoEm = '';
     var reserva = null;
+
+    function extrairDerrotadoPorTexto(texto) {
+      if (!texto) return null;
+      var m = String(texto).match(/Derrotado por:\s*([^|\n]+?)\s+em:\s*([^\n|]+)/i);
+      if (m) return { vencedor: m[1].trim(), em: m[2].trim() };
+      m = String(texto).match(/Derrotado por:\s*([^\n|]+)/i);
+      if (m) return { vencedor: m[1].trim(), em: '' };
+      return null;
+    }
+
+    function aplicarDerrota(textoLinha) {
+      var info = extrairDerrotadoPorTexto(textoLinha);
+      if (!info) return;
+      derrotado = true;
+      vencedor = info.vencedor;
+      derrotadoEm = info.em;
+    }
 
     function extrairNomeInvasorDeDocumento(doc) {
       if (!doc) return '';
@@ -2517,8 +2540,13 @@
         if (textoLinha.indexOf('Derrotado por:') === -1) continue;
         var lower = textoLinha.toLowerCase();
         if (lower.indexOf('ainda n') !== -1 && lower.indexOf('derrotado') !== -1) continue;
-        derrotado = true;
-        break;
+        aplicarDerrota(textoLinha);
+        if (derrotado) break;
+      }
+
+      if (!derrotado) {
+        var infoCorpo = extrairDerrotadoPorTexto(doc.body ? (doc.body.textContent || '') : '');
+        if (infoCorpo) aplicarDerrota('Derrotado por: ' + infoCorpo.vencedor + ' em: ' + infoCorpo.em);
       }
 
       temTimer = !!doc.querySelector('[id^="inv_cd_timer_"]');
@@ -2535,7 +2563,10 @@
     } catch (e) {
       var texto = String(html || '');
       if (reserva === null) reserva = extrairReservaRyousDeTexto(texto);
-      derrotado = /Derrotado por:/i.test(texto) && !/AINDA N[AÃ]O foi derrotado/i.test(texto);
+      if (/Derrotado por:/i.test(texto) && !/AINDA N[AÃ]O foi derrotado/i.test(texto)) {
+        var infoTxt = extrairDerrotadoPorTexto(texto);
+        if (infoTxt) aplicarDerrota('Derrotado por: ' + infoTxt.vencedor + ' em: ' + infoTxt.em);
+      }
       temBotao = /value=["']Atacar["']/i.test(texto) || /name=["']atacar["']/i.test(texto);
       temTimer = /inv_cd_timer_/i.test(texto);
       var m2 = texto.match(/Players derrotados:\s*([\d.]+)/i);
@@ -2558,6 +2589,8 @@
       temTimer: temTimer,
       derrotados: derrotados,
       nomeInvasor: nomeInvasor,
+      vencedor: vencedor,
+      derrotadoEm: derrotadoEm,
       reserva: reserva,
       ts: Date.now()
     };
@@ -2569,6 +2602,105 @@
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function normalizarChaveFirebaseBossMorto(valor) {
+    return String(valor || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '');
+  }
+
+  function montarChaveEventoBossMorto(nomeInvasor, derrotadoEm) {
+    var boss = normalizarChaveFirebaseBossMorto(nomeInvasor) || 'boss';
+    var em = String(derrotadoEm || '').replace(/[^\d]/g, '');
+    return boss + (em ? '_' + em : '');
+  }
+
+  function tentarReservarAvisoBossMortoFirebase(chave, payload, callback) {
+    garantirFirebase(function(db) {
+      var ref = db.ref(INVASOR_MORTO_AVISO_FB_PATH + '/' + chave);
+      ref.transaction(function(current) {
+        if (current && current.vencedor) return undefined;
+        return payload;
+      }, function(error, committed, snapshot) {
+        if (error) {
+          console.warn('[Invasor] Firebase aviso boss morto:', error);
+          callback(false);
+          return;
+        }
+        var val = snapshot && snapshot.val();
+        var ganhou = !!(committed && val && val.vencedor === payload.vencedor && val.ts === payload.ts);
+        callback(ganhou);
+      }, false);
+    });
+  }
+
+  function tentarAvisarDiscordBossMorto(estado) {
+    if (!estado || !estado.invasorDerrotado) return;
+
+    var nomeInvasor = (estado.nomeInvasor || '').trim();
+    var vencedor = (estado.vencedor || '').trim();
+    var derrotadoEm = (estado.derrotadoEm || '').trim();
+    if (!nomeInvasor || !vencedor) {
+      console.warn('[Invasor] Boss morto sem boss/vencedor — sem Discord.');
+      return;
+    }
+
+    var chave = montarChaveEventoBossMorto(nomeInvasor, derrotadoEm);
+    try {
+      if (localStorage.getItem('BOT_INVASOR_MORTO_FB_' + chave) === '1') return;
+    } catch (e) {}
+
+    var payload = {
+      boss: nomeInvasor,
+      vencedor: vencedor,
+      em: derrotadoEm,
+      ts: Date.now(),
+      conta: obterUsuarioExibicao()
+    };
+
+    tentarReservarAvisoBossMortoFirebase(chave, payload, function(ganhou) {
+      try { localStorage.setItem('BOT_INVASOR_MORTO_FB_' + chave, '1'); } catch (e) {}
+      if (!ganhou) {
+        console.log('[Invasor] Aviso boss morto ja registrado no Firebase (' + chave + ').');
+        return;
+      }
+
+      garantirWebhooksDiscord().then(function() {
+        var webhook = DISCORD_WEBHOOK_INVASOR || DISCORD_WEBHOOK_CACADAS;
+        if (!webhook) {
+          console.warn('[Discord] Webhook invasor/cacadas ausente — boss morto nao enviado.');
+          return;
+        }
+
+        var linhas = [
+          '💀 **Invasor derrotado**',
+          'Boss: **' + nomeInvasor + '**',
+          'Vencedor: **' + vencedor + '**'
+        ];
+        if (derrotadoEm) linhas.push('Em: ' + derrotadoEm);
+        linhas.push('Detectado por: `' + obterUsuarioExibicao() + '`');
+
+        fetch(webhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: 'Bot Shadow of Shinobi',
+            content: linhas.join('\n')
+          })
+        }).then(function(r) {
+          if (r.ok) {
+            console.log('[Invasor] Discord boss morto — ' + vencedor + ' derrotou ' + nomeInvasor);
+          }
+        }).catch(function(err) {
+          console.warn('[Discord] Falha boss morto:', err);
+        });
+      });
+    });
   }
 
   function lerMapaAvisosInvasorMorto() {
@@ -2712,6 +2844,7 @@
           ' lida em ' + (fonte || '?')
         );
 
+        tentarAvisarDiscordBossMorto(estado);
         tentarAvisarDiscordInvasorMortoReservaAlta(estado, reserva);
 
         if (!deveAplicarPausaInvasorVivo()) {

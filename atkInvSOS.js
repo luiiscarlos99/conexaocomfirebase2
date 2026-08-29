@@ -2,7 +2,7 @@
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
 // @version      7.7
-// @description  Automação do Invasor: last hit sorteio (32k-33k, padrao), scout ou data (+3min).
+// @description  Automação do Invasor: last hit sorteio (2k-3k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -194,8 +194,8 @@
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
   var LASTHIT_MODO_DEFAULT = 'sorteio';
-  var LASTHIT_SORTEIO_MIN_DEFAULT = 32000;
-  var LASTHIT_SORTEIO_MAX_DEFAULT = 33000;
+  var LASTHIT_SORTEIO_MIN_DEFAULT = 2000;
+  var LASTHIT_SORTEIO_MAX_DEFAULT = 3000;
 
   function extrairModoDeUrlString(urlStr) {
     try {
@@ -384,7 +384,8 @@
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
   var SCRIPT_VERSAO = '7.7';
-  var SCRIPT_ATUALIZADO = '28/08/2026 00:30';
+  var SCRIPT_ATUALIZADO = '29/08/2026 01:05';
+  var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
     window.__BOT_CONTROLE__ = {
@@ -669,6 +670,125 @@
       return true;
     }
     return false;
+  }
+
+  function extrairDerrotadoPorTexto(texto) {
+    if (!texto) return null;
+    var m = String(texto).match(/Derrotado por:\s*([^|\n]+?)\s+em:\s*([^\n|]+)/i);
+    if (m) return { vencedor: m[1].trim(), em: m[2].trim() };
+    m = String(texto).match(/Derrotado por:\s*([^\n|]+)/i);
+    if (m) return { vencedor: m[1].trim(), em: '' };
+    return null;
+  }
+
+  function extrairDerrotadoPorInvasorPagina() {
+    var linhas = document.querySelectorAll('tr');
+    for (var i = 0; i < linhas.length; i++) {
+      var textoLinha = linhas[i].innerText || linhas[i].textContent || '';
+      if (textoLinha.indexOf('Derrotado por:') === -1) continue;
+      var lower = textoLinha.toLowerCase();
+      if (lower.indexOf('ainda n') !== -1 && lower.indexOf('derrotado') !== -1) continue;
+      var info = extrairDerrotadoPorTexto(textoLinha);
+      if (info) return info;
+    }
+    var corpo = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+    return extrairDerrotadoPorTexto(corpo);
+  }
+
+  function normalizarChaveFirebaseBossMorto(valor) {
+    return String(valor || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '');
+  }
+
+  function montarChaveEventoBossMorto(nomeInvasor, derrotadoEm) {
+    var boss = normalizarChaveFirebaseBossMorto(nomeInvasor) || 'boss';
+    var em = String(derrotadoEm || '').replace(/[^\d]/g, '');
+    return boss + (em ? '_' + em : '');
+  }
+
+  function tentarReservarAvisoBossMortoFirebase(chave, payload, callback) {
+    garantirFirebaseDatabase(function(db) {
+      var ref = db.ref(INVASOR_MORTO_AVISO_FB_PATH + '/' + chave);
+      ref.transaction(function(current) {
+        if (current && current.vencedor) return undefined;
+        return payload;
+      }, function(error, committed, snapshot) {
+        if (error) {
+          console.warn('[Invasor] Firebase aviso boss morto:', error);
+          callback(false);
+          return;
+        }
+        var val = snapshot && snapshot.val();
+        var ganhou = !!(committed && val && val.vencedor === payload.vencedor && val.ts === payload.ts);
+        callback(ganhou);
+      }, false);
+    });
+  }
+
+  function tentarAvisarDiscordBossMorto(dados) {
+    var nomeInvasor = (dados && dados.nomeInvasor ? dados.nomeInvasor : '').trim();
+    var vencedor = (dados && dados.vencedor ? dados.vencedor : '').trim();
+    var derrotadoEm = (dados && dados.derrotadoEm ? dados.derrotadoEm : '').trim();
+    if (!nomeInvasor || !vencedor) {
+      console.warn('[Invasor] Boss morto sem boss/vencedor — sem Discord.');
+      return;
+    }
+
+    var chave = montarChaveEventoBossMorto(nomeInvasor, derrotadoEm);
+    try {
+      if (localStorage.getItem('BOT_INVASOR_MORTO_FB_' + chave) === '1') return;
+    } catch (e) {}
+
+    var payload = {
+      boss: nomeInvasor,
+      vencedor: vencedor,
+      em: derrotadoEm,
+      ts: Date.now(),
+      conta: USUARIO_FINAL
+    };
+
+    tentarReservarAvisoBossMortoFirebase(chave, payload, function(ganhou) {
+      try { localStorage.setItem('BOT_INVASOR_MORTO_FB_' + chave, '1'); } catch (e) {}
+      if (!ganhou) {
+        console.log('[Invasor] Aviso boss morto ja registrado no Firebase (' + chave + ').');
+        return;
+      }
+
+      garantirWebhooksDiscord().then(function() {
+        if (!DISCORD_WEBHOOK_INVASOR) {
+          console.warn('[Discord] Webhook invasor ausente — boss morto nao enviado.');
+          return;
+        }
+
+        var linhas = [
+          '💀 **Invasor derrotado**',
+          'Boss: **' + nomeInvasor + '**',
+          'Vencedor: **' + vencedor + '**'
+        ];
+        if (derrotadoEm) linhas.push('Em: ' + derrotadoEm);
+        linhas.push('Detectado por: `' + USUARIO_FINAL + '`');
+
+        fetch(DISCORD_WEBHOOK_INVASOR, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: 'Bot Shadow of Shinobi',
+            content: linhas.join('\n')
+          })
+        }).then(function(r) {
+          if (r.ok) {
+            console.log('[Invasor] Discord boss morto — ' + vencedor + ' derrotou ' + nomeInvasor);
+          }
+        }).catch(function(err) {
+          console.warn('[Discord] Falha boss morto:', err);
+        });
+      });
+    });
   }
 
   // --- CHECA SE O INVASOR FOI DERROTADO (somente quando explicito no DOM) ---
@@ -1594,6 +1714,12 @@
       );
 
       if (invasorDerrotado) {
+        var derrotaInfo = extrairDerrotadoPorInvasorPagina();
+        tentarAvisarDiscordBossMorto({
+          nomeInvasor: extrairNomeInvasorPagina(),
+          vencedor: derrotaInfo ? derrotaInfo.vencedor : '',
+          derrotadoEm: derrotaInfo ? derrotaInfo.em : ''
+        });
         return limparEstadoFirebaseInvasor('boss derrotado na pagina /invasor').then(function() {
           return resolverTempoReloadInvasor(null);
         });
@@ -1825,6 +1951,12 @@
       // 3. TELA PÓS-COMBATE
       if (pagina.ehCombate) {
         if (checarInvasorDerrotadoNoCombate()) {
+          var derrotaCombate = extrairDerrotadoPorInvasorPagina();
+          tentarAvisarDiscordBossMorto({
+            nomeInvasor: extrairNomeInvasorPagina(),
+            vencedor: derrotaCombate ? derrotaCombate.vencedor : '',
+            derrotadoEm: derrotaCombate ? derrotaCombate.em : ''
+          });
           limparEstadoFirebaseInvasor('boss derrotado na pagina de combate');
         }
 
