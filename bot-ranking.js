@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.6';
+      var SCRIPT_VERSAO = '1.7';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -36,6 +36,8 @@
       var AGUARDAR_TABELA_TENTATIVAS = 30;
       var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
       var FIREBASE_DB_URL = 'https://shizuo-a07d9-default-rtdb.firebaseio.com';
+      var RANKING_RYOUS_FILA_FB_PATH = 'ranking_ryous_fila';
+      var RANKING_RYOUS_FILA_TTL_MS = 3600000;
 
       var DEFAULTS = { maxRyous: 1000000, minNivel: 55, vila: 'geral', view: 'personagens' };
       var DEFAULTS_WATCH = {
@@ -522,6 +524,114 @@
         return 'https://shadowofshinobi.com/ranking?' + qs.toString();
       }
 
+      function normalizarChaveFirebaseRankingFila(nome) {
+        return String(nome || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '');
+      }
+
+      function urlFirebaseRankingFila(suffix) {
+        return FIREBASE_DB_URL + '/' + RANKING_RYOUS_FILA_FB_PATH + (suffix || '') + '.json';
+      }
+
+      function limparExpiradosFirebaseFila(callback) {
+        var limiteTs = Date.now() - RANKING_RYOUS_FILA_TTL_MS;
+        fetch(urlFirebaseRankingFila(''), { cache: 'no-store' })
+          .then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then(function(data) {
+            if (!data || typeof data !== 'object') {
+              if (callback) callback();
+              return;
+            }
+            var deletes = [];
+            for (var k in data) {
+              if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+              var item = data[k];
+              if (!item || !item.ts || item.ts < limiteTs) {
+                deletes.push(fetch(urlFirebaseRankingFila('/' + k), { method: 'DELETE' }));
+              }
+            }
+            Promise.all(deletes).catch(function() {}).finally(function() {
+              if (callback) callback();
+            });
+          })
+          .catch(function(err) {
+            console.warn('[Bot Ranking Watch] Falha ao limpar expirados Firebase:', err);
+            if (callback) callback();
+          });
+      }
+
+      function salvarSuspeitoFirebaseFila(suspeito) {
+        var chave = normalizarChaveFirebaseRankingFila(suspeito.nome);
+        if (!chave) return Promise.resolve({ ok: false, motivo: 'nome invalido' });
+
+        var payload = {
+          nome: suspeito.nome,
+          deltaRyous: suspeito.deltaRyous,
+          ryous: suspeito.ryous,
+          nivel: suspeito.nivel,
+          vitorias: suspeito.vitorias,
+          derrotas: suspeito.derrotas,
+          ts: Date.now()
+        };
+
+        return fetch(urlFirebaseRankingFila('/' + chave), { cache: 'no-store' })
+          .then(function(r) {
+            if (r.status === 404) return null;
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then(function(existing) {
+            if (existing && existing.ts >= Date.now() - RANKING_RYOUS_FILA_TTL_MS) {
+              if ((existing.deltaRyous || 0) >= payload.deltaRyous) {
+                return { ok: false, motivo: 'delta menor ou igual' };
+              }
+            }
+            return fetch(urlFirebaseRankingFila('/' + chave), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            }).then(function(r) {
+              return { ok: r.ok, motivo: r.ok ? 'salvo' : 'HTTP ' + r.status };
+            });
+          })
+          .catch(function(err) {
+            console.warn('[Bot Ranking Watch] Falha ao salvar ' + suspeito.nome + ':', err);
+            return { ok: false, motivo: String(err) };
+          });
+      }
+
+      function salvarSuspeitosFirebaseFila(suspeitos, callback) {
+        if (!suspeitos.length) {
+          if (callback) callback(0);
+          return;
+        }
+        limparExpiradosFirebaseFila(function() {
+          var idx = 0;
+          var salvos = 0;
+          function proximo() {
+            if (idx >= suspeitos.length) {
+              console.log('[Bot Ranking Watch] Firebase fila: ' + salvos + '/' + suspeitos.length + ' salvo(s) (TTL 1h, ordem por deltaRyous).');
+              if (callback) callback(salvos);
+              return;
+            }
+            salvarSuspeitoFirebaseFila(suspeitos[idx]).then(function(res) {
+              if (res && res.ok) salvos++;
+              idx++;
+              proximo();
+            });
+          }
+          proximo();
+        });
+      }
+
       function detectarRyousSuspeitos(jogadores, snapshotMap, params) {
         var out = [];
         for (var i = 0; i < jogadores.length; i++) {
@@ -686,6 +796,7 @@
           var suspeitos = detectarRyousSuspeitos(jogadores, snapMap, params);
           if (suspeitos.length) {
             enviarDiscordRyousSuspeitos(offset, suspeitos, params);
+            salvarSuspeitosFirebaseFila(suspeitos);
           }
           console.log('[Bot Ranking Watch] ranking=' + offset + ': ' + jogadores.length +
             ' jogadores, ' + suspeitos.length + ' suspeito(s).');
@@ -826,6 +937,8 @@
         console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,intervaloMin:10})');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');
+        console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
+        console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
         console.log('[Bot Ranking] Exemplo URL:');
         console.log('  /ranking?view=personagens&vila=geral&ranking=0&bot_ranking_max_ryous=1000000&bot_ranking_min_nivel=55');
       }
