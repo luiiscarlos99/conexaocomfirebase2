@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.03
+// @version      3.04
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -159,6 +159,76 @@
     return 'ligada (bot_rotacao_automacao=1)';
   }
 
+  function gravarDoujutsuParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      localStorage.setItem('BOT_DOUJUTSU', '0');
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_DOUJUTSU', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function doujutsuFlagManualAtiva() {
+    try { return localStorage.getItem('BOT_DOUJUTSU') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function gravarDoujutsuAutoSabadoParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      localStorage.setItem('BOT_DOUJUTSU_AUTO_SABADO', '0');
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_DOUJUTSU_AUTO_SABADO', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function doujutsuAutoSabadoFlagAtiva() {
+    try {
+      var raw = localStorage.getItem('BOT_DOUJUTSU_AUTO_SABADO');
+      if (raw === null || raw === '') return true;
+      if (raw === '0' || raw === 'false' || raw === 'off') return false;
+      return true;
+    } catch (e) {}
+    return true;
+  }
+
+  function dentroJanelaDoujutsuSabado() {
+    var agora = new Date();
+    if (agora.getDay() !== 6) return false;
+    var minutos = agora.getHours() * 60 + agora.getMinutes();
+    return minutos >= (17 * 60 + 50) && minutos < (20 * 60);
+  }
+
+  function doujutsuDesejado() {
+    if (obterModoAba() !== 'cacadas') return false;
+    if (doujutsuFlagManualAtiva()) return true;
+    if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada() && dentroJanelaDoujutsuSabado()) {
+      return true;
+    }
+    return false;
+  }
+
+  function descreverDoujutsu() {
+    var manual = doujutsuFlagManualAtiva() ? 'ligado' : 'desligado';
+    var autoSab = doujutsuAutoSabadoFlagAtiva() ? 'ligado' : 'desligado';
+    var efetivo = doujutsuDesejado() ? 'sim' : 'nao';
+    var extra = '';
+    if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada()) {
+      extra = dentroJanelaDoujutsuSabado() ? ' (janela sab 17:50-20h: agora)' : ' (janela sab 17:50-20h: fora)';
+    }
+    return 'manual: ' + manual + ' | auto sabado gerenciada: ' + autoSab + extra + ' | efetivo: ' + efetivo;
+  }
+
   function gravarInvasorVivoParam(valor) {
     if (valor === null || valor === undefined) return false;
     var s = String(valor).trim().toLowerCase();
@@ -204,6 +274,8 @@
     var d = rp.get('bot_diff_nivel_cacadas');
     var v = rp.get('bot_min_ryous_vitoria_cacadas');
     var iv = rp.get('bot_invasor_vivo');
+    var dj = rp.get('bot_doujutsu');
+    var djas = rp.get('bot_doujutsu_auto_sabado');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
     if (bl !== null) gravarBlacklistCacadasParam(bl);
@@ -212,6 +284,8 @@
     if (d !== null && d !== '') gravarDiffNivelCacadasParam(d);
     if (v !== null && v !== '') gravarMinRyousVitoriaCacadasParam(v);
     if (iv !== null && iv !== '') gravarInvasorVivoParam(iv);
+    if (dj !== null && dj !== '') gravarDoujutsuParam(dj);
+    if (djas !== null && djas !== '') gravarDoujutsuAutoSabadoParam(djas);
   }
 
   function gravarMinRyousVitoriaCacadasParam(valor) {
@@ -338,6 +412,7 @@
           params.get('bot_rotacao_automacao') ||
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
+          params.get('bot_doujutsu') || params.get('bot_doujutsu_auto_sabado') ||
           modoVeioDeQuery || modo === 'invasor' || modo === 'cacadas') &&
           window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
@@ -392,8 +467,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.03';
-  var SCRIPT_ATUALIZADO = '29/08/2026 02:25';
+  var SCRIPT_VERSAO = '3.04';
+  var SCRIPT_ATUALIZADO = '29/08/2026 11:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -422,6 +497,8 @@
       var d = localStorage.getItem('BOT_DIFF_NIVEL_CACADAS');
       var v = localStorage.getItem('BOT_MIN_RYOUS_VITORIA_CACADAS');
       var iv = localStorage.getItem('BOT_INVASOR_VIVO');
+      var dj = localStorage.getItem('BOT_DOUJUTSU');
+      var djas = localStorage.getItem('BOT_DOUJUTSU_AUTO_SABADO');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
@@ -436,6 +513,10 @@
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
       if (iv === '0') params.set('bot_invasor_vivo', '0');
       else if (invasorVivoFlagAtiva()) params.set('bot_invasor_vivo', '1');
+      if (dj === '1') params.set('bot_doujutsu', '1');
+      else if (dj === '0') params.set('bot_doujutsu', '0');
+      if (djas === '0') params.set('bot_doujutsu_auto_sabado', '0');
+      else if (djas === '1') params.set('bot_doujutsu_auto_sabado', '1');
     } catch (err) {}
 
     var qs = params.toString();
@@ -508,6 +589,28 @@
     return invasorVivoFlagAtiva();
   };
 
+  window.botDoujutsu = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Doujutsu] ' + descreverDoujutsu());
+      return doujutsuFlagManualAtiva();
+    }
+    gravarDoujutsuParam(ligar ? '1' : '0');
+    console.log('[Doujutsu] ' + descreverDoujutsu());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return doujutsuFlagManualAtiva();
+  };
+
+  window.botDoujutsuAutoSabado = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Doujutsu] auto sabado: ' + (doujutsuAutoSabadoFlagAtiva() ? 'ligado' : 'desligado'));
+      return doujutsuAutoSabadoFlagAtiva();
+    }
+    gravarDoujutsuAutoSabadoParam(ligar ? '1' : '0');
+    console.log('[Doujutsu] ' + descreverDoujutsu());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return doujutsuAutoSabadoFlagAtiva();
+  };
+
   if ((function() {
     try {
       var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
@@ -568,8 +671,10 @@
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
   var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
   var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
+  var BOT_DOUJUTSU_ATIVAR_KEY = 'BOT_DOUJUTSU_ATIVAR';
   var BOT_INVASOR_EVENTO_CACHE_KEY = 'BOT_INVASOR_EVENTO_CACHE';
   var BOT_INVASOR_MORTO_AVISO_KEY = 'BOT_INVASOR_MORTO_AVISO';
+  var DOUJUTSU_CUSTO_RYOUS = 10000;
   var HP_MINIMO_ATACAR_RATIO = 0.5;
   var RESERVA_RYOUS_MIN_INVASOR_VIVO = 100000;
   var INVASOR_VIVO_POLL_MS = 60000;
@@ -1276,6 +1381,7 @@
     } else if (hp.ok && hp.pct >= HP_MINIMO_ATACAR_RATIO) {
       console.log('[HP] Vida recuperada — ' + formatarHpLog(hp) + ' | voltando ao portao...');
       limparCurarHpAtivo();
+      if (tentarAtivarDoujutsuAposHpOk('pos-cura HP')) return true;
       window.location.href = URL_RELATORIOS_ATAQUE;
       return true;
     }
@@ -1291,6 +1397,7 @@
     if (hp.pct >= HP_MINIMO_ATACAR_RATIO) {
       console.log('[HP] Vida OK — ' + formatarHpLog(hp) + ' | voltando ao portao...');
       limparCurarHpAtivo();
+      if (tentarAtivarDoujutsuAposHpOk('HP OK em /status')) return true;
       window.location.href = URL_RELATORIOS_ATAQUE;
       return true;
     }
@@ -1316,6 +1423,135 @@
     if (btn) btn.click();
     else escolhido.form.submit();
     return true;
+  }
+
+  function doujutsuAtivarPendente() {
+    try { return sessionStorage.getItem(BOT_DOUJUTSU_ATIVAR_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarDoujutsuAtivarPendente() {
+    try { sessionStorage.setItem(BOT_DOUJUTSU_ATIVAR_KEY, '1'); } catch (e) {}
+  }
+
+  function limparDoujutsuAtivarPendente() {
+    try { sessionStorage.removeItem(BOT_DOUJUTSU_ATIVAR_KEY); } catch (e) {}
+  }
+
+  function extrairDoujutsuSidebar() {
+    var raizes = [];
+    var col = document.getElementById('col_esquerda');
+    if (col) raizes.push(col);
+    if (document.body) raizes.push(document.body);
+
+    for (var r = 0; r < raizes.length; r++) {
+      var texto = raizes[r].innerText || raizes[r].textContent || '';
+      var m = texto.match(/Doujutsu:\s*([^\n]+)/i);
+      if (!m) continue;
+      var val = m[1].trim();
+      var ativo = /ativo\s+at[eé]/i.test(val);
+      return { encontrado: true, ativo: ativo, texto: val };
+    }
+    return { encontrado: false, ativo: false, texto: '' };
+  }
+
+  function doujutsuEstaAtivo() {
+    return extrairDoujutsuSidebar().ativo;
+  }
+
+  function obterFormAtivarDoujutsuStatus() {
+    var forms = document.querySelectorAll('form[action="status"]');
+    for (var i = 0; i < forms.length; i++) {
+      var form = forms[i];
+      if (!form.querySelector('input[name="ativar_dj_esp_status"]')) continue;
+      var btn = form.querySelector('input[type="submit"]');
+      if (!btn) continue;
+      var val = (btn.value || '').toLowerCase();
+      if (val.indexOf('ativar') === -1) continue;
+      return form;
+    }
+    return null;
+  }
+
+  function precisaAtivarDoujutsuAgora() {
+    if (!doujutsuDesejado()) return false;
+    if (doujutsuEstaAtivo()) return false;
+    var reserva = extrairReservaRyous();
+    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) return false;
+    return true;
+  }
+
+  function tentarAtivarDoujutsuAposHpOk(contexto) {
+    if (!precisaAtivarDoujutsuAgora()) return false;
+    marcarDoujutsuAtivarPendente();
+    return processarDoujutsuNaPaginaStatus(contexto || 'pos-cura HP');
+  }
+
+  function processarDoujutsuNaPaginaStatus(contexto) {
+    if (obterModoAba() !== 'cacadas') return false;
+    if (!doujutsuAtivarPendente()) return false;
+
+    if (doujutsuEstaAtivo()) {
+      console.log('[Doujutsu] Ja ativo — ' + (extrairDoujutsuSidebar().texto || 'OK') +
+        (contexto ? ' (' + contexto + ')' : ''));
+      limparDoujutsuAtivarPendente();
+      return false;
+    }
+
+    var reserva = extrairReservaRyous();
+    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) {
+      console.warn('[Doujutsu] Reserva ' + formatarNumeroBr(reserva) + ' < 10k — impossivel ativar.');
+      limparDoujutsuAtivarPendente();
+      return false;
+    }
+
+    var form = obterFormAtivarDoujutsuStatus();
+    if (!form) {
+      console.warn('[Doujutsu] Botao Ativar nao encontrado em /status.');
+      limparDoujutsuAtivarPendente();
+      return false;
+    }
+
+    console.log('[Doujutsu] Ativando dojutsu especial (' + formatarNumeroBr(DOUJUTSU_CUSTO_RYOUS) + ' ryous)...');
+    var btnSubmit = form.querySelector('input[type="submit"]');
+    if (btnSubmit) btnSubmit.click();
+    else form.submit();
+    return true;
+  }
+
+  function garantirDoujutsuParaAtacar(contexto) {
+    if (obterModoAba() !== 'cacadas') return true;
+    if (!doujutsuDesejado()) return true;
+
+    if (doujutsuAtivarPendente()) {
+      if ((window.location.href || '').indexOf('status') === -1) {
+        console.log('[Doujutsu] Ativacao pendente — indo para /status...');
+        consumirGateCacadas();
+        window.location.href = URL_STATUS;
+      }
+      return false;
+    }
+
+    if (doujutsuEstaAtivo()) return true;
+
+    var reserva = extrairReservaRyous();
+    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) {
+      console.log(
+        '[Doujutsu] Reserva ' + formatarNumeroBr(reserva) + ' < 10k — seguindo sem ativar (' +
+        (contexto || '?') + ').'
+      );
+      return true;
+    }
+    if (reserva === null) {
+      console.warn('[Doujutsu] Reserva ilegivel — seguindo sem ativar (' + (contexto || '?') + ').');
+      return true;
+    }
+
+    console.log('[Doujutsu] Inativo — indo para /status ativar (' + (contexto || '?') + ')...');
+    marcarDoujutsuAtivarPendente();
+    consumirGateCacadas();
+    window.location.href = URL_STATUS;
+    return false;
   }
 
   function processarRotacaoContaPrincipal() {
@@ -2091,6 +2327,33 @@
     exibirModoAbaServerID();
   }
 
+  function descreverDoujutsuPainel() {
+    if (!doujutsuDesejado()) {
+      if (doujutsuFlagManualAtiva()) return 'ligado (manual)';
+      var partes = ['desligado'];
+      if (!doujutsuAutoSabadoFlagAtiva()) partes.push('auto sab off');
+      else if (!estaEmContaGerenciada()) partes.push('nao gerenciada');
+      else if (!dentroJanelaDoujutsuSabado()) partes.push('fora sab 17:50-20h');
+      return partes.join(' — ');
+    }
+
+    var info = extrairDoujutsuSidebar();
+    if (info.ativo) return 'ATIVO — ' + info.texto;
+    if (doujutsuAtivarPendente()) return 'ativando em /status...';
+    return 'ligado — inativo (10k ryous)';
+  }
+
+  function montarHtmlLinhaDoujutsuPainel() {
+    var texto = descreverDoujutsuPainel();
+    if (texto.indexOf('ATIVO') === 0) {
+      return '<b style="color:#66ff99">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    if (texto.indexOf('ativando') !== -1) {
+      return '<b style="color:#ffcc66">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    return escHtmlPainelServer(texto);
+  }
+
   function descreverHpPainel() {
     var hp = obterStatusHp();
     if (!hp.ok) return '?';
@@ -2151,6 +2414,7 @@
     linhas.push(
       'HP min: ' + escHtmlPainelServer(String(Math.round(HP_MINIMO_ATACAR_RATIO * 100)) + '% (Ichiraku /status)')
     );
+    linhas.push('Doujutsu: ' + montarHtmlLinhaDoujutsuPainel());
     linhas.push('InvasorVivo: ' + montarHtmlLinhaInvasorVivoPainel());
     linhas.push('v' + escHtmlPainelServer(SCRIPT_VERSAO));
 
@@ -4150,8 +4414,10 @@
     ' | Diff nivel: ' + obterDiffNivelCacadas() +
     ' | Min ryous vitoria: ' + formatarNumeroBr(obterMinRyousVitoriaCacadas()) +
     ' | HP minimo ataque: ' + Math.round(HP_MINIMO_ATACAR_RATIO * 100) + '% (Ichiraku em /status)' +
+    ' | Doujutsu: ' + descreverDoujutsu() +
     ' | InvasorVivo: ' + descreverInvasorVivo() +
-    ' | Console: botInvasorVivo() / botInvasorVivo(true|false)' +
+    ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
+    ' | botInvasorVivo() / botInvasorVivo(true|false)' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
@@ -4211,6 +4477,10 @@
         if (modoStatus === 'cacadas') {
           if (processarRotacaoContaPrincipal()) return;
           if (processarCurarHpNaPaginaStatus()) return;
+          if (processarDoujutsuNaPaginaStatus('status')) return;
+          if (doujutsuAtivarPendente() && doujutsuEstaAtivo()) {
+            limparDoujutsuAtivarPendente();
+          }
           console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
           window.location.href = URL_RELATORIOS_ATAQUE;
           return;
@@ -4370,6 +4640,7 @@
             }
 
             if (!garantirHpParaAtacar('pagina atacar')) return true;
+            if (!garantirDoujutsuParaAtacar('pagina atacar')) return true;
 
             atacarJaProcessado = true;
             atacarAlvoValido(resultado, btnAtacar);
