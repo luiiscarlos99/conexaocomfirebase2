@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.02
+// @version      3.03
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -392,8 +392,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.02';
-  var SCRIPT_ATUALIZADO = '29/08/2026 01:05';
+  var SCRIPT_VERSAO = '3.03';
+  var SCRIPT_ATUALIZADO = '29/08/2026 02:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2488,6 +2488,21 @@
     return null;
   }
 
+  function vencedorInvasorValido(vencedor) {
+    var v = String(vencedor || '').trim();
+    if (!v) return false;
+    if (/^[-—–|\s]+$/.test(v)) return false;
+
+    var norm = normalizarNomeInvasor(v);
+    if (norm.indexOf('ainda n') !== -1) return false;
+    if (norm.indexOf('nao derrotado') !== -1) return false;
+    return true;
+  }
+
+  function derrotadoEmValido(em) {
+    return /\d{2}\/\d{2}\/\d{4}/.test(String(em || ''));
+  }
+
   function parseEstadoInvasorHtml(html) {
     var derrotado = false;
     var temBotao = false;
@@ -2500,15 +2515,33 @@
 
     function extrairDerrotadoPorTexto(texto) {
       if (!texto) return null;
-      var m = String(texto).match(/Derrotado por:\s*([^|\n]+?)\s+em:\s*([^\n|]+)/i);
-      if (m) return { vencedor: m[1].trim(), em: m[2].trim() };
-      m = String(texto).match(/Derrotado por:\s*([^\n|]+)/i);
-      if (m) return { vencedor: m[1].trim(), em: '' };
-      return null;
+      var s = String(texto);
+      if (/ainda n[aã]o/i.test(s)) return null;
+
+      var m = s.match(/Derrotado por:\s*([^|\n]+?)\s+em:\s*([^\n|]+)/i);
+      if (!m) return null;
+
+      var v = m[1].trim();
+      var em = m[2].trim();
+      if (!vencedorInvasorValido(v) || !derrotadoEmValido(em)) return null;
+      return { vencedor: v, em: em };
     }
 
-    function aplicarDerrota(textoLinha) {
-      var info = extrairDerrotadoPorTexto(textoLinha);
+    function extrairDerrotadoPorValorCelula(valor) {
+      if (!valor) return null;
+      var s = String(valor).trim().replace(/^\|\s*/, '');
+      if (/ainda n[aã]o/i.test(s)) return null;
+
+      var m = s.match(/^(.+?)\s+em:\s*(.+)$/i);
+      if (!m) return null;
+
+      var v = m[1].trim();
+      var em = m[2].trim();
+      if (!vencedorInvasorValido(v) || !derrotadoEmValido(em)) return null;
+      return { vencedor: v, em: em };
+    }
+
+    function aplicarDerrota(info) {
       if (!info) return;
       derrotado = true;
       vencedor = info.vencedor;
@@ -2536,17 +2569,25 @@
       nomeInvasor = extrairNomeInvasorDeDocumento(doc);
       var linhas = doc.querySelectorAll('tr');
       for (var i = 0; i < linhas.length; i++) {
+        var tds = linhas[i].querySelectorAll('td');
+        if (tds.length >= 2) {
+          var rotulo = (tds[0].textContent || '').trim().toLowerCase();
+          if (rotulo.indexOf('derrotado por') !== -1) {
+            var infoCelula = extrairDerrotadoPorValorCelula(tds[1].textContent || '');
+            if (infoCelula) {
+              aplicarDerrota(infoCelula);
+              break;
+            }
+          }
+        }
+
         var textoLinha = linhas[i].textContent || '';
         if (textoLinha.indexOf('Derrotado por:') === -1) continue;
-        var lower = textoLinha.toLowerCase();
-        if (lower.indexOf('ainda n') !== -1 && lower.indexOf('derrotado') !== -1) continue;
-        aplicarDerrota(textoLinha);
-        if (derrotado) break;
-      }
-
-      if (!derrotado) {
-        var infoCorpo = extrairDerrotadoPorTexto(doc.body ? (doc.body.textContent || '') : '');
-        if (infoCorpo) aplicarDerrota('Derrotado por: ' + infoCorpo.vencedor + ' em: ' + infoCorpo.em);
+        var infoLinha = extrairDerrotadoPorTexto(textoLinha);
+        if (infoLinha) {
+          aplicarDerrota(infoLinha);
+          break;
+        }
       }
 
       temTimer = !!doc.querySelector('[id^="inv_cd_timer_"]');
@@ -2563,9 +2604,9 @@
     } catch (e) {
       var texto = String(html || '');
       if (reserva === null) reserva = extrairReservaRyousDeTexto(texto);
-      if (/Derrotado por:/i.test(texto) && !/AINDA N[AÃ]O foi derrotado/i.test(texto)) {
+      if (!/ainda n[aã]o/i.test(texto)) {
         var infoTxt = extrairDerrotadoPorTexto(texto);
-        if (infoTxt) aplicarDerrota('Derrotado por: ' + infoTxt.vencedor + ' em: ' + infoTxt.em);
+        if (infoTxt) aplicarDerrota(infoTxt);
       }
       temBotao = /value=["']Atacar["']/i.test(texto) || /name=["']atacar["']/i.test(texto);
       temTimer = /inv_cd_timer_/i.test(texto);
@@ -2645,8 +2686,8 @@
     var nomeInvasor = (estado.nomeInvasor || '').trim();
     var vencedor = (estado.vencedor || '').trim();
     var derrotadoEm = (estado.derrotadoEm || '').trim();
-    if (!nomeInvasor || !vencedor) {
-      console.warn('[Invasor] Boss morto sem boss/vencedor — sem Discord.');
+    if (!nomeInvasor || !vencedorInvasorValido(vencedor) || !derrotadoEmValido(derrotadoEm)) {
+      console.warn('[Invasor] Derrota invalida ou boss ainda vivo — sem Discord.');
       return;
     }
 
