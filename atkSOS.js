@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.05
+// @version      3.06
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -467,8 +467,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.05';
-  var SCRIPT_ATUALIZADO = '29/08/2026 12:05';
+  var SCRIPT_VERSAO = '3.06';
+  var SCRIPT_ATUALIZADO = '29/08/2026 13:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3041,6 +3041,9 @@
           'Vencedor: **' + vencedor + '**'
         ];
         if (derrotadoEm) linhas.push('Em: ' + derrotadoEm);
+        if (estado.derrotados !== null && estado.derrotados !== undefined && !isNaN(estado.derrotados)) {
+          linhas.push('Players derrotados: **' + formatarNumeroBr(estado.derrotados) + '**');
+        }
         linhas.push('Detectado por: `' + obterUsuarioExibicao() + '`');
 
         fetch(webhook, {

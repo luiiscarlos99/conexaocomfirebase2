@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.9
+// @version      7.10
 // @description  Automação do Invasor: last hit sorteio (2k-3k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -383,8 +383,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.9';
-  var SCRIPT_ATUALIZADO = '29/08/2026 12:05';
+  var SCRIPT_VERSAO = '7.10';
+  var SCRIPT_ATUALIZADO = '29/08/2026 13:05';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -817,6 +817,10 @@
     var nomeInvasor = (dados && dados.nomeInvasor ? dados.nomeInvasor : '').trim();
     var vencedor = (dados && dados.vencedor ? dados.vencedor : '').trim();
     var derrotadoEm = (dados && dados.derrotadoEm ? dados.derrotadoEm : '').trim();
+    var derrotados = dados && dados.derrotados;
+    if (derrotados === undefined || derrotados === null) {
+      derrotados = obterPlayersDerrotados();
+    }
     var temBotao = dados && dados.temBotao;
     var temTimer = dados && dados.temTimer;
     if (temBotao === undefined && (window.location.href || '').indexOf('invasor') !== -1) {
@@ -866,6 +870,9 @@
           'Vencedor: **' + vencedor + '**'
         ];
         if (derrotadoEm) linhas.push('Em: ' + derrotadoEm);
+        if (derrotados !== null && derrotados !== undefined && !isNaN(derrotados)) {
+          linhas.push('Players derrotados: **' + formatarNumeroInvasor(derrotados) + '**');
+        }
         linhas.push('Detectado por: `' + USUARIO_FINAL + '`');
 
         fetch(DISCORD_WEBHOOK_INVASOR, {
@@ -1804,6 +1811,7 @@
           nomeInvasor: extrairNomeInvasorPagina(),
           vencedor: derrotaInfo.vencedor,
           derrotadoEm: derrotaInfo.em,
+          derrotados: derrotados,
           temBotao: temBotao,
           temTimer: temTimer
         });
@@ -2045,6 +2053,7 @@
               nomeInvasor: extrairNomeInvasorPagina(),
               vencedor: derrotaCombate.vencedor,
               derrotadoEm: derrotaCombate.em,
+              derrotados: obterPlayersDerrotados(),
               temBotao: false,
               temTimer: false
             });
