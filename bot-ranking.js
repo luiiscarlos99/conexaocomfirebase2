@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.5';
+      var SCRIPT_VERSAO = '1.6';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -316,6 +316,7 @@
         var out = [];
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
+          if (j.ryous === null || j.ryous <= 0) continue;
           if (j.nivel > params.minNivel && j.ryous < params.maxRyous) out.push(j);
         }
         return out;
