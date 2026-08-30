@@ -569,8 +569,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.29';
-  var SCRIPT_ATUALIZADO = '30/08/2026 00:25';
+  var SCRIPT_VERSAO = '3.30';
+  var SCRIPT_ATUALIZADO = '30/08/2026 00:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1283,10 +1283,21 @@
     }, 1500);
   }
 
+  function automacaoTemCicloPendente() {
+    try { return sessionStorage.getItem(BOT_ROTACAO_CICLO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
   function processarPaginaAutomacao() {
-    if (!consumirRotacaoCicloPendente()) return false;
-    if (!rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada() && !diarioGerenciadaAtivo()) return false;
+    var cicloPendente = automacaoTemCicloPendente();
+    var retomar = precisaRetomarGerenciada();
+    var diarioAssumir = diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva();
+
+    if (!cicloPendente && !retomar && !diarioAssumir) return true;
+    if (!rotacaoAutomacaoAtiva() && !retomar && !diarioGerenciadaAtivo()) return true;
     if (automacaoAssumirEmAndamento) return true;
+
+    if (cicloPendente) consumirRotacaoCicloPendente();
 
     var contas = extrairContasAutomacaoPagina();
     if (!contas.length) {
@@ -1302,11 +1313,21 @@
         } else {
           console.warn('[Diario] Sem proxima conta pendente — feitas: ' +
             lerContasDiarioFeitas().join(', ') + ' | esperadas: ' +
-            lerSequenciaDiarioPresentesNorm().join(', '));
+            lerSequenciaDiarioPresentesNorm().join(', ') + ' — use botDiarioReset()');
         }
         return true;
       }
       return irParaPortaoOuPararDiario('Automacao falhou ao escolher conta');
+    }
+
+    if (diarioAssumir && estaEmContaGerenciada()) {
+      var nomeAtual = extrairNomeUsuarioLogado();
+      if (nomeAtual && normalizarNomeCacadas(proxima.nome) === normalizarNomeCacadas(nomeAtual)) {
+        limparRetomarGerenciada();
+        console.warn('[Diario] Gerenciada ' + nomeAtual + ' ja ativa — iniciando rotina diaria...');
+        retomarDiarioGerenciadaPosAssume();
+        return true;
+      }
     }
 
     automacaoAssumirEmAndamento = true;
