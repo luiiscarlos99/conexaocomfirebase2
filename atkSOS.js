@@ -263,7 +263,7 @@
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
     var extra = diarioSemCacadasPosRotina()
-      ? ' | pos-diario: todas gerenciadas deste login (Discord em ' + DIARIO_DISCORD_LOGIN + ')'
+      ? ' | pos-diario: sequencia ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ')'
       : ' | pos-diario: caçadas';
     if (diarioCicloSequenciaConcluido()) extra += ' | ciclo: concluido';
     return 'ligado (evento + raid + animal)' + extra;
@@ -569,8 +569,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.30';
-  var SCRIPT_ATUALIZADO = '30/08/2026 00:35';
+  var SCRIPT_VERSAO = '3.31';
+  var SCRIPT_ATUALIZADO = '30/08/2026 00:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -757,6 +757,9 @@
   window.botDiarioReset = function() {
     limparEstadoDiario();
     limparDiarioCicloSequenciaConcluido();
+    limparDiarioHandoffParar();
+    limparDiarioSequenciaFbLocal();
+    publicarDiarioSequenciaFirebase({ loginAtivo: '', status: '', atualizadoEm: Date.now() });
     console.log('[Diario] Estado da rotina diaria limpo — recarregue ou navegue para reiniciar.');
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
   };
@@ -892,6 +895,11 @@
   var BOT_DIARIO_CONTAS_FEITAS_KEY = 'BOT_DIARIO_CONTAS_FEITAS';
   var DIARIO_LOGINS_SEQUENCIA = ['Shiroe', 'Shizuo', 'Sora'];
   var DIARIO_DISCORD_LOGIN = 'Sora';
+  var DIARIO_SEQUENCIA_FB_PATH = 'config/diarioSequencia';
+  var BOT_DIARIO_HANDOFF_PARAR_KEY = 'BOT_DIARIO_HANDOFF_PARAR';
+  var BOT_DIARIO_SEQ_VEZ_KEY = 'BOT_DIARIO_SEQ_VEZ';
+  var BOT_DIARIO_SEQ_STATUS_KEY = 'BOT_DIARIO_SEQ_STATUS';
+  var diarioSequenciaPollTimer = null;
   var DISCORD_WEBHOOK_CAPTCHA = '';
   var DISCORD_WEBHOOK_CACADAS = '';
   var DISCORD_WEBHOOK_INVASOR = '';
@@ -1001,7 +1009,9 @@
   }
 
   function precisaAssumirAutomacaoPosPrincipal() {
+    if (diarioHandoffParadoNesteNavegador()) return false;
     if (diarioGerenciadaAtivo() && diarioCicloSequenciaConcluido()) return false;
+    if (diarioGerenciadaAtivo() && !diarioSequenciaMinhaVezLocal()) return false;
     return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada() || diarioGerenciadaAtivo();
   }
 
@@ -1066,6 +1076,240 @@
     return normalizarNomeCacadas(obterUsuarioLogin()) === normalizarNomeCacadas(DIARIO_DISCORD_LOGIN);
   }
 
+  function normalizarLoginDiarioSequencia(nome) {
+    return normalizarNomeCacadas(nome);
+  }
+
+  function obterIndiceLoginDiarioSequencia(login) {
+    var norm = normalizarLoginDiarioSequencia(login);
+    for (var i = 0; i < DIARIO_LOGINS_SEQUENCIA.length; i++) {
+      if (normalizarLoginDiarioSequencia(DIARIO_LOGINS_SEQUENCIA[i]) === norm) return i;
+    }
+    return -1;
+  }
+
+  function obterProximoLoginDiarioSequencia(loginAtual) {
+    var idx = obterIndiceLoginDiarioSequencia(loginAtual);
+    if (idx === -1 || idx >= DIARIO_LOGINS_SEQUENCIA.length - 1) return '';
+    return DIARIO_LOGINS_SEQUENCIA[idx + 1];
+  }
+
+  function urlFirebaseDiarioSequencia() {
+    return FIREBASE_CONFIG.databaseURL + '/' + DIARIO_SEQUENCIA_FB_PATH + '.json';
+  }
+
+  function salvarDiarioSequenciaFbLocal(dados) {
+    try {
+      if (dados && dados.loginAtivo) {
+        sessionStorage.setItem(BOT_DIARIO_SEQ_VEZ_KEY, String(dados.loginAtivo));
+        sessionStorage.setItem(BOT_DIARIO_SEQ_STATUS_KEY, String(dados.status || ''));
+      } else {
+        sessionStorage.removeItem(BOT_DIARIO_SEQ_VEZ_KEY);
+        sessionStorage.removeItem(BOT_DIARIO_SEQ_STATUS_KEY);
+      }
+    } catch (e) {}
+  }
+
+  function limparDiarioSequenciaFbLocal() {
+    try {
+      sessionStorage.removeItem(BOT_DIARIO_SEQ_VEZ_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_SEQ_STATUS_KEY);
+    } catch (e) {}
+  }
+
+  function lerDiarioSequenciaFbLocal() {
+    try {
+      return {
+        loginAtivo: sessionStorage.getItem(BOT_DIARIO_SEQ_VEZ_KEY) || '',
+        status: sessionStorage.getItem(BOT_DIARIO_SEQ_STATUS_KEY) || ''
+      };
+    } catch (e) {}
+    return { loginAtivo: '', status: '' };
+  }
+
+  function publicarDiarioSequenciaFirebase(dados, callback) {
+    var payload = dados || {};
+    if (!payload.atualizadoEm) payload.atualizadoEm = Date.now();
+    fetch(urlFirebaseDiarioSequencia(), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        salvarDiarioSequenciaFbLocal(payload);
+        if (callback) callback(true, payload);
+      })
+      .catch(function(err) {
+        console.warn('[Diario] Falha ao publicar sequencia no Firebase:', err);
+        if (callback) callback(false, payload);
+      });
+  }
+
+  function sincronizarDiarioSequenciaFirebase(callback) {
+    fetch(urlFirebaseDiarioSequencia(), { cache: 'no-store' })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        if (data && typeof data === 'object' && data.loginAtivo) {
+          salvarDiarioSequenciaFbLocal(data);
+        }
+        if (callback) callback(data && typeof data === 'object' ? data : null);
+      })
+      .catch(function(err) {
+        console.warn('[Diario] Falha ao ler sequencia no Firebase:', err);
+        if (callback) callback(null);
+      });
+  }
+
+  function marcarDiarioHandoffParadoNesteNavegador() {
+    try { sessionStorage.setItem(BOT_DIARIO_HANDOFF_PARAR_KEY, '1'); } catch (e) {}
+  }
+
+  function limparDiarioHandoffParar() {
+    try { sessionStorage.removeItem(BOT_DIARIO_HANDOFF_PARAR_KEY); } catch (e) {}
+  }
+
+  function diarioHandoffParadoNesteNavegador() {
+    try { return sessionStorage.getItem(BOT_DIARIO_HANDOFF_PARAR_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function diarioSequenciaMinhaVezLocal() {
+    if (!diarioGerenciadaAtivo() || diarioHandoffParadoNesteNavegador()) return false;
+    if (diarioCicloSequenciaConcluido()) return false;
+    var meuLogin = obterUsuarioLogin();
+    var local = lerDiarioSequenciaFbLocal();
+    if (local.status === 'concluido') return false;
+    if (!local.loginAtivo) {
+      return obterIndiceLoginDiarioSequencia(meuLogin) === 0;
+    }
+    return normalizarLoginDiarioSequencia(local.loginAtivo) === normalizarLoginDiarioSequencia(meuLogin);
+  }
+
+  function diarioAssumirPermitido() {
+    return diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() &&
+      !diarioCicloSequenciaConcluido() && !diarioHandoffParadoNesteNavegador() &&
+      diarioSequenciaMinhaVezLocal();
+  }
+
+  function marcarDiarioSequenciaRodandoNesteLogin() {
+    var login = obterUsuarioLogin();
+    publicarDiarioSequenciaFirebase({
+      loginAtivo: login,
+      status: 'rodando',
+      atualizadoEm: Date.now()
+    });
+  }
+
+  function clicarLogoutJogoSeExistir() {
+    var links = document.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var href = (links[i].getAttribute('href') || '').toLowerCase();
+      var txt = normalizarTextoCombate(links[i].innerText || links[i].textContent || '');
+      if (href.indexOf('logout') !== -1 || href.indexOf('sair') !== -1 ||
+          txt === 'sair' || txt.indexOf('encerrar sess') !== -1) {
+        links[i].click();
+        return true;
+      }
+    }
+    var forms = document.querySelectorAll('form[action]');
+    for (var j = 0; j < forms.length; j++) {
+      var action = (forms[j].getAttribute('action') || '').toLowerCase();
+      if (action.indexOf('logout') !== -1 || action.indexOf('sair') !== -1) {
+        var btn = forms[j].querySelector('input[type="submit"], button[type="submit"]');
+        if (btn) btn.click();
+        else forms[j].submit();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function executarLogoutDiarioHandoff() {
+    limparRetomarGerenciada();
+    if (clicarLogoutJogoSeExistir()) {
+      console.log('[Diario] Logout acionado — este navegador encerra a vez.');
+      return;
+    }
+    console.log('[Diario] Logout nao encontrado — indo para home (handoff).');
+    try { location.href = URL_HOME; } catch (e) {}
+  }
+
+  function finalizarDiarioLoginAtualEhHandoff() {
+    var login = obterUsuarioLogin();
+    var proximo = obterProximoLoginDiarioSequencia(login);
+    marcarDiarioHandoffParadoNesteNavegador();
+
+    if (proximo) {
+      publicarDiarioSequenciaFirebase({
+        loginAtivo: proximo,
+        status: 'aguardando',
+        concluido: login,
+        atualizadoEm: Date.now()
+      }, function() {
+        console.log('[Diario] Login ' + login + ' concluido — proximo navegador: ' + proximo);
+        executarLogoutDiarioHandoff();
+      });
+      return;
+    }
+
+    publicarDiarioSequenciaFirebase({
+      loginAtivo: '',
+      status: 'concluido',
+      concluido: login,
+      atualizadoEm: Date.now()
+    }, function() {
+      console.log('[Diario] Sequencia completa — ultimo login: ' + login + '.');
+      executarLogoutDiarioHandoff();
+    });
+  }
+
+  function tentarIniciarDiarioSequenciaLogin() {
+    if (!diarioAssumirPermitido()) return false;
+    if (estaEmContaGerenciada() || obterFaseDiario()) return false;
+    if (document.getElementById('login')) return false;
+    var url = window.location.href || '';
+    if (url.indexOf('automacao') !== -1) return false;
+    return processarRotacaoContaPrincipal();
+  }
+
+  function agendarMonitorDiarioSequenciaLogin() {
+    if (!diarioGerenciadaAtivo()) return;
+    if (diarioSequenciaPollTimer) return;
+
+    function avaliar(data) {
+      if (!diarioGerenciadaAtivo() || diarioHandoffParadoNesteNavegador()) return;
+      var meuLogin = obterUsuarioLogin();
+      if (!data || !data.loginAtivo) return;
+
+      if (data.status === 'concluido') return;
+
+      if (normalizarLoginDiarioSequencia(data.loginAtivo) !== normalizarLoginDiarioSequencia(meuLogin)) {
+        return;
+      }
+
+      if (data.status === 'aguardando') {
+        limparDiarioCicloSequenciaConcluido();
+        limparContasDiarioFeitas();
+        publicarDiarioSequenciaFirebase({
+          loginAtivo: meuLogin,
+          status: 'rodando',
+          atualizadoEm: Date.now()
+        });
+      }
+
+      tentarIniciarDiarioSequenciaLogin();
+    }
+
+    sincronizarDiarioSequenciaFirebase(avaliar);
+    diarioSequenciaPollTimer = setInterval(function() {
+      sincronizarDiarioSequenciaFirebase(avaliar);
+    }, 12000);
+  }
+
   function gerenciadaEhProximaDiarioPendente() {
     if (!estaEmContaGerenciada()) return true;
     if (obterFaseDiario()) return true;
@@ -1115,7 +1359,7 @@
       return null;
     }
     salvarSequenciaDiarioPresentes(contas);
-    if (!estaEmContaGerenciada()) {
+    if (!estaEmContaGerenciada() && !diarioCicloSequenciaConcluido()) {
       limparContasDiarioFeitas();
     }
     return proximaContaDiarioSequenciaPendente(contas);
@@ -1147,7 +1391,7 @@
       console.log('[Diario] Login ' + login + ' — sem Discord (avisar so em ' + DIARIO_DISCORD_LOGIN + ').');
     }
     setTimeout(function() {
-      window.location.href = URL_AUTOMACAO + '?voltar=1';
+      finalizarDiarioLoginAtualEhHandoff();
     }, 2000);
   }
 
@@ -1291,7 +1535,7 @@
   function processarPaginaAutomacao() {
     var cicloPendente = automacaoTemCicloPendente();
     var retomar = precisaRetomarGerenciada();
-    var diarioAssumir = diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva();
+    var diarioAssumir = diarioAssumirPermitido();
 
     if (!cicloPendente && !retomar && !diarioAssumir) return true;
     if (!rotacaoAutomacaoAtiva() && !retomar && !diarioGerenciadaAtivo()) return true;
@@ -2149,6 +2393,11 @@
   function tentarLoginAutomatico(origem) {
     if (loginJaEnviado) return false;
 
+    if (diarioHandoffParadoNesteNavegador()) {
+      console.log('[Diario] Handoff concluido neste navegador — login manual (proximo: outro browser).');
+      return false;
+    }
+
     sincronizarModoAba();
     recarregarCredenciaisLogin();
 
@@ -2805,6 +3054,7 @@
     marcarRotacaoCicloPendente();
     portaoRelatoriosAgendado = false;
     if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada()) {
+      marcarDiarioSequenciaRodandoNesteLogin();
       console.warn('[Diario] Conta principal — indo para automacao (diario)...');
       window.location.href = URL_AUTOMACAO;
       return true;
@@ -6160,6 +6410,7 @@
     setTimeout(function() {
     try {
       sincronizarModoAba();
+      if (diarioGerenciadaAtivo()) agendarMonitorDiarioSequenciaLogin();
 
       if (obterModoAba() === 'invasor') {
         var ehLogin = !!document.getElementById('login');
