@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.13
+// @version      3.14
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -11,6 +11,7 @@
   'use strict';
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
+  var BOT_RANKING_RETORNO_URL_KEY = 'BOT_RANKING_RETORNO_URL';
 
   // --- Onde cada coisa fica (nao misturar) ---
   // sessionStorage = DESTA ABA (nao compartilha com outras abas; some ao fechar a aba)
@@ -457,6 +458,16 @@
     }
   }
 
+  function obterUrlRetornoRankingPosLogin() {
+    try {
+      var url = sessionStorage.getItem(BOT_RANKING_RETORNO_URL_KEY);
+      if (url && url.indexOf('shadowofshinobi.com') !== -1 && url.indexOf('/ranking') !== -1) {
+        return url;
+      }
+    } catch (e) {}
+    return '';
+  }
+
   function obterModoAba() {
     try {
       var modoSessao = sessionStorage.getItem(BOT_MODO_KEY);
@@ -500,8 +511,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.12';
-  var SCRIPT_ATUALIZADO = '29/08/2026 21:45';
+  var SCRIPT_VERSAO = '3.14';
+  var SCRIPT_ATUALIZADO = '29/08/2026 22:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -5011,6 +5022,12 @@
 
       // /status → destino conforme modo desta aba (sessionStorage ou URL de recuperacao)
       if (urlAtual.indexOf('status') !== -1) {
+        var urlRankingPosLogin = obterUrlRetornoRankingPosLogin();
+        if (urlRankingPosLogin) {
+          console.log('[Script Caçadas] Status pos-login — bot ranking ativo nesta aba, voltando ao ranking...');
+          window.location.href = urlRankingPosLogin;
+          return;
+        }
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
           if (processarRotacaoContaPrincipal()) return;

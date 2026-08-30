@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.10';
+      var SCRIPT_VERSAO = '1.11';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -30,6 +30,7 @@
       var WATCH_SNAPSHOT_KEY = 'BOT_RANKING_RYOUS_SNAPSHOT';
       var WATCH_PARCIAL_KEY = 'BOT_RANKING_RYOUS_SCAN_PARCIAL';
       var WATCH_JA_LEU_KEY = 'BOT_RANKING_RYOUS_JA_LEU_PAGINA';
+      var RETORNO_LOGIN_KEY = 'BOT_RANKING_RETORNO_URL';
       var PASSO_RANKING = 50;
       var DELAY_PROXIMA_PAGINA_MS = 1200;
       var AGUARDAR_TABELA_MS = 250;
@@ -304,6 +305,15 @@
         try { sessionStorage.setItem(DADOS_KEY, JSON.stringify(lista)); } catch (e) {}
       }
 
+      function salvarRetornoPosLoginSeAtivo() {
+        if (!scanAtivo() && !watchAtivo()) return;
+        try { sessionStorage.setItem(RETORNO_LOGIN_KEY, window.location.href); } catch (e) {}
+      }
+
+      function limparRetornoPosLogin() {
+        try { sessionStorage.removeItem(RETORNO_LOGIN_KEY); } catch (e) {}
+      }
+
       function scanAtivo() {
         try { return sessionStorage.getItem(SCAN_KEY) === '1'; } catch (e) {}
         return false;
@@ -311,8 +321,13 @@
 
       function marcarScanAtivo(ativo) {
         try {
-          if (ativo) sessionStorage.setItem(SCAN_KEY, '1');
-          else sessionStorage.removeItem(SCAN_KEY);
+          if (ativo) {
+            sessionStorage.setItem(SCAN_KEY, '1');
+            salvarRetornoPosLoginSeAtivo();
+          } else {
+            sessionStorage.removeItem(SCAN_KEY);
+            if (!watchAtivo()) limparRetornoPosLogin();
+          }
         } catch (e) {}
       }
 
@@ -391,14 +406,6 @@
           view: DEFAULTS_WATCH.view
         };
         try {
-          var rp = new URLSearchParams(window.location.search);
-          var mnWatch = rp.get('bot_ranking_watch_min_nivel');
-          if (mnWatch !== null && mnWatch !== '') {
-            var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
-            if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
-          }
-        } catch (e) {}
-        try {
           var raw = localStorage.getItem(WATCH_PARAMS_KEY);
           if (raw) {
             var saved = JSON.parse(raw);
@@ -408,6 +415,14 @@
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
+          }
+        } catch (e) {}
+        try {
+          var rp = new URLSearchParams(window.location.search);
+          var mnWatch = rp.get('bot_ranking_watch_min_nivel');
+          if (mnWatch !== null && mnWatch !== '') {
+            var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
+            if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
           }
         } catch (e) {}
         if (!extra || typeof extra !== 'object') return base;
@@ -451,8 +466,13 @@
 
       function marcarWatchAtivo(ativo) {
         try {
-          if (ativo) localStorage.setItem(WATCH_KEY, '1');
-          else localStorage.removeItem(WATCH_KEY);
+          if (ativo) {
+            localStorage.setItem(WATCH_KEY, '1');
+            salvarRetornoPosLoginSeAtivo();
+          } else {
+            localStorage.removeItem(WATCH_KEY);
+            if (!scanAtivo()) limparRetornoPosLogin();
+          }
         } catch (e) {}
       }
 
@@ -832,6 +852,7 @@
         }
 
         var proximo = offset + PASSO_RANKING;
+        salvarRetornoPosLoginSeAtivo();
         setTimeout(function() {
           location.href = montarUrlRankingWatch(proximo, params);
         }, DELAY_PROXIMA_PAGINA_MS);
@@ -1035,6 +1056,7 @@
 
         var proximo = offset + PASSO_RANKING;
         console.log('[Bot Ranking] Proxima faixa: ranking=' + proximo);
+        salvarRetornoPosLoginSeAtivo();
         setTimeout(function() {
           location.href = montarUrlRanking(proximo, params);
         }, DELAY_PROXIMA_PAGINA_MS);
@@ -1138,6 +1160,7 @@
       if (ehPaginaRanking()) {
         garantirWebhooksDiscord();
         atualizarPainelRanking();
+        salvarRetornoPosLoginSeAtivo();
         if (watchAtivo()) {
           retomarWatchSeNecessario();
         } else if (scanAtivo()) {
