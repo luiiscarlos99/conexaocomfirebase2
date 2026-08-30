@@ -12,6 +12,7 @@
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
   var BOT_RANKING_RETORNO_URL_KEY = 'BOT_RANKING_RETORNO_URL';
+  var BOT_CRED_URL_APLICADA_KEY = 'BOT_CRED_URL_APLICADA';
 
   // --- Onde cada coisa fica (nao misturar) ---
   // sessionStorage = DESTA ABA (nao compartilha com outras abas; some ao fechar a aba)
@@ -136,6 +137,59 @@
     localStorage.setItem('BOT_SENHA', p);
     try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
     return true;
+  }
+
+  function marcarCredenciaisUrlAplicadas() {
+    try { sessionStorage.setItem(BOT_CRED_URL_APLICADA_KEY, '1'); } catch (e) {}
+  }
+
+  function credenciaisUrlJaAplicadasNestaPagina() {
+    try { return sessionStorage.getItem(BOT_CRED_URL_APLICADA_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function aplicarCredenciaisDeUrlSearch(search) {
+    if (!search) return false;
+    try {
+      var rp = new URLSearchParams(search);
+      var u = rp.get('bot_user');
+      var p = rp.get('bot_pass');
+      var n = rp.get('bot_nivel');
+      var e = rp.get('bot_espera_cacadas');
+      var l = rp.get('bot_limite_invasor');
+      var aplicou = false;
+      if (u) {
+        gravarUsuarioLoginParam(u);
+        aplicou = true;
+      }
+      if (p) {
+        gravarSenhaLoginParam(p);
+        aplicou = true;
+      }
+      if (n) {
+        gravarNivelCacadasParam(n);
+        aplicou = true;
+      }
+      if (e !== null && e !== '') gravarEsperaCacadasParam(e);
+      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
+      if (aplicou) marcarCredenciaisUrlAplicadas();
+      aplicarParamsCacadasAtacar(rp);
+      return aplicou;
+    } catch (e) {}
+    return false;
+  }
+
+  function aplicarCredenciaisRecoveryUrl() {
+    try {
+      if (!window.__BOT_RECOVERY__) return false;
+      var salva = window.__BOT_RECOVERY__.ler();
+      if (!salva) return false;
+      var urlObj = salva.indexOf('://') !== -1
+        ? new URL(salva)
+        : new URL(salva.replace(/^\?/, ''), 'https://shadowofshinobi.com/');
+      return aplicarCredenciaisDeUrlSearch(urlObj.search);
+    } catch (e) {}
+    return false;
   }
 
   function lerUsuarioLoginArmazenado() {
@@ -423,6 +477,7 @@
   }
 
   function aplicarCredenciaisReferrer() {
+    if (credenciaisUrlJaAplicadasNestaPagina()) return;
     try {
       var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
       var ehLoginOuHome = path === '/' || !!document.getElementById('login');
@@ -430,18 +485,7 @@
       if (!ehLoginOuHome && !ehStatusPosLogin) return;
       var ref = document.referrer || '';
       if (!ref || ref.indexOf('shadowofshinobi.com') === -1) return;
-      var rp = new URLSearchParams(new URL(ref).search);
-      var u = rp.get('bot_user');
-      var p = rp.get('bot_pass');
-      var n = rp.get('bot_nivel');
-      var e = rp.get('bot_espera_cacadas');
-      var l = rp.get('bot_limite_invasor');
-      if (u) gravarUsuarioLoginParam(u);
-      if (p) gravarSenhaLoginParam(p);
-      if (n) gravarNivelCacadasParam(n);
-      if (e !== null && e !== '') gravarEsperaCacadasParam(e);
-      if (l !== null && l !== '') gravarLimiteInvasorParam(l);
-      aplicarParamsCacadasAtacar(rp);
+      aplicarCredenciaisDeUrlSearch(new URL(ref).search);
     } catch (e) {}
   }
 
@@ -487,9 +531,18 @@
       var n = params.get('bot_nivel');
       var e = params.get('bot_espera_cacadas');
       var l = params.get('bot_limite_invasor');
-      if (u) gravarUsuarioLoginParam(u);
-      if (p) gravarSenhaLoginParam(p);
-      if (n) gravarNivelCacadasParam(n);
+      if (u) {
+        gravarUsuarioLoginParam(u);
+        marcarCredenciaisUrlAplicadas();
+      }
+      if (p) {
+        gravarSenhaLoginParam(p);
+        marcarCredenciaisUrlAplicadas();
+      }
+      if (n) {
+        gravarNivelCacadasParam(n);
+        marcarCredenciaisUrlAplicadas();
+      }
       if (e !== null && e !== '') gravarEsperaCacadasParam(e);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       aplicarParamsCacadasAtacar(params);
@@ -501,9 +554,12 @@
       }
 
       var pathAtual = window.location.pathname || '';
-      if (!u && !p && !n && (document.getElementById('login') ||
-          pathAtual.indexOf('status') !== -1 || pathAtual === '/' || pathAtual === '')) {
-        aplicarCredenciaisReferrer();
+      var ehPaginaCredenciais = document.getElementById('login') ||
+        pathAtual.indexOf('status') !== -1 || pathAtual === '/' || pathAtual === '';
+      if (!u && !p && !n && ehPaginaCredenciais && !credenciaisUrlJaAplicadasNestaPagina()) {
+        if (!aplicarCredenciaisRecoveryUrl() && !lerUsuarioLoginArmazenado()) {
+          aplicarCredenciaisReferrer();
+        }
       }
 
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
@@ -513,6 +569,7 @@
           params.get('bot_min_ryous_vitoria_cacadas') ||
           params.get('bot_doujutsu') || params.get('bot_doujutsu_auto_sabado') ||
           params.get('bot_cacadas_firebase_fila') || params.get('bot_diario_gerenciada') ||
+          params.get('bot_diario_sem_cacadas') ||
           modoVeioDeQuery || modo === 'invasor' || modo === 'cacadas') &&
           window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
@@ -577,8 +634,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.36';
-  var SCRIPT_ATUALIZADO = '30/08/2026 01:30';
+  var SCRIPT_VERSAO = '3.37';
+  var SCRIPT_ATUALIZADO = '30/08/2026 11:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2442,7 +2499,7 @@
       return false;
     }
 
-    console.log('[Script Caçadas] Tela de login — preenchendo credenciais (' + origem + ')...');
+    console.log('[Script Caçadas] Tela de login — preenchendo credenciais (' + origem + '): ' + USUARIO_FINAL + '...');
 
     var selectServer = formLogin.querySelector('select[name="server_login"]');
     var inputUsuario = formLogin.querySelector('#usuario');
