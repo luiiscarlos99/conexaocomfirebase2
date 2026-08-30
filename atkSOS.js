@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.14
+// @version      3.17
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -238,6 +238,30 @@
     return false;
   }
 
+  function gravarDiarioGerenciadaParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem('BOT_DIARIO_GERENCIADA'); } catch (e) {}
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_DIARIO_GERENCIADA', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function diarioGerenciadaAtivo() {
+    try { return localStorage.getItem('BOT_DIARIO_GERENCIADA') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function descreverDiarioGerenciada() {
+    if (!diarioGerenciadaAtivo()) return 'desligado';
+    return 'ligado (evento + raid + animal — so contas gerenciadas na rotacao)';
+  }
+
   function cacadasFirebaseFilaFlagAtiva() {
     try { return localStorage.getItem('BOT_CACADAS_FIREBASE_FILA') === '1'; } catch (e) {}
     return false;
@@ -308,6 +332,7 @@
     var dj = rp.get('bot_doujutsu');
     var djas = rp.get('bot_doujutsu_auto_sabado');
     var cff = rp.get('bot_cacadas_firebase_fila');
+    var dg = rp.get('bot_diario_gerenciada');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
     if (bl !== null) gravarBlacklistCacadasParam(bl);
@@ -319,6 +344,7 @@
     if (dj !== null && dj !== '') gravarDoujutsuParam(dj);
     if (djas !== null && djas !== '') gravarDoujutsuAutoSabadoParam(djas);
     if (cff !== null && cff !== '') gravarCacadasFirebaseFilaParam(cff);
+    if (dg !== null && dg !== '') gravarDiarioGerenciadaParam(dg);
   }
 
   function gravarMinRyousVitoriaCacadasParam(valor) {
@@ -446,7 +472,7 @@
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
           params.get('bot_doujutsu') || params.get('bot_doujutsu_auto_sabado') ||
-          params.get('bot_cacadas_firebase_fila') ||
+          params.get('bot_cacadas_firebase_fila') || params.get('bot_diario_gerenciada') ||
           modoVeioDeQuery || modo === 'invasor' || modo === 'cacadas') &&
           window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
@@ -511,8 +537,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.14';
-  var SCRIPT_ATUALIZADO = '29/08/2026 22:25';
+  var SCRIPT_VERSAO = '3.17';
+  var SCRIPT_ATUALIZADO = '29/08/2026 22:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -544,6 +570,7 @@
       var dj = localStorage.getItem('BOT_DOUJUTSU');
       var djas = localStorage.getItem('BOT_DOUJUTSU_AUTO_SABADO');
       var cff = localStorage.getItem('BOT_CACADAS_FIREBASE_FILA');
+      var dg = localStorage.getItem('BOT_DIARIO_GERENCIADA');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
@@ -564,6 +591,8 @@
       else if (djas === '1') params.set('bot_doujutsu_auto_sabado', '1');
       if (cff === '1') params.set('bot_cacadas_firebase_fila', '1');
       else if (cff === '0') params.set('bot_cacadas_firebase_fila', '0');
+      if (dg === '1') params.set('bot_diario_gerenciada', '1');
+      else if (dg === '0') params.set('bot_diario_gerenciada', '0');
     } catch (err) {}
 
     var qs = params.toString();
@@ -571,6 +600,7 @@
   }
 
   function salvarRecuperacaoAntesDeSair(url) {
+    marcarRetomarGerenciadaPosLogout();
     var destino = url || montarUrlLoginComParams();
     if (window.__BOT_RECOVERY__) {
       window.__BOT_RECOVERY__.salvar(destino);
@@ -669,6 +699,17 @@
     return cacadasFirebaseFilaFlagAtiva();
   };
 
+  window.botDiarioGerenciada = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Diario] ' + descreverDiarioGerenciada());
+      return diarioGerenciadaAtivo();
+    }
+    gravarDiarioGerenciadaParam(ligar ? '1' : '0');
+    console.log('[Diario] ' + descreverDiarioGerenciada());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return diarioGerenciadaAtivo();
+  };
+
   if ((function() {
     try {
       var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
@@ -726,8 +767,17 @@
   var URL_STATUS = 'https://shadowofshinobi.com/status';
   var URL_MISSOES = 'https://shadowofshinobi.com/missoes';
   var URL_AUTOMACAO = 'https://shadowofshinobi.com/automacao';
+  var URL_EVENTOS = 'https://shadowofshinobi.com/eventos';
+  var URL_RAID = 'https://shadowofshinobi.com/raid';
+  var URL_ANIMAL_MEUS = 'https://shadowofshinobi.com/animal?aba=meus';
+  var URL_ANIMAL_LOJA = 'https://shadowofshinobi.com/animal?aba=loja';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
+  var BOT_DIARIO_FASE_KEY = 'BOT_DIARIO_FASE';
+  var BOT_DIARIO_ANIMAL_SUB_KEY = 'BOT_DIARIO_ANIMAL_SUB';
+  var BOT_DIARIO_ANIMAL_IDX_KEY = 'BOT_DIARIO_ANIMAL_IDX';
+  var BOT_DIARIO_RAID_COMBATE_KEY = 'BOT_DIARIO_RAID_COMBATE';
   var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
+  var BOT_HP_CURAR_RAID_KEY = 'BOT_HP_CURAR_RAID';
   var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
   var BOT_DOUJUTSU_ATIVAR_KEY = 'BOT_DOUJUTSU_ATIVAR';
   var BOT_INVASOR_EVENTO_CACHE_KEY = 'BOT_INVASOR_EVENTO_CACHE';
@@ -735,6 +785,7 @@
   var DOUJUTSU_CUSTO_RYOUS = 10000;
   var HP_MINIMO_ATACAR_RATIO = 0.5;
   var HP_MINIMO_FIREBASE_FILA_RATIO = 0.8;
+  var HP_MINIMO_RAID = 100;
 
   function obterHpMinimoAtacarRatio() {
     if (cacadasFirebaseFilaFlagAtiva()) return HP_MINIMO_FIREBASE_FILA_RATIO;
@@ -760,6 +811,11 @@
   var BOT_CACADAS_ALVO_NOME_KEY = 'BOT_CACADAS_ALVO_NOME';
   var BOT_ROTACAO_CICLO_KEY = 'BOT_ROTACAO_CICLO_PENDENTE';
   var BOT_ROTACAO_ASSUMIDA_KEY = 'BOT_AUTO_ROT_ASSUMIDA';
+  var BOT_ROTACAO_ULTIMA_NOME_KEY = 'BOT_ROTACAO_ULTIMA_NOME';
+  var BOT_ROTACAO_ULTIMA_ID_KEY = 'BOT_ROTACAO_ULTIMA_ID';
+  var BOT_ROTACAO_RETOMAR_KEY = 'BOT_ROTACAO_RETOMAR';
+  var BOT_ROTACAO_RETOMAR_NOME_KEY = 'BOT_ROTACAO_RETOMAR_NOME';
+  var BOT_ROTACAO_RETOMAR_ID_KEY = 'BOT_ROTACAO_RETOMAR_ID';
   var DISCORD_WEBHOOK_CAPTCHA = '';
   var DISCORD_WEBHOOK_CACADAS = '';
   var DISCORD_WEBHOOK_INVASOR = '';
@@ -815,6 +871,95 @@
       }
     } catch (e) {}
     return false;
+  }
+
+  function salvarUltimaGerenciadaSnapshot(nome, contaId) {
+    try {
+      if (nome) sessionStorage.setItem(BOT_ROTACAO_ULTIMA_NOME_KEY, nome);
+      if (contaId) sessionStorage.setItem(BOT_ROTACAO_ULTIMA_ID_KEY, String(contaId));
+    } catch (e) {}
+  }
+
+  function lerUltimaGerenciadaSnapshot() {
+    try {
+      var nome = sessionStorage.getItem(BOT_ROTACAO_ULTIMA_NOME_KEY) || '';
+      var contaId = sessionStorage.getItem(BOT_ROTACAO_ULTIMA_ID_KEY) || '';
+      if (!nome && !contaId) return null;
+      return { nome: nome, contaId: contaId };
+    } catch (e) {}
+    return null;
+  }
+
+  function atualizarUltimaGerenciadaSnapshot() {
+    if (!estaEmContaGerenciada()) return;
+    if (!rotacaoAutomacaoAtiva() && !diarioGerenciadaAtivo()) return;
+    var nome = extrairNomeUsuarioLogado();
+    if (!nome) return;
+    salvarUltimaGerenciadaSnapshot(nome, '');
+  }
+
+  function precisaRetomarGerenciada() {
+    try { return sessionStorage.getItem(BOT_ROTACAO_RETOMAR_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function limparRetomarGerenciada() {
+    try {
+      sessionStorage.removeItem(BOT_ROTACAO_RETOMAR_KEY);
+      sessionStorage.removeItem(BOT_ROTACAO_RETOMAR_NOME_KEY);
+      sessionStorage.removeItem(BOT_ROTACAO_RETOMAR_ID_KEY);
+    } catch (e) {}
+  }
+
+  function marcarRetomarGerenciadaPosLogout() {
+    if (!rotacaoAutomacaoAtiva() && !diarioGerenciadaAtivo()) return;
+    var snap = lerUltimaGerenciadaSnapshot();
+    if (!snap || (!snap.nome && !snap.contaId)) return;
+    try {
+      sessionStorage.setItem(BOT_ROTACAO_RETOMAR_KEY, '1');
+      if (snap.nome) sessionStorage.setItem(BOT_ROTACAO_RETOMAR_NOME_KEY, snap.nome);
+      if (snap.contaId) sessionStorage.setItem(BOT_ROTACAO_RETOMAR_ID_KEY, snap.contaId);
+      console.warn('[Automacao] Logout — retomar gerenciada pendente: ' +
+        (snap.nome || '?') + (snap.contaId ? ' (id ' + snap.contaId + ')' : ''));
+    } catch (e) {}
+  }
+
+  function precisaAssumirAutomacaoPosPrincipal() {
+    return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada();
+  }
+
+  function encontrarContaAutomacaoPorSnapshot(contas, snap) {
+    if (!snap || !contas.length) return null;
+    if (snap.contaId) {
+      for (var i = 0; i < contas.length; i++) {
+        if (String(contas[i].contaId) === String(snap.contaId)) return contas[i];
+      }
+    }
+    if (snap.nome) {
+      var norm = normalizarNomeCacadas(snap.nome);
+      for (var j = 0; j < contas.length; j++) {
+        if (normalizarNomeCacadas(contas[j].nome) === norm) return contas[j];
+      }
+    }
+    return null;
+  }
+
+  function escolherContaAutomacaoParaAssumir(contas) {
+    if (precisaRetomarGerenciada()) {
+      var snapRetomar = {
+        nome: '',
+        contaId: ''
+      };
+      try {
+        snapRetomar.nome = sessionStorage.getItem(BOT_ROTACAO_RETOMAR_NOME_KEY) || '';
+        snapRetomar.contaId = sessionStorage.getItem(BOT_ROTACAO_RETOMAR_ID_KEY) || '';
+      } catch (e) {}
+      var retomar = encontrarContaAutomacaoPorSnapshot(contas, snapRetomar);
+      if (retomar) return retomar;
+      console.warn('[Automacao] Retomar gerenciada — conta nao encontrada na lista, usando rotacao normal.');
+      limparRetomarGerenciada();
+    }
+    return escolherProximaContaAutomacao(contas);
   }
 
   function extrairContasAutomacaoPagina() {
@@ -891,6 +1036,7 @@
 
   function irParaRotacaoAutomacao(motivo) {
     console.warn('[Automacao] ' + motivo + ' — rotacionando para proxima conta...');
+    limparRetomarGerenciada();
     marcarRotacaoCicloPendente();
     consumirGateCacadas();
     portaoRelatoriosAgendado = false;
@@ -903,7 +1049,8 @@
   }
 
   function processarPaginaAutomacao() {
-    if (!rotacaoAutomacaoAtiva() || !consumirRotacaoCicloPendente()) return false;
+    if (!consumirRotacaoCicloPendente()) return false;
+    if (!rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada()) return false;
     if (automacaoAssumirEmAndamento) return true;
 
     var contas = extrairContasAutomacaoPagina();
@@ -913,7 +1060,7 @@
       return true;
     }
 
-    var proxima = escolherProximaContaAutomacao(contas);
+    var proxima = escolherContaAutomacaoParaAssumir(contas);
     if (!proxima) {
       irParaPortaoRelatorios('Rotacao automacao falhou');
       return true;
@@ -921,7 +1068,12 @@
 
     automacaoAssumirEmAndamento = true;
     marcarContaAutomacaoAssumida();
-    console.warn('[Automacao] Assumindo conta: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+    salvarUltimaGerenciadaSnapshot(proxima.nome, proxima.contaId);
+    if (precisaRetomarGerenciada()) {
+      console.warn('[Automacao] Retomando conta gerenciada: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+    } else {
+      console.warn('[Automacao] Assumindo conta: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+    }
 
     var btn = proxima.form.querySelector('input[type="submit"]');
     if (btn) btn.click();
@@ -939,8 +1091,400 @@
         console.log('[Missao] confirm() auto-OK — ' + msg);
         return true;
       }
+      if (t.indexOf('tem certeza') !== -1 && t.indexOf('treino investido') !== -1) {
+        console.log('[Diario] confirm() auto-OK venda animal — ' + msg);
+        return true;
+      }
       return confirmOriginal.call(window, msg);
     };
+  }
+
+  // --- Bot diario (contas gerenciadas): evento + raid + animal ---
+  function diarioDeveRodar() {
+    return diarioGerenciadaAtivo() && estaEmContaGerenciada();
+  }
+
+  function obterFaseDiario() {
+    try { return sessionStorage.getItem(BOT_DIARIO_FASE_KEY) || ''; } catch (e) {}
+    return '';
+  }
+
+  function definirFaseDiario(fase) {
+    try {
+      if (fase) sessionStorage.setItem(BOT_DIARIO_FASE_KEY, fase);
+      else sessionStorage.removeItem(BOT_DIARIO_FASE_KEY);
+    } catch (e) {}
+  }
+
+  function limparEstadoDiario() {
+    try {
+      sessionStorage.removeItem(BOT_DIARIO_FASE_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_ANIMAL_SUB_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_ANIMAL_IDX_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_RAID_COMBATE_KEY);
+    } catch (e) {}
+  }
+
+  function irParaUrlFaseDiario(fase) {
+    if (fase === 'evento') {
+      window.location.href = URL_EVENTOS;
+      return;
+    }
+    if (fase === 'raid') {
+      window.location.href = URL_RAID;
+      return;
+    }
+    if (fase === 'animal') {
+      var sub = 'meus';
+      try { sub = sessionStorage.getItem(BOT_DIARIO_ANIMAL_SUB_KEY) || 'meus'; } catch (e) {}
+      if (sub === 'loja' || sub === 'comprando') {
+        var idx = 71;
+        try {
+          var raw = sessionStorage.getItem(BOT_DIARIO_ANIMAL_IDX_KEY);
+          if (raw !== null && raw !== '') idx = parseInt(raw, 10);
+        } catch (e) {}
+        if (isNaN(idx)) idx = 71;
+        window.location.href = URL_ANIMAL_LOJA + '&idx=' + idx;
+        return;
+      }
+      window.location.href = URL_ANIMAL_MEUS;
+      return;
+    }
+    window.location.href = URL_EVENTOS;
+  }
+
+  function retomarDiarioGerenciadaPosAssume() {
+    var fase = obterFaseDiario();
+    if (!fase) {
+      iniciarDiarioGerenciada();
+      window.location.href = URL_EVENTOS;
+      return;
+    }
+    console.log('%c[Diario] Retomando rotina na fase: ' + fase, 'color:#f39c12;font-weight:bold');
+    irParaUrlFaseDiario(fase);
+  }
+
+  function iniciarDiarioGerenciada() {
+    limparEstadoDiario();
+    definirFaseDiario('evento');
+    console.log('%c[Diario] Rotina iniciada — evento -> raid -> animal -> caçadas', 'color:#f39c12;font-weight:bold');
+  }
+
+  function concluirDiarioGerenciada() {
+    console.log('%c[Diario] Rotina concluida nesta conta gerenciada.', 'color:#f39c12;font-weight:bold');
+    limparEstadoDiario();
+    window.location.href = URL_RELATORIOS_ATAQUE;
+  }
+
+  function avancarFaseDiario(proxima, motivo) {
+    definirFaseDiario(proxima);
+    console.log('[Diario] Fase -> ' + proxima + (motivo ? ' (' + motivo + ')' : ''));
+  }
+
+  function extrairRyousJogadorSidebar() {
+    var col = document.getElementById('col_esquerda');
+    if (!col) return null;
+    var badge = col.querySelector('.badge-ryous');
+    if (badge) {
+      var n = parseNumeroBr((badge.innerText || badge.textContent || '').trim());
+      if (n !== null) return n;
+    }
+    var m = (col.innerText || col.textContent || '').match(/Ryous:\s*([\d.,]+)/i);
+    return m ? parseNumeroBr(m[1]) : null;
+  }
+
+  function extrairValorLinhaTabelaDiario(rotuloParcial) {
+    return extrairValorLinhaTabela(rotuloParcial, document.getElementById('col_direita'));
+  }
+
+  function processarDiarioEventos() {
+    if (obterFaseDiario() !== 'evento') return false;
+
+    var forms = document.querySelectorAll('form');
+    for (var i = 0; i < forms.length; i++) {
+      var f = forms[i];
+      if (!f.querySelector('input[name="fazer_checkin"]')) continue;
+      var btn = f.querySelector('input[type="submit"]');
+      if (!btn) continue;
+      var val = normalizarTextoCombate(btn.value || '');
+      if (val.indexOf('coletar') === -1) continue;
+      console.log('[Diario] Coletando check-in diario (' + (btn.value || '?') + ')...');
+      btn.click();
+      return true;
+    }
+
+    console.log('[Diario] Check-in diario indisponivel ou ja coletado — indo para raids.');
+    avancarFaseDiario('raid', 'sem botao coletar');
+    window.location.href = URL_RAID;
+    return true;
+  }
+
+  function blocoRaidTemCooldown(bloco) {
+    if (!bloco) return true;
+    var avisos = bloco.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < avisos.length; i++) {
+      var norm = normalizarTextoCombate(avisos[i].innerText || avisos[i].textContent || '');
+      if (norm.indexOf('disponivel em') !== -1 || norm.indexOf('faltam') !== -1) return true;
+    }
+    return false;
+  }
+
+  function extrairNivelMinimoRaid(bloco) {
+    if (!bloco) return null;
+    var m = (bloco.innerText || bloco.textContent || '').match(/Lv\.(\d+)\+/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function encontrarFormRaidDisponivel() {
+    var meuNivel = extrairNivelJogadorSidebar();
+    var forms = document.querySelectorAll('form[action="raid"], form[action*="raid"]');
+    var melhor = null;
+    var melhorId = -1;
+
+    for (var i = 0; i < forms.length; i++) {
+      var f = forms[i];
+      var bossInput = f.querySelector('input[name="boss_id"]');
+      var btn = f.querySelector('input[type="submit"]');
+      if (!bossInput || !btn) continue;
+      if (normalizarTextoCombate(btn.value || '').indexOf('iniciar raid') === -1) continue;
+
+      var bloco = f.closest('table');
+      if (blocoRaidTemCooldown(bloco)) continue;
+
+      var minLv = extrairNivelMinimoRaid(bloco);
+      if (minLv !== null && meuNivel !== null && meuNivel < minLv) continue;
+
+      var bossId = parseInt(bossInput.value, 10);
+      if (isNaN(bossId)) bossId = 0;
+      if (bossId >= melhorId) {
+        melhorId = bossId;
+        melhor = f;
+      }
+    }
+    return melhor;
+  }
+
+  function marcarDiarioRaidEmCombate() {
+    try { sessionStorage.setItem(BOT_DIARIO_RAID_COMBATE_KEY, '1'); } catch (e) {}
+  }
+
+  function consumirDiarioRaidEmCombate() {
+    try {
+      if (sessionStorage.getItem(BOT_DIARIO_RAID_COMBATE_KEY) === '1') {
+        sessionStorage.removeItem(BOT_DIARIO_RAID_COMBATE_KEY);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function processarDiarioRaidLista() {
+    if (obterFaseDiario() !== 'raid') return false;
+    if (!garantirHpParaRaidDiario('raid lista')) return true;
+
+    var form = encontrarFormRaidDisponivel();
+    if (form) {
+      var bossId = form.querySelector('input[name="boss_id"]');
+      console.log('[Diario] Iniciando raid boss_id=' + (bossId ? bossId.value : '?') + '...');
+      marcarDiarioRaidEmCombate();
+      var btn = form.querySelector('input[type="submit"]');
+      if (btn) btn.click();
+      else form.submit();
+      return true;
+    }
+
+    console.log('[Diario] Nenhuma raid disponivel (cooldown/nivel) — indo para animal.');
+    avancarFaseDiario('animal', 'raids esgotadas');
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
+    window.location.href = URL_ANIMAL_MEUS;
+    return true;
+  }
+
+  function processarDiarioRaidCombatePagina() {
+    if (obterFaseDiario() !== 'raid') return false;
+    if (!garantirHpParaRaidDiario('raid combate')) return true;
+
+    var btnAtacar = document.querySelector(
+      'form[action="atacar"] input[type="submit"], ' +
+      'form[action*="raid-combate"] input[type="submit"], ' +
+      'form[action*="raid"] input[type="submit"][value*="Atacar"], ' +
+      'form[action*="raid"] input[type="submit"][value*="atacar"]'
+    );
+    if (btnAtacar) {
+      console.log('[Diario] Raid combate — clicando Atacar...');
+      marcarDiarioRaidEmCombate();
+      btnAtacar.click();
+      return true;
+    }
+
+    return processarDiarioRaidLista();
+  }
+
+  function formVenderAnimalMeus() {
+    var forms = document.querySelectorAll('form[action*="animal"]');
+    for (var i = 0; i < forms.length; i++) {
+      if (forms[i].querySelector('input[name="action"][value="abandonar"]')) return forms[i];
+    }
+    return null;
+  }
+
+  function extrairUltimoIdxAnimalLoja() {
+    var max = 0;
+    var links = document.querySelectorAll('a[href*="aba=loja"], a[href*="idx="]');
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || '';
+      var m = href.match(/idx=(\d+)/);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    var aviso = document.querySelector('.avisos_erro');
+    if (aviso) {
+      var m2 = (aviso.innerText || aviso.textContent || '').match(/(\d+)\s+de\s+(\d+)/i);
+      if (m2) max = Math.max(max, parseInt(m2[2], 10) - 1);
+    }
+    return max;
+  }
+
+  function extrairDadosAnimalLojaPagina() {
+    var col = document.getElementById('col_direita');
+    if (!col) return null;
+    var texto = (col.innerText || col.textContent || '').replace(/\s+/g, ' ');
+    var norm = normalizarTextoCombate(texto);
+    var valorTexto = extrairValorLinhaTabelaDiario('valor');
+    var nivelTexto = extrairValorLinhaTabelaDiario('nível necess');
+    if (!nivelTexto) nivelTexto = extrairValorLinhaTabelaDiario('nivel necess');
+    if (!nivelTexto) {
+      var mN = texto.match(/N[ií]vel necess[aá]rio:\s*\|\s*(\d+)/i);
+      nivelTexto = mN ? mN[1] : null;
+    }
+    var formComprar = null;
+    var forms = col.querySelectorAll('form');
+    for (var i = 0; i < forms.length; i++) {
+      if (forms[i].querySelector('input[name="action"][value="comprar"]')) {
+        formComprar = forms[i];
+        break;
+      }
+    }
+    return {
+      valor: valorTexto ? parseNumeroBr(valorTexto.replace(/^\|\s*/, '')) : null,
+      nivelMin: nivelTexto ? parseInt(String(nivelTexto).replace(/\D/g, ''), 10) : null,
+      formComprar: formComprar,
+      jaPossuiAnimal: norm.indexOf('ja possui um animal') !== -1,
+      semBotaoComprar: !formComprar
+    };
+  }
+
+  function irParaAnimalLojaIdx(idx) {
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_IDX_KEY, String(idx)); } catch (e) {}
+    window.location.href = URL_ANIMAL_LOJA + '&idx=' + idx;
+  }
+
+  function processarDiarioAnimalMeus() {
+    var formVender = formVenderAnimalMeus();
+    if (formVender) {
+      console.log('[Diario] Vendendo animal atual (banco)...');
+      var btn = formVender.querySelector('input[type="submit"]');
+      if (btn) btn.click();
+      else formVender.submit();
+      return true;
+    }
+
+    console.log('[Diario] Sem animal para vender — indo a loja.');
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'loja'); } catch (e) {}
+    irParaAnimalLojaIdx(extrairUltimoIdxAnimalLoja() || 71);
+    return true;
+  }
+
+  function processarDiarioAnimalLoja() {
+    var meuNivel = extrairNivelJogadorSidebar();
+    var meusRyous = extrairRyousJogadorSidebar();
+    var idxAtual = null;
+    try {
+      var rp = new URLSearchParams(window.location.search);
+      var raw = rp.get('idx');
+      if (raw !== null && raw !== '') idxAtual = parseInt(raw, 10);
+    } catch (e) {}
+    if (idxAtual === null || isNaN(idxAtual)) {
+      var maxIdx = extrairUltimoIdxAnimalLoja();
+      if (maxIdx > 0) {
+        irParaAnimalLojaIdx(maxIdx);
+        return true;
+      }
+      idxAtual = 0;
+    }
+
+    var dados = extrairDadosAnimalLojaPagina();
+
+    if (dados && dados.jaPossuiAnimal) {
+      console.warn('[Diario] Ainda possui animal — voltando a Meus animais.');
+      try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
+      window.location.href = URL_ANIMAL_MEUS;
+      return true;
+    }
+
+    if (dados && dados.formComprar && dados.valor !== null) {
+      var nivelOk = dados.nivelMin === null || meuNivel === null || meuNivel >= dados.nivelMin;
+      var ryousOk = meusRyous === null || meusRyous >= dados.valor;
+      if (nivelOk && ryousOk) {
+        console.log('[Diario] Comprando animal valor=' + formatarNumeroBr(dados.valor) +
+          ' (nivel min ' + (dados.nivelMin || '?') + ', ryous ' + formatarNumeroBr(meusRyous) + ')...');
+        try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'comprando'); } catch (e) {}
+        var btnC = dados.formComprar.querySelector('input[type="submit"], input[name="btn_comprar"]');
+        if (btnC) btnC.click();
+        else dados.formComprar.submit();
+        return true;
+      }
+    }
+
+    if (idxAtual > 0) {
+      console.log('[Diario] Animal idx=' + idxAtual + ' indisponivel — tentando idx=' + (idxAtual - 1));
+      irParaAnimalLojaIdx(idxAtual - 1);
+      return true;
+    }
+
+    console.warn('[Diario] Nenhum animal compravel encontrado na loja — seguindo para caçadas.');
+    concluirDiarioGerenciada();
+    return true;
+  }
+
+  function processarDiarioAnimal() {
+    if (obterFaseDiario() !== 'animal') return false;
+
+    var sub = 'meus';
+    try { sub = sessionStorage.getItem(BOT_DIARIO_ANIMAL_SUB_KEY) || 'meus'; } catch (e) {}
+
+    if (sub === 'comprando') {
+      if (formVenderAnimalMeus()) {
+        console.log('[Diario] Animal comprado com sucesso — seguindo para caçadas.');
+        concluirDiarioGerenciada();
+        return true;
+      }
+      if (url.indexOf('aba=loja') !== -1) {
+        try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'loja'); } catch (e) {}
+        return processarDiarioAnimalLoja();
+      }
+      return true;
+    }
+
+    if (sub === 'done') {
+      concluirDiarioGerenciada();
+      return true;
+    }
+
+    var url = window.location.href;
+    if (sub === 'meus' || url.indexOf('aba=meus') !== -1) {
+      return processarDiarioAnimalMeus();
+    }
+    return processarDiarioAnimalLoja();
+  }
+
+  function processarDiarioPosCombateRaid() {
+    if (obterFaseDiario() !== 'raid') return false;
+    if (!consumirDiarioRaidEmCombate()) return false;
+    console.log('[Diario] Combate de raid finalizado — verificando proximas raids...');
+    setTimeout(function() {
+      window.location.href = URL_RAID;
+    }, 2000);
+    return true;
   }
 
   function paginaCacadasBloqueadaPorMissao() {
@@ -1277,6 +1821,8 @@
       console.log('[Automacao] Conta ativa: ' + nomeLogado + ' | Login: ' + loginSalvo);
     }
 
+    atualizarUltimaGerenciadaSnapshot();
+
     exibirModoAbaServerID();
   }
 
@@ -1349,8 +1895,92 @@
   function limparCurarHpAtivo() {
     try {
       sessionStorage.removeItem(BOT_HP_CURAR_ATIVO_KEY);
+      sessionStorage.removeItem(BOT_HP_CURAR_RAID_KEY);
       sessionStorage.removeItem(BOT_HP_SNAPSHOT_KEY);
     } catch (e) {}
+  }
+
+  function curarHpParaRaidDiario() {
+    try { return sessionStorage.getItem(BOT_HP_CURAR_RAID_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarCurarHpRaidDiario() {
+    try { sessionStorage.setItem(BOT_HP_CURAR_RAID_KEY, '1'); } catch (e) {}
+  }
+
+  function hpAtendeMinimoRaid(hp) {
+    return !!(hp && hp.ok && hp.current > HP_MINIMO_RAID);
+  }
+
+  function hpAtendeMetaParaCurar(hp) {
+    if (!hp || !hp.ok) return false;
+    if (curarHpParaRaidDiario()) return hpAtendeMinimoRaid(hp);
+    return hp.pct >= obterHpMinimoAtacarRatio();
+  }
+
+  function metaHpAbsolutaParaCurar(hp) {
+    if (curarHpParaRaidDiario()) return HP_MINIMO_RAID + 1;
+    return Math.ceil(hp.max * obterHpMinimoAtacarRatio());
+  }
+
+  function urlPosCurarHp() {
+    if (curarHpParaRaidDiario()) return URL_RAID;
+    return URL_RELATORIOS_ATAQUE;
+  }
+
+  function finalizarCurarHpPosIchiraku(motivoLog) {
+    var voltarRaid = curarHpParaRaidDiario();
+    var hp = obterStatusHp();
+    console.log('[HP] ' + motivoLog + ' — ' + formatarHpLog(hp) +
+      (voltarRaid ? ' | voltando para raids...' : ' | voltando ao portao...'));
+    limparCurarHpAtivo();
+    if (voltarRaid) {
+      window.location.href = URL_RAID;
+      return true;
+    }
+    if (tentarAtivarDoujutsuAposHpOk(motivoLog)) return true;
+    window.location.href = URL_RELATORIOS_ATAQUE;
+    return true;
+  }
+
+  function garantirHpParaRaidDiario(contexto) {
+    if (!diarioDeveRodar() || obterFaseDiario() !== 'raid') return true;
+
+    var hp = obterStatusHp();
+    var url = window.location.href || '';
+    var naPaginaStatus = url.indexOf('status') !== -1;
+
+    if (curarHpAtivo()) {
+      if (!curarHpParaRaidDiario()) marcarCurarHpRaidDiario();
+      if (naPaginaStatus) return false;
+      if (hp.ok && hpAtendeMinimoRaid(hp)) {
+        limparCurarHpAtivo();
+        return true;
+      }
+      if (hp.ok && !hpAtendeMinimoRaid(hp)) {
+        console.log('[Diario] HP baixo para raid (<= ' + HP_MINIMO_RAID + ') — ' +
+          formatarHpLog(hp) + ' | indo curar (' + contexto + ')');
+        marcarCurarHpRaidDiario();
+        redirecionarParaCurarHp('raid diario (' + contexto + ')');
+        return false;
+      }
+      console.warn('[Diario] Cura raid pendente sem HP legivel — limpando (' + contexto + ')');
+      limparCurarHpAtivo();
+      hp = obterStatusHp();
+    }
+
+    if (!hp.ok) {
+      console.warn('[Diario] HP ilegivel antes da raid — ' + contexto + ' (seguindo).');
+      return true;
+    }
+    if (hpAtendeMinimoRaid(hp)) return true;
+
+    console.log('[Diario] HP ' + hp.current + ' <= ' + HP_MINIMO_RAID +
+      ' (energia vital insuficiente) — curando antes da raid (' + contexto + ')');
+    marcarCurarHpRaidDiario();
+    redirecionarParaCurarHp('raid diario (' + contexto + ')');
+    return false;
   }
 
   function formatarHpLog(hp) {
@@ -1377,11 +2007,11 @@
 
     if (curarHpAtivo()) {
       if (naPaginaStatus) return false;
-      if (hp.ok && hp.pct >= obterHpMinimoAtacarRatio()) {
+      if (hp.ok && hpAtendeMetaParaCurar(hp)) {
         limparCurarHpAtivo();
         return true;
       }
-      if (hp.ok && hp.pct < obterHpMinimoAtacarRatio()) {
+      if (hp.ok && !hpAtendeMetaParaCurar(hp)) {
         console.log('[HP] Cura pendente — retomando /status (' + contexto + ') — ' + formatarHpLog(hp));
         redirecionarParaCurarHp(contexto);
         return false;
@@ -1395,7 +2025,8 @@
       console.warn('[HP] Nao foi possivel ler HP — ' + contexto + ' (seguindo sem bloqueio).');
       return true;
     }
-    if (hp.pct >= obterHpMinimoAtacarRatio()) return true;
+    if (hp.pct >= obterHpMinimoAtacarRatio() && !curarHpParaRaidDiario()) return true;
+    if (curarHpParaRaidDiario() && hpAtendeMinimoRaid(hp)) return true;
 
     redirecionarParaCurarHp(contexto);
     return false;
@@ -1427,8 +2058,10 @@
     return out;
   }
 
-  function escolherItemIchirakuOptimo(itens, current, max) {
-    var meta = max * obterHpMinimoAtacarRatio();
+  function escolherItemIchirakuOptimo(itens, current, max, metaCurrent) {
+    var meta = metaCurrent !== undefined && metaCurrent !== null
+      ? metaCurrent
+      : max * obterHpMinimoAtacarRatio();
     var deficit = Math.ceil(meta - current);
     if (deficit <= 0) return null;
 
@@ -1455,17 +2088,13 @@
     if (obterModoAba() !== 'cacadas') return false;
 
     var hp = obterStatusHp();
-    var precisaCurar = hp.ok && hp.pct < obterHpMinimoAtacarRatio();
+    var precisaCurar = hp.ok && !hpAtendeMetaParaCurar(hp);
 
     if (!curarHpAtivo()) {
       if (!precisaCurar) return false;
       marcarCurarHpAtivo();
-    } else if (hp.ok && hp.pct >= obterHpMinimoAtacarRatio()) {
-      console.log('[HP] Vida recuperada — ' + formatarHpLog(hp) + ' | voltando ao portao...');
-      limparCurarHpAtivo();
-      if (tentarAtivarDoujutsuAposHpOk('pos-cura HP')) return true;
-      window.location.href = URL_RELATORIOS_ATAQUE;
-      return true;
+    } else if (hp.ok && hpAtendeMetaParaCurar(hp)) {
+      return finalizarCurarHpPosIchiraku('Vida recuperada');
     }
 
     if (!hp.ok) {
@@ -1476,16 +2105,12 @@
       return true;
     }
 
-    if (hp.pct >= obterHpMinimoAtacarRatio()) {
-      console.log('[HP] Vida OK — ' + formatarHpLog(hp) + ' | voltando ao portao...');
-      limparCurarHpAtivo();
-      if (tentarAtivarDoujutsuAposHpOk('HP OK em /status')) return true;
-      window.location.href = URL_RELATORIOS_ATAQUE;
-      return true;
+    if (hpAtendeMetaParaCurar(hp)) {
+      return finalizarCurarHpPosIchiraku('Vida OK');
     }
 
     var itens = extrairItensIchirakuStatus();
-    var escolhido = escolherItemIchirakuOptimo(itens, hp.current, hp.max);
+    var escolhido = escolherItemIchirakuOptimo(itens, hp.current, hp.max, metaHpAbsolutaParaCurar(hp));
 
     if (!escolhido) {
       console.error('[HP] Sem Ichiraku util em /status — ' + formatarHpLog(hp) + '. Cure manualmente.');
@@ -1637,7 +2262,7 @@
   }
 
   function processarRotacaoContaPrincipal() {
-    if (!rotacaoAutomacaoAtiva()) return false;
+    if (!precisaAssumirAutomacaoPosPrincipal()) return false;
     if (obterModoAba() !== 'cacadas') return false;
     if (document.getElementById('login')) return false;
     if (estaEmContaGerenciada()) return false;
@@ -1651,7 +2276,11 @@
       if (sessionStorage.getItem(BOT_ROTACAO_ASSUMIDA_KEY) === '1') return false;
     } catch (e) {}
 
-    console.warn('[Automacao] Conta principal detectada — indo assumir automacao...');
+    if (precisaRetomarGerenciada()) {
+      console.warn('[Automacao] Conta principal pos-logout — retomando gerenciada via automacao...');
+    } else {
+      console.warn('[Automacao] Conta principal detectada — indo assumir automacao...');
+    }
     marcarRotacaoCicloPendente();
     portaoRelatoriosAgendado = false;
     setTimeout(function() {
@@ -2436,6 +3065,16 @@
     return escHtmlPainelServer(texto);
   }
 
+  function montarHtmlLinhaDiarioGerenciadaPainel() {
+    var texto = descreverDiarioGerenciada();
+    if (diarioGerenciadaAtivo()) {
+      var fase = obterFaseDiario();
+      if (fase) texto += ' | fase: ' + fase;
+      return '<b style="color:#f39c12">' + escHtmlPainelServer(texto) + '</b>';
+    }
+    return escHtmlPainelServer(texto);
+  }
+
   function montarHtmlLinhaFirebaseFilaPainel() {
     var texto = descreverCacadasFirebaseFila();
     if (cacadasFirebaseFilaFlagAtiva()) {
@@ -2506,6 +3145,7 @@
     );
     linhas.push('Doujutsu: ' + montarHtmlLinhaDoujutsuPainel());
     linhas.push('Firebase Fila: ' + montarHtmlLinhaFirebaseFilaPainel());
+    linhas.push('Diario: ' + montarHtmlLinhaDiarioGerenciadaPainel());
     linhas.push('InvasorVivo: ' + montarHtmlLinhaInvasorVivoPainel());
     linhas.push('v' + escHtmlPainelServer(SCRIPT_VERSAO));
 
@@ -4289,6 +4929,21 @@
   }
 
   function processarPaginaCombate() {
+    if (diarioDeveRodar() && obterFaseDiario() === 'raid') {
+      var parsedDiario = classificarResultadoCombate();
+      if (parsedDiario) {
+        console.log('[Diario] Raid combate — ' + parsedDiario.resultado + ': ' + parsedDiario.texto);
+        consumirDiarioRaidEmCombate();
+        setTimeout(function() {
+          window.location.href = URL_RAID;
+        }, 2000);
+        return true;
+      }
+      if (processarDiarioPosCombateRaid()) return true;
+      console.log('[Diario] Raid combate — aguardando resultado...');
+      return true;
+    }
+
     if (!estaNaPaginaCombateCacadas()) return false;
 
     if (combateJaNotificado()) {
@@ -4965,8 +5620,9 @@
     ' | HP minimo ataque: ' + descreverHpMinimoAtacar() +
     ' | Doujutsu: ' + descreverDoujutsu() +
     ' | InvasorVivo: ' + descreverInvasorVivo() +
+    ' | Diario gerenciada: ' + descreverDiarioGerenciada() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
-    ' | botInvasorVivo() / botInvasorVivo(true|false)' +
+    ' | botInvasorVivo() / botInvasorVivo(true|false) | botDiarioGerenciada() / botDiarioGerenciada(true|false)' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
@@ -4996,6 +5652,11 @@
       CODIGO_SERVIDOR = obterCodigoServidor();
 
       if (obterModoAba() === 'cacadas' && consumirContaAutomacaoAssumida()) {
+        limparRetomarGerenciada();
+        if (diarioGerenciadaAtivo()) {
+          retomarDiarioGerenciadaPosAssume();
+          return;
+        }
         console.log('[Automacao] Conta assumida — iniciando portao de caçadas...');
         window.location.href = URL_RELATORIOS_ATAQUE;
         return;
@@ -5083,10 +5744,51 @@
         {
           id: 'combate',
           checar: function() {
-            return obterModoAba() === 'cacadas' && ehPaginaCombateCacadas(urlAtual);
+            if (obterModoAba() !== 'cacadas') return false;
+            if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
+              return true;
+            }
+            return ehPaginaCombateCacadas(urlAtual);
           },
           executar: function() {
             return processarPaginaCombate();
+          }
+        },
+        {
+          id: 'diario_eventos',
+          checar: function() {
+            return urlAtual.indexOf('eventos') !== -1 && diarioDeveRodar() && obterFaseDiario() === 'evento';
+          },
+          executar: function() {
+            return processarDiarioEventos();
+          }
+        },
+        {
+          id: 'diario_raid_combate',
+          checar: function() {
+            return urlAtual.indexOf('raid-combate') !== -1 && diarioDeveRodar() && obterFaseDiario() === 'raid';
+          },
+          executar: function() {
+            return processarDiarioRaidCombatePagina();
+          }
+        },
+        {
+          id: 'diario_raid',
+          checar: function() {
+            return urlAtual.indexOf('/raid') !== -1 && urlAtual.indexOf('raid-combate') === -1 &&
+              diarioDeveRodar() && obterFaseDiario() === 'raid';
+          },
+          executar: function() {
+            return processarDiarioRaidLista();
+          }
+        },
+        {
+          id: 'diario_animal',
+          checar: function() {
+            return urlAtual.indexOf('/animal') !== -1 && diarioDeveRodar() && obterFaseDiario() === 'animal';
+          },
+          executar: function() {
+            return processarDiarioAnimal();
           }
         },
         {
