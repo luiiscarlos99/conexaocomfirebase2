@@ -263,8 +263,8 @@
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
     var extra = diarioSemCacadasPosRotina()
-      ? ' | pos-diario: mesma aba ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ')'
-      : ' | pos-diario: caçadas';
+      ? ' | pos-diario: mesma aba ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ') | caçadas: bloqueadas'
+      : ' | pos-diario: caçadas apos cada gerenciada';
     if (diarioCicloSequenciaConcluido()) extra += ' | ciclo: concluido';
     else {
       var feitas = lerContasDiarioFeitas();
@@ -577,8 +577,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.33';
-  var SCRIPT_ATUALIZADO = '30/08/2026 01:05';
+  var SCRIPT_VERSAO = '3.34';
+  var SCRIPT_ATUALIZADO = '30/08/2026 01:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1621,6 +1621,27 @@
   }
 
   // --- Bot diario (contas gerenciadas): evento + raid + animal ---
+  function cacadasBloqueadaPorDiarioGerenciada() {
+    if (!diarioGerenciadaAtivo() || diarioCicloSequenciaConcluido()) return false;
+    if (diarioSemCacadasPosRotina()) return true;
+    return estaEmContaGerenciada() && !!obterFaseDiario();
+  }
+
+  function redirecionarDiarioNoLugarDeCacadas(contexto) {
+    if (!cacadasBloqueadaPorDiarioGerenciada()) return false;
+    if (processarRotacaoContaPrincipal()) return true;
+    if (verificarDiarioRetomarPosInterrupcao()) return true;
+    if (redirecionarParaDiarioGerenciada(contexto || 'bloqueio caçadas')) return true;
+    if (!estaEmContaGerenciada()) {
+      console.log('[Diario] Caçadas bloqueadas — indo para /automacao (' + (contexto || '?') + ')...');
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+    console.log('[Diario] Caçadas bloqueadas — aguardando diario (' + (contexto || '?') + ').');
+    return true;
+  }
+
   function diarioDeveRodar() {
     if (!diarioGerenciadaAtivo() || !estaEmContaGerenciada()) return false;
     if (obterFaseDiario()) return true;
@@ -1633,9 +1654,9 @@
   }
 
   function devePriorizarDiarioSobreCacadas() {
-    if (!diarioDeveRodar()) return false;
-    if (diarioSemCacadasPosRotina()) return true;
-    return !!obterFaseDiario();
+    if (!cacadasBloqueadaPorDiarioGerenciada()) return false;
+    if (estaEmContaGerenciada()) return diarioDeveRodar() || !!obterFaseDiario();
+    return true;
   }
 
   function paginaCorrespondeFaseDiario(fase, url) {
@@ -3533,6 +3554,7 @@
   }
 
   function irParaCacadasLiberado(motivo) {
+    if (redirecionarDiarioNoLugarDeCacadas('portao -> caçadas (' + motivo + ')')) return;
     var urlAntes = window.location.href;
     if (!garantirHpParaAtacar('portao -> caçadas (' + motivo + ')')) {
       setTimeout(function() {
@@ -3551,6 +3573,7 @@
   }
 
   function irParaPortaoRelatorios(motivo, opcoes) {
+    if (redirecionarDiarioNoLugarDeCacadas(motivo)) return;
     var opts = opcoes || {};
     if (opts.rotacionarAutomacao && rotacaoAutomacaoAtiva()) {
       irParaRotacaoAutomacao(motivo);
@@ -6318,8 +6341,9 @@
   function redirecionarParaCacadas(motivo) {
     console.warn('[Script] PÁGINA NÃO MAPEADA (' + motivo + '). Redirecionando...');
     if (obterModoAba() === 'cacadas') {
+      if (redirecionarDiarioNoLugarDeCacadas('pagina nao mapeada')) return;
       irParaPortaoRelatorios('Pagina nao mapeada');
-          return;
+      return;
     }
     window.location.href = URL_CACADAS;
   }
@@ -6502,6 +6526,9 @@
           if (devePriorizarDiarioSobreCacadas()) {
             if (redirecionarParaDiarioGerenciada('status pos-cura')) return;
           }
+          if (cacadasBloqueadaPorDiarioGerenciada()) {
+            if (redirecionarDiarioNoLugarDeCacadas('status pos-login')) return;
+          }
           console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
           window.location.href = URL_RELATORIOS_ATAQUE;
           return;
@@ -6554,12 +6581,22 @@
           id: 'combate',
           checar: function() {
             if (obterModoAba() !== 'cacadas') return false;
+            if (cacadasBloqueadaPorDiarioGerenciada()) {
+              if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
+                return true;
+              }
+              return false;
+            }
             if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
             return true;
             }
             return ehPaginaCombateCacadas(urlAtual);
           },
           executar: function() {
+            if (cacadasBloqueadaPorDiarioGerenciada() &&
+                !(diarioDeveRodar() && obterFaseDiario() === 'raid')) {
+              return redirecionarDiarioNoLugarDeCacadas('combate caçadas');
+            }
             return processarPaginaCombate();
           }
         },
@@ -6608,6 +6645,7 @@
           id: 'relatorios_ataque',
           checar: function() {
             if (obterModoAba() !== 'cacadas') return false;
+            if (cacadasBloqueadaPorDiarioGerenciada()) return false;
             if (devePriorizarDiarioSobreCacadas()) return false;
             if (urlAtual.indexOf('relatorios_ataque') !== -1) return true;
             return !!document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]');
@@ -6711,9 +6749,11 @@
         {
           id: 'atacar',
           checar: function() {
+            if (cacadasBloqueadaPorDiarioGerenciada()) return false;
             return urlAtual.indexOf('atacar') !== -1 && paginaConfirmacaoAtaque();
           },
           executar: function() {
+            if (redirecionarDiarioNoLugarDeCacadas('pagina atacar')) return true;
             if (atacarJaProcessado) return true;
 
             var btnAtacar = document.querySelector('form[action="atacar"] input[type="submit"]');
