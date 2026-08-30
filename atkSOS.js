@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.10
+// @version      3.11
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -500,8 +500,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.10';
-  var SCRIPT_ATUALIZADO = '29/08/2026 14:30';
+  var SCRIPT_VERSAO = '3.11';
+  var SCRIPT_ATUALIZADO = '29/08/2026 21:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2527,6 +2527,99 @@
     return null;
   }
 
+  function extrairVoceJaAtacouCacadas() {
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('voce atacou') === -1 &&
+          norm.indexOf('voce ja atacou') === -1 &&
+          norm.indexOf('ja atacou') === -1) {
+        continue;
+      }
+
+      var nome = extrairVitimaDoRelatorioAtaque(texto) || obterAlvoNomeCacadasSessao();
+      return nome || null;
+    }
+
+    return null;
+  }
+
+  function removerAlvoFirebaseFilaConsumido(nome, motivo) {
+    if (!nome) return;
+    removerAlvoFirebaseFila(nome, function(ok) {
+      if (ok) console.log('[Firebase Fila] Removido (' + motivo + '): ' + nome);
+    });
+    var skip = lerSkipFirebaseFila();
+    delete skip[normalizarNomeCacadas(nome)];
+    salvarSkipFirebaseFila(skip);
+  }
+
+  function purgarFirebaseFilaJaAtacados(fila, ataques, callback) {
+    if (!fila.length) {
+      callback(fila);
+      return;
+    }
+
+    var mapa = mapaAtacadosNoRelatorio(ataques);
+    var restantes = [];
+    var removidos = [];
+
+    for (var i = 0; i < fila.length; i++) {
+      var item = fila[i];
+      if (!item || !item.nome) continue;
+      if (mapa[normalizarNomeCacadas(item.nome)]) {
+        removidos.push(item.nome);
+      } else {
+        restantes.push(item);
+      }
+    }
+
+    if (!removidos.length) {
+      callback(fila);
+      return;
+    }
+
+    var idx = 0;
+    function proximo() {
+      if (idx >= removidos.length) {
+        console.log('[Firebase Fila] ' + removidos.length + ' removido(s) — ja constavam no relatorio de ataque.');
+        callback(restantes);
+        return;
+      }
+      removerAlvoFirebaseFila(removidos[idx], function() {
+        idx++;
+        proximo();
+      });
+    }
+    proximo();
+  }
+
+  function processarVoceJaAtacouCacadas() {
+    var nome = extrairVoceJaAtacouCacadas();
+    if (!nome) return false;
+
+    if (cacadaAtualPorNomeFirebase()) {
+      removerAlvoFirebaseFilaConsumido(nome, 'ja atacado em /cacadas');
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Firebase fila — ja atacado: ' + nome);
+      return true;
+    }
+
+    if (cacadaAtualPorNomeBlacklist()) {
+      removerNomeBlacklistCacadas(nome, 'ja atacado');
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Ja atacado: ' + nome);
+      return true;
+    }
+
+    return false;
+  }
+
   function removerNomeBlacklistCacadas(nome, motivo) {
     if (!nome) return false;
 
@@ -2771,18 +2864,20 @@
 
     buscarFilaFirebaseRyous(function(fila) {
       var ataques = extrairAtaquesRelatorios();
-      var proximo = escolherProximoAlvoFirebase(fila, ataques);
-      if (proximo) {
-        definirModoCacadasFirebaseFila(proximo);
-      } else {
-        console.warn(
-          '[Firebase Fila] Nenhum alvo disponivel (' + fila.length +
-          ' na fila, skip/relatorio) — caçada por nivel.'
-        );
-        limparSkipFirebaseFila();
-        definirModoCacadasClasse('fila firebase esgotada ou vazia');
-      }
-      callback();
+      purgarFirebaseFilaJaAtacados(fila, ataques, function(filaLimpa) {
+        var proximo = escolherProximoAlvoFirebase(filaLimpa, ataques);
+        if (proximo) {
+          definirModoCacadasFirebaseFila(proximo);
+        } else {
+          console.warn(
+            '[Firebase Fila] Nenhum alvo disponivel (' + filaLimpa.length +
+            ' na fila apos limpeza, skip/relatorio) — caçada por nivel.'
+          );
+          limparSkipFirebaseFila();
+          definirModoCacadasClasse('fila firebase esgotada ou vazia');
+        }
+        callback();
+      });
     });
   }
 
@@ -4549,15 +4644,15 @@
           var refBase = 'comandos/' + CODIGO_SERVIDOR;
 
           database.ref(refBase + '/imagem').set(dataUrl)
-            .then(function() {
+        .then(function() {
               console.log('[Captcha] Imagem salva: ' + refBase + '/imagem');
               return database.ref(refBase + '/resposta').remove();
             })
             .then(function() {
               database.ref('codigo_servidor').set(CODIGO_SERVIDOR).catch(function() {});
               iniciarEscutaFirebaseCaptcha(database);
-            })
-            .catch(function(err) {
+        })
+        .catch(function(err) {
               console.error('[Captcha] Erro ao salvar Firebase:', err);
             });
         };
@@ -4590,7 +4685,7 @@
           limparTimersCaptcha();
           zerarTentativasOcrAutoCaptcha('captcha resolvido');
 
-          var inputCaptcha = document.querySelector('input[name="resposta"]') ||
+          var inputCaptcha = document.querySelector('input[name="resposta"]') || 
                              document.querySelector('input[name="captcha"], input[name="codigo"], #captcha');
 
           if (inputCaptcha) {
@@ -4610,7 +4705,7 @@
                 })
                 .finally(function() {
                   var delayClique = Math.floor(Math.random() * (700 - 300 + 1)) + 300;
-
+                  
                   setTimeout(function() {
                     var formCaptcha = inputCaptcha.closest('form');
                     var btnConfirmar = formCaptcha ? formCaptcha.querySelector('input[type="submit"]') : null;
@@ -4649,7 +4744,7 @@
     console.warn('[Script] PÁGINA NÃO MAPEADA (' + motivo + '). Redirecionando...');
     if (obterModoAba() === 'cacadas') {
       irParaPortaoRelatorios('Pagina nao mapeada');
-      return;
+          return;
     }
     window.location.href = URL_CACADAS;
   }
@@ -4753,7 +4848,7 @@
   );
   logOcrAutoNoConsole();
 
-  setTimeout(function() {
+    setTimeout(function() {
     try {
       sincronizarModoAba();
 
@@ -4853,7 +4948,7 @@
 
             agendarTimersCaptcha();
 
-            return true;
+            return true; 
           }
         },
         {
@@ -4914,6 +5009,10 @@
               return true;
             }
 
+            if (processarVoceJaAtacouCacadas()) {
+              return true;
+            }
+
             if (processarNinjaNaoEncontradoCacadas()) {
               return true;
             }
@@ -4930,8 +5029,8 @@
 
             if (modo === 'firebase_fila' && alvoNome) {
               if (executarCacadaPorNome(alvoNome)) {
-                return true;
-              }
+                  return true;
+                }
               console.warn('[Firebase Fila] Formulario por_nome indisponivel — tentando caçada por nivel...');
             }
 
