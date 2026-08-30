@@ -262,9 +262,8 @@
 
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
-    var extra = diarioSemCacadasPosRotina()
-      ? ' | pos-diario: mesma aba ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ') | caçadas: bloqueadas'
-      : ' | pos-diario: caçadas apos cada gerenciada';
+    var extra = ' | mesma aba ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') +
+      ' (Discord em ' + DIARIO_DISCORD_LOGIN + ') | caçadas: bloqueadas';
     if (diarioCicloSequenciaConcluido()) extra += ' | ciclo: concluido';
     else {
       var feitas = lerContasDiarioFeitas();
@@ -292,6 +291,7 @@
   }
 
   function diarioSemCacadasPosRotina() {
+    if (diarioGerenciadaAtivo()) return true;
     try {
       var raw = localStorage.getItem('BOT_DIARIO_SEM_CACADAS');
       if (raw === null || raw === '') return true;
@@ -577,8 +577,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.34';
-  var SCRIPT_ATUALIZADO = '30/08/2026 01:15';
+  var SCRIPT_VERSAO = '3.35';
+  var SCRIPT_ATUALIZADO = '30/08/2026 01:18';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1402,7 +1402,7 @@
   }
 
   function irParaPortaoOuPararDiario(motivo) {
-    if (diarioGerenciadaAtivo() && diarioSemCacadasPosRotina()) {
+    if (diarioGerenciadaAtivo() && !diarioCicloSequenciaConcluido()) {
       console.warn('[Diario] ' + motivo + ' — sem caçadas, parando nesta conta.');
       return true;
     }
@@ -1622,9 +1622,7 @@
 
   // --- Bot diario (contas gerenciadas): evento + raid + animal ---
   function cacadasBloqueadaPorDiarioGerenciada() {
-    if (!diarioGerenciadaAtivo() || diarioCicloSequenciaConcluido()) return false;
-    if (diarioSemCacadasPosRotina()) return true;
-    return estaEmContaGerenciada() && !!obterFaseDiario();
+    return diarioGerenciadaAtivo() && !diarioCicloSequenciaConcluido();
   }
 
   function redirecionarDiarioNoLugarDeCacadas(contexto) {
@@ -1802,26 +1800,22 @@
   function iniciarDiarioGerenciada() {
     limparEstadoDiario();
     definirFaseDiario('evento');
-    console.log('%c[Diario] Rotina iniciada — evento -> raid -> animal -> caçadas', 'color:#f39c12;font-weight:bold');
+    console.log('%c[Diario] Rotina iniciada — evento -> raid -> animal', 'color:#f39c12;font-weight:bold');
   }
 
   function concluirDiarioGerenciada() {
     var nomeAtual = extrairNomeUsuarioLogado() || obterUsuarioExibicao();
     console.log('%c[Diario] Rotina concluida nesta conta gerenciada: ' + nomeAtual, 'color:#f39c12;font-weight:bold');
     limparEstadoDiario();
-    if (diarioSemCacadasPosRotina()) {
-      marcarContaDiarioFeita(nomeAtual);
-      var feitas = lerContasDiarioFeitas();
-      console.log('[Diario] Contas concluidas neste ciclo: ' + feitas.join(' -> ') +
-        ' (' + feitas.length + '/' + lerSequenciaDiarioPresentesNorm().length + ')');
-      if (cicloDiarioTodasContasFeitas()) {
-        concluirCicloDiarioCompleto(nomeAtual);
-        return;
-      }
-      irParaRotacaoAutomacao('diario concluido — proxima: ' + proximaContaDiarioSequenciaLabel(nomeAtual));
+    marcarContaDiarioFeita(nomeAtual);
+    var feitas = lerContasDiarioFeitas();
+    console.log('[Diario] Contas concluidas neste ciclo: ' + feitas.join(' -> ') +
+      ' (' + feitas.length + '/' + lerSequenciaDiarioPresentesNorm().length + ')');
+    if (cicloDiarioTodasContasFeitas()) {
+      concluirCicloDiarioCompleto(nomeAtual);
       return;
     }
-    window.location.href = URL_RELATORIOS_ATAQUE;
+    irParaRotacaoAutomacao('diario concluido — proxima: ' + proximaContaDiarioSequenciaLabel(nomeAtual));
   }
 
   function proximaContaDiarioSequenciaLabel(nomeAtual) {
