@@ -577,8 +577,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.35';
-  var SCRIPT_ATUALIZADO = '30/08/2026 01:18';
+  var SCRIPT_VERSAO = '3.36';
+  var SCRIPT_ATUALIZADO = '30/08/2026 01:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -890,6 +890,8 @@
   var BOT_CACADAS_GATE_KEY = 'BOT_CACADAS_GATE_PASS';
   var BOT_CACADAS_MODO_KEY = 'BOT_CACADAS_MODO';
   var BOT_CACADAS_ALVO_NOME_KEY = 'BOT_CACADAS_ALVO_NOME';
+  var BOT_CACADAS_TETO_OCIOSO_KEY = 'BOT_CACADAS_TETO_OCIOSO';
+  var BOT_CACADAS_FORCAR_BLACKLIST_KEY = 'BOT_CACADAS_FORCAR_BLACKLIST';
   var BOT_ROTACAO_CICLO_KEY = 'BOT_ROTACAO_CICLO_PENDENTE';
   var BOT_ROTACAO_ASSUMIDA_KEY = 'BOT_AUTO_ROT_ASSUMIDA';
   var BOT_ROTACAO_ULTIMA_NOME_KEY = 'BOT_ROTACAO_ULTIMA_NOME';
@@ -4251,9 +4253,74 @@
     return null;
   }
 
+  function marcarCacadasTetoOcioso(ativo) {
+    try {
+      if (ativo) sessionStorage.setItem(BOT_CACADAS_TETO_OCIOSO_KEY, '1');
+      else sessionStorage.removeItem(BOT_CACADAS_TETO_OCIOSO_KEY);
+    } catch (e) {}
+  }
+
+  function cacadasEmTetoOcioso() {
+    try { return sessionStorage.getItem(BOT_CACADAS_TETO_OCIOSO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarForcarBlacklistCacadas(ativo) {
+    try {
+      if (ativo) sessionStorage.setItem(BOT_CACADAS_FORCAR_BLACKLIST_KEY, '1');
+      else sessionStorage.removeItem(BOT_CACADAS_FORCAR_BLACKLIST_KEY);
+    } catch (e) {}
+  }
+
+  function forcarBlacklistCacadasPendente() {
+    try { return sessionStorage.getItem(BOT_CACADAS_FORCAR_BLACKLIST_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function escolherProximoAlvoBlacklistLocal(skipRelatorio) {
+    var ataques = skipRelatorio ? [] : extrairAtaquesRelatorios();
+    return escolherProximoAlvoBlacklist(ataques);
+  }
+
+  function processarFallbackBlacklistTetoOciosoSemClasse(motivo) {
+    if (!cacadasEmTetoOcioso()) return false;
+    if (seletorPorNivelDisponivel()) return false;
+
+    if (!blacklistCacadasAtiva()) {
+      console.warn(
+        '[Caçadas] Teto ocioso — seletor por nivel/classe indisponivel e blacklist vazia.'
+      );
+      return false;
+    }
+
+    marcarCacadasTetoOcioso(false);
+    var proximo = escolherProximoAlvoBlacklistLocal(!forcarBlacklistCacadasPendente());
+    if (proximo) {
+      definirModoCacadasBlacklist(proximo);
+      if (executarCacadaPorNome(proximo)) {
+        console.warn(
+          '[Caçadas] Teto ocioso — seletor classe indisponivel; caçada obrigatoria por blacklist: ' +
+          proximo + (motivo ? ' (' + motivo + ')' : '')
+        );
+        return true;
+      }
+    }
+
+    marcarForcarBlacklistCacadas(true);
+    irParaPortaoRelatorios(
+      'Teto ocioso — seletor classe indisponivel; blacklist obrigatoria' +
+      (motivo ? ' (' + motivo + ')' : '')
+    );
+    return true;
+  }
+
   function processarClasseIndisponivelCacadas() {
     var classe = extrairClasseIndisponivelCacadas();
     if (!classe) return false;
+
+    if (cacadasEmTetoOcioso() && !seletorPorNivelDisponivel()) {
+      return processarFallbackBlacklistTetoOciosoSemClasse('classe indisponivel na pagina');
+    }
 
     var atual = obterNivelCacadasAtual();
     try {
@@ -4267,6 +4334,10 @@
     liberarGateCacadas();
 
     if (executarCacadaPorNivel()) return true;
+
+    if (processarFallbackBlacklistTetoOciosoSemClasse('falha ao retentar nivel ' + NIVEL_CACADAS_FINAL)) {
+      return true;
+    }
 
     irParaPortaoRelatorios('Classe indisponivel — falha ao retentar nivel ' + NIVEL_CACADAS_FINAL);
     return true;
@@ -4441,11 +4512,21 @@
 
   function resolverDestinoNoPortao(decisao, callback, opcoes) {
     var opts = opcoes || {};
+    if (forcarBlacklistCacadasPendente()) {
+      marcarForcarBlacklistCacadas(false);
+      marcarCacadasTetoOcioso(false);
+      console.warn(
+        '[Caçadas] Teto ocioso — seletor classe indisponivel; usando blacklist obrigatoriamente.'
+      );
+      resolverBlacklistNoPortao(decisao, callback, Object.assign({}, opts, { forcarBlacklist: true }));
+      return;
+    }
     if (decisaoForcaCacadaPorClasse(decisao)) {
       console.warn(
-        '[Caçadas] Teto ocioso — ignorando fila firebase/blacklist; priorizando caçada por classe.'
+        '[Caçadas] Teto ocioso — priorizando caçada por classe (blacklist se seletor indisponivel).'
       );
       limparSkipFirebaseFila();
+      marcarCacadasTetoOcioso(true);
       definirModoCacadasClasse('teto ocioso — caçada por classe');
       callback();
       return;
@@ -4527,6 +4608,8 @@
       sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'blacklist');
       sessionStorage.setItem(BOT_CACADAS_ALVO_NOME_KEY, nome);
     } catch (e) {}
+    marcarCacadasTetoOcioso(false);
+    marcarForcarBlacklistCacadas(false);
     console.warn('[Blacklist] Proximo alvo por nome: ' + nome);
   }
 
@@ -4573,7 +4656,8 @@
       return;
     }
 
-    if (decisaoForcaCacadaPorClasse(decisao)) {
+    if (!opts.forcarBlacklist && decisaoForcaCacadaPorClasse(decisao)) {
+      marcarCacadasTetoOcioso(true);
       definirModoCacadasClasse('teto ocioso — caçada por classe');
       callback();
       return;
@@ -6711,6 +6795,12 @@
             var modo = obterModoCacadasSessao();
             var alvoNome = obterAlvoNomeCacadasSessao();
 
+            if (modo === 'classe' && cacadasEmTetoOcioso() && !seletorPorNivelDisponivel()) {
+              if (processarFallbackBlacklistTetoOciosoSemClasse('modo classe sem seletor')) {
+                return true;
+              }
+            }
+
             if (modo === 'firebase_fila' && alvoNome) {
               if (executarCacadaPorNome(alvoNome)) {
                   return true;
@@ -6734,7 +6824,12 @@
             }
 
             if (modo === 'classe') {
-              return processarCacadasSemFormularioNivel('Blacklist esgotada ou ignorada (teto de espera)');
+              if (processarFallbackBlacklistTetoOciosoSemClasse('fallback final modo classe')) {
+                return true;
+              }
+              return processarCacadasSemFormularioNivel(
+                'Teto ocioso — sem seletor classe e blacklist indisponivel'
+              );
             }
 
             return processarCacadasSemFormularioNivel('Blacklist ativa mas por_nome e por_nivel indisponiveis');
