@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.12
+// @version      3.13
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -2979,8 +2979,12 @@
 
   function resolverDestinoNoPortao(decisao, callback, opcoes) {
     var opts = opcoes || {};
-    if (decisaoIgnoraBlacklist(decisao, opts.aposEsperaNoPortao)) {
-      definirModoCacadasClasse('teto apos espera no portao — ignorando fila/blacklist');
+    if (decisaoForcaCacadaPorClasse(decisao)) {
+      console.warn(
+        '[Caçadas] Teto ocioso — ignorando fila firebase/blacklist; priorizando caçada por classe.'
+      );
+      limparSkipFirebaseFila();
+      definirModoCacadasClasse('teto ocioso — caçada por classe');
       callback();
       return;
     }
@@ -3078,12 +3082,22 @@
     return obterModoCacadasSessao() === 'blacklist' && !!obterAlvoNomeCacadasSessao();
   }
 
-  function decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao) {
-    // So apos esperar no portao: se o teto ocioso forcar caçada, evita blacklist (alvo pode estar em penalidade).
-    // Ao chegar com caçada imediata (ja passou do teto), blacklist continua valendo.
-    if (!aposEsperaNoPortao) return false;
+  function decisaoForcaCacadaPorClasse(decisao) {
     return !!(decisao && decisao.waitMs <= 0 && decisao.motivo &&
       decisao.motivo.indexOf('teto ocioso') !== -1);
+  }
+
+  function decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao) {
+    return decisaoForcaCacadaPorClasse(decisao);
+  }
+
+  function seletorPorNivelDisponivel(doc) {
+    var root = doc || document;
+    var selectNivel = root.getElementById('por_nivel');
+    if (!selectNivel) return false;
+    var formNivel = selectNivel.closest('form');
+    if (!formNivel) return false;
+    return !!formNivel.querySelector('input[type="submit"]');
   }
 
   function resolverBlacklistNoPortao(decisao, callback, opcoes) {
@@ -3097,8 +3111,8 @@
       return;
     }
 
-    if (decisaoIgnoraBlacklist(decisao, aposEsperaNoPortao)) {
-      definirModoCacadasClasse('teto apos espera no portao — evita penalidade, ignorando blacklist');
+    if (decisaoForcaCacadaPorClasse(decisao)) {
+      definirModoCacadasClasse('teto ocioso — caçada por classe');
       callback();
       return;
     }
@@ -4899,14 +4913,11 @@
     if (!garantirHpParaAtacar('caçada por nivel')) return true;
     if (!garantirCacadasLiberadaPorInvasor('caçada por nivel')) return true;
 
+    if (!seletorPorNivelDisponivel()) return false;
+
     var selectNivel = document.getElementById('por_nivel');
-    if (!selectNivel) return false;
-
     var formNivel = selectNivel.closest('form');
-    if (!formNivel) return false;
-
     var btnNivel = formNivel.querySelector('input[type="submit"]');
-    if (!btnNivel) return false;
 
     selectNivel.value = String(obterNivelCacadasAtual());
     selectNivel.dispatchEvent(new Event('change', { bubbles: true }));
