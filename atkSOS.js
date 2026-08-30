@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.17
+// @version      3.18
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -23,6 +23,9 @@
     localStorage.removeItem('BOT_MODO_ABA');
     localStorage.removeItem('BOT_MODO_PREFERIDO');
   } catch (e) {}
+
+  var WHITELIST_CACADAS_DEFAULT = 'yoruhime,shizuo,sora,shiroe';
+  var WHITELIST_CLA_CACADAS_DEFAULT = 'akatsuki';
 
   function parseEsperaCacadasMinutos(valor) {
     if (valor === null || valor === undefined || valor === '') return null;
@@ -537,8 +540,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.17';
-  var SCRIPT_ATUALIZADO = '29/08/2026 22:50';
+  var SCRIPT_VERSAO = '3.18';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2841,8 +2844,6 @@
   }
 
   // --- Whitelist = nomes/clas que NAO atacar (pagina atacar) ---
-  var WHITELIST_CACADAS_DEFAULT = 'yoruhime,shizuo,sora,shiroe';
-  var WHITELIST_CLA_CACADAS_DEFAULT = 'akatsuki';
   var MAX_RYOUS_CACADAS_DEFAULT = 30000000;
   var DIFF_NIVEL_CACADAS_DEFAULT = 20;
 
@@ -2856,8 +2857,10 @@
 
   function obterWhitelistCacadas() {
     var raw = localStorage.getItem('BOT_WHITELIST_CACADAS');
-    if (!raw) raw = WHITELIST_CACADAS_DEFAULT;
-    return raw.split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      raw = WHITELIST_CACADAS_DEFAULT;
+    }
+    return String(raw).split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
   }
 
   function obterMaxRyousCacadas() {
@@ -2872,8 +2875,10 @@
 
   function obterWhitelistClaCacadas() {
     var raw = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
-    if (!raw) raw = WHITELIST_CLA_CACADAS_DEFAULT;
-    return raw.split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      raw = WHITELIST_CLA_CACADAS_DEFAULT;
+    }
+    return String(raw).split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
   }
 
   function descreverWhitelistClaAtacar() {
