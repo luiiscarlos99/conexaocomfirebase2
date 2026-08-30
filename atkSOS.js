@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.20
+// @version      3.21
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.20';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:10';
+  var SCRIPT_VERSAO = '3.21';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1162,12 +1162,46 @@
     return diarioDeveRodar() && !!obterFaseDiario();
   }
 
-  function redirecionarSeDiarioEmAndamento(contexto) {
-    if (!diarioEmAndamento()) return false;
+  function devePriorizarDiarioSobreCacadas() {
+    if (!diarioDeveRodar()) return false;
+    if (diarioSemCacadasPosRotina()) return true;
+    return !!obterFaseDiario();
+  }
+
+  function paginaCorrespondeFaseDiario(fase, url) {
+    if (!fase || !url) return false;
+    if (fase === 'evento') return url.indexOf('eventos') !== -1;
+    if (fase === 'raid') {
+      if (url.indexOf('raid-combate') !== -1) return true;
+      if (url.indexOf('/raid') !== -1) return true;
+      if (typeof ehPaginaCombateCacadas === 'function' && ehPaginaCombateCacadas(url)) return true;
+    }
+    if (fase === 'animal') return url.indexOf('/animal') !== -1;
+    return false;
+  }
+
+  function redirecionarParaDiarioGerenciada(contexto) {
+    if (!devePriorizarDiarioSobreCacadas()) return false;
+
     var fase = obterFaseDiario();
-    console.log('[Diario] ' + contexto + ' — rotina em andamento (fase ' + fase + '), sem caçadas.');
+    if (!fase) {
+      console.log('[Diario] ' + contexto + ' — iniciando rotina nesta gerenciada.');
+      iniciarDiarioGerenciada();
+      fase = 'evento';
+    }
+
+    var url = window.location.href || '';
+    if (url.indexOf('automacao') !== -1) return false;
+
+    if (paginaCorrespondeFaseDiario(fase, url)) return false;
+
+    console.log('[Diario] ' + contexto + ' — indo para fase ' + fase + ' (sem caçadas).');
     irParaUrlFaseDiario(fase);
     return true;
+  }
+
+  function redirecionarSeDiarioEmAndamento(contexto) {
+    return redirecionarParaDiarioGerenciada(contexto);
   }
 
   function obterFaseDiario() {
@@ -2355,6 +2389,11 @@
     }
     marcarRotacaoCicloPendente();
     portaoRelatoriosAgendado = false;
+    if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada()) {
+      console.warn('[Diario] Conta principal — indo para automacao (diario)...');
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
     setTimeout(function() {
       window.location.href = URL_AUTOMACAO;
     }, 1500);
@@ -2846,7 +2885,7 @@
   }
 
   function processarPortaoRelatoriosAtaque() {
-    if (redirecionarSeDiarioEmAndamento('Portao relatorios')) return true;
+    if (redirecionarParaDiarioGerenciada('Portao relatorios')) return true;
     if (portaoRelatoriosAgendado) return true;
 
     verificarInvasorNoPortao(function(pausado, info) {
@@ -5768,6 +5807,7 @@
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
           if (processarRotacaoContaPrincipal()) return;
+          if (redirecionarParaDiarioGerenciada('status pos-login')) return;
           if (processarCurarHpNaPaginaStatus()) return;
           if (processarDoujutsuNaPaginaStatus('status')) return;
           if (doujutsuAtivarPendente() && doujutsuEstaAtivo()) {
@@ -5791,6 +5831,8 @@
       }
 
       if (processarRotacaoContaPrincipal()) return;
+
+      if (obterModoAba() === 'cacadas' && redirecionarParaDiarioGerenciada('prioridade diario')) return;
 
       if (sessaoExpiradaSemLogin()) {
         redirecionarParaLogin('Sessao expirada');
@@ -5833,9 +5875,12 @@
         {
           id: 'diario_eventos',
           checar: function() {
-            return urlAtual.indexOf('eventos') !== -1 && diarioDeveRodar() && obterFaseDiario() === 'evento';
+            if (urlAtual.indexOf('eventos') === -1 || !diarioDeveRodar()) return false;
+            var fase = obterFaseDiario();
+            return !fase || fase === 'evento';
           },
           executar: function() {
+            if (!obterFaseDiario()) iniciarDiarioGerenciada();
             return processarDiarioEventos();
           }
         },
@@ -5871,6 +5916,7 @@
           id: 'relatorios_ataque',
           checar: function() {
             if (obterModoAba() !== 'cacadas') return false;
+            if (devePriorizarDiarioSobreCacadas()) return false;
             if (urlAtual.indexOf('relatorios_ataque') !== -1) return true;
             return !!document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]');
           },
@@ -5901,10 +5947,12 @@
         {
           id: 'cacadas',
           checar: function() {
-            return obterModoAba() === 'cacadas' && urlAtual.indexOf('cacadas') !== -1;
+            if (obterModoAba() !== 'cacadas' || urlAtual.indexOf('cacadas') === -1) return false;
+            if (devePriorizarDiarioSobreCacadas()) return false;
+            return true;
           },
           executar: function() {
-            if (redirecionarSeDiarioEmAndamento('Pagina caçadas')) return true;
+            if (redirecionarParaDiarioGerenciada('Pagina caçadas')) return true;
             if (paginaCacadasBloqueadaPorMissao()) {
               return processarCacadasBloqueadaPorMissao();
             }
