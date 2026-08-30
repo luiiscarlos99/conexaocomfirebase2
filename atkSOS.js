@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.23
+// @version      3.24
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.23';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:35';
+  var SCRIPT_VERSAO = '3.24';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1375,6 +1375,66 @@
     return false;
   }
 
+  function blocoRaidNivelInsuficiente(bloco) {
+    if (!bloco) return false;
+    var avisos = bloco.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < avisos.length; i++) {
+      var norm = normalizarTextoCombate(avisos[i].innerText || avisos[i].textContent || '');
+      if (norm.indexOf('nivel insuficiente') !== -1 || norm.indexOf('necessario lv') !== -1) return true;
+    }
+    return false;
+  }
+
+  function paginaRaidCombateAtivo(url) {
+    url = url || window.location.href || '';
+    if (estaNaPaginaCombateCacadas(url)) return true;
+    return !!document.querySelector(
+      'form[action="atacar"] input[type="submit"], ' +
+      'form[action*="raid-combate"] input[type="submit"], ' +
+      'form[action*="raid"] input[type="submit"][value*="Atacar"], ' +
+      'form[action*="raid"] input[type="submit"][value*="atacar"]'
+    );
+  }
+
+  function ehPaginaListaRaids(url) {
+    url = url || window.location.href || '';
+    if (url.indexOf('/raid') === -1 && url.indexOf('raid-combate') === -1) return false;
+    if (estaNaPaginaCombateCacadas(url)) return false;
+    if (paginaRaidCombateAtivo(url)) return false;
+
+    var col = document.getElementById('col_direita');
+    if (col) {
+      var norm = normalizarTextoCombate(col.innerText || col.textContent || '');
+      if (norm.indexOf('inimigos lendarios') !== -1) return true;
+    }
+    return !!document.querySelector(
+      'form[action="raid"] input[name="boss_id"], input[name="boss_id"]'
+    );
+  }
+
+  function contarBossesRaidPagina() {
+    var ids = {};
+    var inputs = document.querySelectorAll('input[name="boss_id"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var id = parseInt(inputs[i].value, 10);
+      if (!isNaN(id)) ids[id] = true;
+    }
+    var total = Object.keys(ids).length;
+    if (total > 0) return total;
+
+    var col = document.getElementById('col_direita');
+    if (!col) return 0;
+    var matches = (col.innerText || col.textContent || '').match(/Lv\.\d+\+/gi);
+    return matches ? matches.length : 0;
+  }
+
+  function concluirRaidsDiarioIrAnimal() {
+    console.log('[Diario] Todas raids disponiveis concluidas (cooldown/nivel) — indo para animal.');
+    avancarFaseDiario('animal', 'raids esgotadas');
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
+    window.location.href = URL_ANIMAL_MEUS;
+  }
+
   function extrairNivelMinimoRaid(bloco) {
     if (!bloco) return null;
     var m = (bloco.innerText || bloco.textContent || '').match(/Lv\.(\d+)\+/i);
@@ -1394,6 +1454,7 @@
 
       var bloco = f.closest('table');
       if (blocoRaidTemCooldown(bloco)) continue;
+      if (blocoRaidNivelInsuficiente(bloco)) continue;
 
       var minLv = extrairNivelMinimoRaid(bloco);
       if (minLv !== null && meuNivel !== null && meuNivel < minLv) continue;
@@ -1424,7 +1485,8 @@
     var form = encontrarFormRaidDisponivel();
     if (form) {
       var bossId = form.querySelector('input[name="boss_id"]');
-      console.log('[Diario] Iniciando raid boss_id=' + (bossId ? bossId.value : '?') + '...');
+      console.log('[Diario] Iniciando raid boss_id=' + (bossId ? bossId.value : '?') +
+        ' (primeiro disponivel da lista)...');
       marcarDiarioRaidEmCombate();
       var btn = form.querySelector('input[type="submit"]');
       if (btn) btn.click();
@@ -1432,10 +1494,18 @@
       return true;
     }
 
-    console.log('[Diario] Nenhuma raid disponivel (cooldown/nivel) — indo para animal.');
-    avancarFaseDiario('animal', 'raids esgotadas');
-    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
-    window.location.href = URL_ANIMAL_MEUS;
+    if (!ehPaginaListaRaids()) {
+      console.log('[Diario] Fora da lista de raids — abrindo /raid...');
+      window.location.href = URL_RAID;
+      return true;
+    }
+
+    if (contarBossesRaidPagina() === 0) {
+      console.warn('[Diario] Lista de raids ainda nao carregou — aguardando...');
+      return true;
+    }
+
+    concluirRaidsDiarioIrAnimal();
     return true;
   }
 
@@ -1456,7 +1526,17 @@
       return true;
     }
 
-    return processarDiarioRaidLista();
+    if (ehPaginaListaRaids()) {
+      return processarDiarioRaidLista();
+    }
+
+    if (estaNaPaginaCombateCacadas()) {
+      return false;
+    }
+
+    console.log('[Diario] Raid combate sem botao Atacar — voltando a lista /raid...');
+    window.location.href = URL_RAID;
+    return true;
   }
 
   function formVenderAnimalMeus() {
@@ -5929,7 +6009,9 @@
         {
           id: 'diario_raid_combate',
           checar: function() {
-            return urlAtual.indexOf('raid-combate') !== -1 && diarioDeveRodar() && obterFaseDiario() === 'raid';
+            if (!diarioDeveRodar() || obterFaseDiario() !== 'raid') return false;
+            if (ehPaginaListaRaids(urlAtual)) return false;
+            return paginaRaidCombateAtivo(urlAtual) || urlAtual.indexOf('raid-combate') !== -1;
           },
           executar: function() {
             return processarDiarioRaidCombatePagina();
@@ -5938,8 +6020,7 @@
         {
           id: 'diario_raid',
           checar: function() {
-            return urlAtual.indexOf('/raid') !== -1 && urlAtual.indexOf('raid-combate') === -1 &&
-              diarioDeveRodar() && obterFaseDiario() === 'raid';
+            return ehPaginaListaRaids(urlAtual) && diarioDeveRodar() && obterFaseDiario() === 'raid';
           },
           executar: function() {
             return processarDiarioRaidLista();
