@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.24
+// @version      3.25
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.24';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:45';
+  var SCRIPT_VERSAO = '3.25';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -811,6 +811,8 @@
   if (modoInicial && modoInicial !== 'cacadas' && modoInicial !== 'invasor') {
     return;
   }
+
+  instalarConfirmAutoOkMissao();
 
   if (ehPaginaLoginInicial && !modoInicial) {
     console.log('[Script Caçadas] Tela de login — tentando credenciais do navegador...');
@@ -1163,7 +1165,8 @@
         console.log('[Missao] confirm() auto-OK — ' + msg);
         return true;
       }
-      if (t.indexOf('tem certeza') !== -1 && t.indexOf('treino investido') !== -1) {
+      if (t.indexOf('treino investido') !== -1 ||
+          (t.indexOf('tem certeza') !== -1 && t.indexOf('perder') !== -1)) {
         console.log('[Diario] confirm() auto-OK venda animal — ' + msg);
         return true;
       }
@@ -1600,7 +1603,8 @@
   function processarDiarioAnimalMeus() {
     var formVender = formVenderAnimalMeus();
     if (formVender) {
-      console.log('[Diario] Vendendo animal atual (banco)...');
+      instalarConfirmAutoOkMissao();
+      console.log('[Diario] Vendendo animal atual (banco) — confirm auto-OK...');
       var btn = formVender.querySelector('input[type="submit"]');
       if (btn) btn.click();
       else formVender.submit();
