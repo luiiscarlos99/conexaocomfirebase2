@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.19
+// @version      3.20
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -263,9 +263,9 @@
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
     var extra = diarioSemCacadasPosRotina()
-      ? ' | pos-diario: rotaciona (sem caçadas)'
+      ? ' | pos-diario: rotaciona gerenciadas (sem caçadas, sem botRotacaoAutomacao)'
       : ' | pos-diario: caçadas';
-    return 'ligado (evento + raid + animal — so contas gerenciadas)' + extra;
+    return 'ligado (evento + raid + animal)' + extra;
   }
 
   function gravarDiarioSemCacadasParam(valor) {
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.19';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:05';
+  var SCRIPT_VERSAO = '3.20';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:10';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -970,7 +970,16 @@
   }
 
   function precisaAssumirAutomacaoPosPrincipal() {
-    return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada();
+    return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada() || diarioGerenciadaAtivo();
+  }
+
+  function irParaPortaoOuPararDiario(motivo) {
+    if (diarioGerenciadaAtivo() && diarioSemCacadasPosRotina()) {
+      console.warn('[Diario] ' + motivo + ' — sem caçadas, parando nesta conta.');
+      return true;
+    }
+    irParaPortaoRelatorios(motivo);
+    return true;
   }
 
   function encontrarContaAutomacaoPorSnapshot(contas, snap) {
@@ -1095,20 +1104,18 @@
 
   function processarPaginaAutomacao() {
     if (!consumirRotacaoCicloPendente()) return false;
-    if (!rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada()) return false;
+    if (!rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada() && !diarioGerenciadaAtivo()) return false;
     if (automacaoAssumirEmAndamento) return true;
 
     var contas = extrairContasAutomacaoPagina();
     if (!contas.length) {
-      console.warn('[Automacao] Nenhuma conta gerenciada encontrada — voltando ao portao.');
-      irParaPortaoRelatorios('Rotacao automacao sem contas');
-      return true;
+      console.warn('[Automacao] Nenhuma conta gerenciada encontrada.');
+      return irParaPortaoOuPararDiario('Automacao sem contas');
     }
 
     var proxima = escolherContaAutomacaoParaAssumir(contas);
     if (!proxima) {
-      irParaPortaoRelatorios('Rotacao automacao falhou');
-      return true;
+      return irParaPortaoOuPararDiario('Automacao falhou ao escolher conta');
     }
 
     automacaoAssumirEmAndamento = true;
@@ -1116,6 +1123,8 @@
     salvarUltimaGerenciadaSnapshot(proxima.nome, proxima.contaId);
     if (precisaRetomarGerenciada()) {
       console.warn('[Automacao] Retomando conta gerenciada: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+    } else if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva()) {
+      console.warn('[Diario] Assumindo conta gerenciada: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
     } else {
       console.warn('[Automacao] Assumindo conta: ' + proxima.nome + ' (id ' + proxima.contaId + ')');
     }
@@ -1231,11 +1240,7 @@
     console.log('%c[Diario] Rotina concluida nesta conta gerenciada.', 'color:#f39c12;font-weight:bold');
     limparEstadoDiario();
     if (diarioSemCacadasPosRotina()) {
-      if (rotacaoAutomacaoAtiva()) {
-        irParaRotacaoAutomacao('diario concluido (sem caçadas)');
-        return;
-      }
-      console.log('[Diario] Concluido — sem caçadas e sem rotacao ativa.');
+      irParaRotacaoAutomacao('diario concluido — proxima gerenciada');
       return;
     }
     window.location.href = URL_RELATORIOS_ATAQUE;
@@ -2343,6 +2348,8 @@
 
     if (precisaRetomarGerenciada()) {
       console.warn('[Automacao] Conta principal pos-logout — retomando gerenciada via automacao...');
+    } else if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva()) {
+      console.warn('[Diario] Conta principal — diario ativo, indo assumir gerenciada...');
     } else {
       console.warn('[Automacao] Conta principal detectada — indo assumir automacao...');
     }
