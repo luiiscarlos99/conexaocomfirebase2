@@ -263,7 +263,7 @@
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
     var extra = diarioSemCacadasPosRotina()
-      ? ' | pos-diario: sequencia ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ')'
+      ? ' | pos-diario: mesma aba ' + DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ' (Discord em ' + DIARIO_DISCORD_LOGIN + ')'
       : ' | pos-diario: caçadas';
     if (diarioCicloSequenciaConcluido()) extra += ' | ciclo: concluido';
     return 'ligado (evento + raid + animal)' + extra;
@@ -569,8 +569,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.31';
-  var SCRIPT_ATUALIZADO = '30/08/2026 00:45';
+  var SCRIPT_VERSAO = '3.32';
+  var SCRIPT_ATUALIZADO = '30/08/2026 00:50';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -757,9 +757,7 @@
   window.botDiarioReset = function() {
     limparEstadoDiario();
     limparDiarioCicloSequenciaConcluido();
-    limparDiarioHandoffParar();
-    limparDiarioSequenciaFbLocal();
-    publicarDiarioSequenciaFirebase({ loginAtivo: '', status: '', atualizadoEm: Date.now() });
+    limparDiarioRetomarPosLogin();
     console.log('[Diario] Estado da rotina diaria limpo — recarregue ou navegue para reiniciar.');
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
   };
@@ -895,11 +893,7 @@
   var BOT_DIARIO_CONTAS_FEITAS_KEY = 'BOT_DIARIO_CONTAS_FEITAS';
   var DIARIO_LOGINS_SEQUENCIA = ['Shiroe', 'Shizuo', 'Sora'];
   var DIARIO_DISCORD_LOGIN = 'Sora';
-  var DIARIO_SEQUENCIA_FB_PATH = 'config/diarioSequencia';
-  var BOT_DIARIO_HANDOFF_PARAR_KEY = 'BOT_DIARIO_HANDOFF_PARAR';
-  var BOT_DIARIO_SEQ_VEZ_KEY = 'BOT_DIARIO_SEQ_VEZ';
-  var BOT_DIARIO_SEQ_STATUS_KEY = 'BOT_DIARIO_SEQ_STATUS';
-  var diarioSequenciaPollTimer = null;
+  var BOT_DIARIO_RETOMAR_POS_LOGIN_KEY = 'BOT_DIARIO_RETOMAR_POS_LOGIN';
   var DISCORD_WEBHOOK_CAPTCHA = '';
   var DISCORD_WEBHOOK_CACADAS = '';
   var DISCORD_WEBHOOK_INVASOR = '';
@@ -1009,9 +1003,7 @@
   }
 
   function precisaAssumirAutomacaoPosPrincipal() {
-    if (diarioHandoffParadoNesteNavegador()) return false;
     if (diarioGerenciadaAtivo() && diarioCicloSequenciaConcluido()) return false;
-    if (diarioGerenciadaAtivo() && !diarioSequenciaMinhaVezLocal()) return false;
     return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada() || diarioGerenciadaAtivo();
   }
 
@@ -1094,114 +1086,26 @@
     return DIARIO_LOGINS_SEQUENCIA[idx + 1];
   }
 
-  function urlFirebaseDiarioSequencia() {
-    return FIREBASE_CONFIG.databaseURL + '/' + DIARIO_SEQUENCIA_FB_PATH + '.json';
+  function marcarDiarioRetomarPosLogin() {
+    try { sessionStorage.setItem(BOT_DIARIO_RETOMAR_POS_LOGIN_KEY, '1'); } catch (e) {}
   }
 
-  function salvarDiarioSequenciaFbLocal(dados) {
+  function limparDiarioRetomarPosLogin() {
+    try { sessionStorage.removeItem(BOT_DIARIO_RETOMAR_POS_LOGIN_KEY); } catch (e) {}
+  }
+
+  function consumirDiarioRetomarPosLogin() {
     try {
-      if (dados && dados.loginAtivo) {
-        sessionStorage.setItem(BOT_DIARIO_SEQ_VEZ_KEY, String(dados.loginAtivo));
-        sessionStorage.setItem(BOT_DIARIO_SEQ_STATUS_KEY, String(dados.status || ''));
-      } else {
-        sessionStorage.removeItem(BOT_DIARIO_SEQ_VEZ_KEY);
-        sessionStorage.removeItem(BOT_DIARIO_SEQ_STATUS_KEY);
+      if (sessionStorage.getItem(BOT_DIARIO_RETOMAR_POS_LOGIN_KEY) === '1') {
+        sessionStorage.removeItem(BOT_DIARIO_RETOMAR_POS_LOGIN_KEY);
+        return true;
       }
     } catch (e) {}
-  }
-
-  function limparDiarioSequenciaFbLocal() {
-    try {
-      sessionStorage.removeItem(BOT_DIARIO_SEQ_VEZ_KEY);
-      sessionStorage.removeItem(BOT_DIARIO_SEQ_STATUS_KEY);
-    } catch (e) {}
-  }
-
-  function lerDiarioSequenciaFbLocal() {
-    try {
-      return {
-        loginAtivo: sessionStorage.getItem(BOT_DIARIO_SEQ_VEZ_KEY) || '',
-        status: sessionStorage.getItem(BOT_DIARIO_SEQ_STATUS_KEY) || ''
-      };
-    } catch (e) {}
-    return { loginAtivo: '', status: '' };
-  }
-
-  function publicarDiarioSequenciaFirebase(dados, callback) {
-    var payload = dados || {};
-    if (!payload.atualizadoEm) payload.atualizadoEm = Date.now();
-    fetch(urlFirebaseDiarioSequencia(), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        salvarDiarioSequenciaFbLocal(payload);
-        if (callback) callback(true, payload);
-      })
-      .catch(function(err) {
-        console.warn('[Diario] Falha ao publicar sequencia no Firebase:', err);
-        if (callback) callback(false, payload);
-      });
-  }
-
-  function sincronizarDiarioSequenciaFirebase(callback) {
-    fetch(urlFirebaseDiarioSequencia(), { cache: 'no-store' })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(data) {
-        if (data && typeof data === 'object' && data.loginAtivo) {
-          salvarDiarioSequenciaFbLocal(data);
-        }
-        if (callback) callback(data && typeof data === 'object' ? data : null);
-      })
-      .catch(function(err) {
-        console.warn('[Diario] Falha ao ler sequencia no Firebase:', err);
-        if (callback) callback(null);
-      });
-  }
-
-  function marcarDiarioHandoffParadoNesteNavegador() {
-    try { sessionStorage.setItem(BOT_DIARIO_HANDOFF_PARAR_KEY, '1'); } catch (e) {}
-  }
-
-  function limparDiarioHandoffParar() {
-    try { sessionStorage.removeItem(BOT_DIARIO_HANDOFF_PARAR_KEY); } catch (e) {}
-  }
-
-  function diarioHandoffParadoNesteNavegador() {
-    try { return sessionStorage.getItem(BOT_DIARIO_HANDOFF_PARAR_KEY) === '1'; } catch (e) {}
     return false;
   }
 
-  function diarioSequenciaMinhaVezLocal() {
-    if (!diarioGerenciadaAtivo() || diarioHandoffParadoNesteNavegador()) return false;
-    if (diarioCicloSequenciaConcluido()) return false;
-    var meuLogin = obterUsuarioLogin();
-    var local = lerDiarioSequenciaFbLocal();
-    if (local.status === 'concluido') return false;
-    if (!local.loginAtivo) {
-      return obterIndiceLoginDiarioSequencia(meuLogin) === 0;
-    }
-    return normalizarLoginDiarioSequencia(local.loginAtivo) === normalizarLoginDiarioSequencia(meuLogin);
-  }
-
   function diarioAssumirPermitido() {
-    return diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() &&
-      !diarioCicloSequenciaConcluido() && !diarioHandoffParadoNesteNavegador() &&
-      diarioSequenciaMinhaVezLocal();
-  }
-
-  function marcarDiarioSequenciaRodandoNesteLogin() {
-    var login = obterUsuarioLogin();
-    publicarDiarioSequenciaFirebase({
-      loginAtivo: login,
-      status: 'rodando',
-      atualizadoEm: Date.now()
-    });
+    return diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() && !diarioCicloSequenciaConcluido();
   }
 
   function clicarLogoutJogoSeExistir() {
@@ -1228,86 +1132,44 @@
     return false;
   }
 
-  function executarLogoutDiarioHandoff() {
+  function irParaLoginDiarioMesmaAba(proximoLogin) {
     limparRetomarGerenciada();
+    if (proximoLogin) gravarUsuarioLoginParam(proximoLogin);
+    recarregarCredenciaisLogin();
+    marcarDiarioRetomarPosLogin();
+    marcarRotacaoCicloPendente();
+
+    var url = montarUrlLoginComParams();
     if (clicarLogoutJogoSeExistir()) {
-      console.log('[Diario] Logout acionado — este navegador encerra a vez.');
+      console.log('[Diario] Logout — re-login como ' + (proximoLogin || '?') + ' na mesma aba...');
+      if (window.__BOT_RECOVERY__) {
+        window.__BOT_RECOVERY__.salvar(url);
+      } else {
+        try { window.name = '__BOT_RECUP__:' + url; } catch (e) {}
+      }
       return;
     }
-    console.log('[Diario] Logout nao encontrado — indo para home (handoff).');
-    try { location.href = URL_HOME; } catch (e) {}
+
+    console.log('[Diario] Indo para login como ' + (proximoLogin || '?') + ' na mesma aba...');
+    try { location.replace(url); } catch (e) { location.href = url; }
   }
 
-  function finalizarDiarioLoginAtualEhHandoff() {
+  function rotacionarDiarioProximoLoginMesmaAba() {
     var login = obterUsuarioLogin();
     var proximo = obterProximoLoginDiarioSequencia(login);
-    marcarDiarioHandoffParadoNesteNavegador();
+    limparEstadoDiario();
+    limparDiarioCicloSequenciaConcluido();
 
-    if (proximo) {
-      publicarDiarioSequenciaFirebase({
-        loginAtivo: proximo,
-        status: 'aguardando',
-        concluido: login,
-        atualizadoEm: Date.now()
-      }, function() {
-        console.log('[Diario] Login ' + login + ' concluido — proximo navegador: ' + proximo);
-        executarLogoutDiarioHandoff();
-      });
+    if (!proximo) {
+      marcarDiarioCicloSequenciaConcluido();
+      console.log('%c[Diario] Sequencia completa na mesma aba (' +
+        DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ').', 'color:#2ecc71;font-weight:bold');
       return;
     }
 
-    publicarDiarioSequenciaFirebase({
-      loginAtivo: '',
-      status: 'concluido',
-      concluido: login,
-      atualizadoEm: Date.now()
-    }, function() {
-      console.log('[Diario] Sequencia completa — ultimo login: ' + login + '.');
-      executarLogoutDiarioHandoff();
-    });
-  }
-
-  function tentarIniciarDiarioSequenciaLogin() {
-    if (!diarioAssumirPermitido()) return false;
-    if (estaEmContaGerenciada() || obterFaseDiario()) return false;
-    if (document.getElementById('login')) return false;
-    var url = window.location.href || '';
-    if (url.indexOf('automacao') !== -1) return false;
-    return processarRotacaoContaPrincipal();
-  }
-
-  function agendarMonitorDiarioSequenciaLogin() {
-    if (!diarioGerenciadaAtivo()) return;
-    if (diarioSequenciaPollTimer) return;
-
-    function avaliar(data) {
-      if (!diarioGerenciadaAtivo() || diarioHandoffParadoNesteNavegador()) return;
-      var meuLogin = obterUsuarioLogin();
-      if (!data || !data.loginAtivo) return;
-
-      if (data.status === 'concluido') return;
-
-      if (normalizarLoginDiarioSequencia(data.loginAtivo) !== normalizarLoginDiarioSequencia(meuLogin)) {
-        return;
-      }
-
-      if (data.status === 'aguardando') {
-        limparDiarioCicloSequenciaConcluido();
-        limparContasDiarioFeitas();
-        publicarDiarioSequenciaFirebase({
-          loginAtivo: meuLogin,
-          status: 'rodando',
-          atualizadoEm: Date.now()
-        });
-      }
-
-      tentarIniciarDiarioSequenciaLogin();
-    }
-
-    sincronizarDiarioSequenciaFirebase(avaliar);
-    diarioSequenciaPollTimer = setInterval(function() {
-      sincronizarDiarioSequenciaFirebase(avaliar);
-    }, 12000);
+    console.log('%c[Diario] Login ' + login + ' concluido — proximo na mesma aba: ' + proximo,
+      'color:#2ecc71;font-weight:bold');
+    irParaLoginDiarioMesmaAba(proximo);
   }
 
   function gerenciadaEhProximaDiarioPendente() {
@@ -1366,32 +1228,33 @@
   }
 
   function montarMensagemDiarioCicloCompleto(nomeUltima) {
-    var feitas = lerContasDiarioFeitas();
     return [
-      '**Diario concluido — ciclo completo**',
-      'Login: **' + obterUsuarioLogin() + '**',
-      'Gerenciadas: **' + (feitas.length ? feitas.join('**, **') : '?') + '**',
-      'Ultima: **' + (nomeUltima || '?') + '**',
-      'Logins (navegadores): **' + DIARIO_LOGINS_SEQUENCIA.join('** -> **') + '**'
+      '**Diario concluido — ciclo completo (mesma aba)**',
+      'Logins: **' + DIARIO_LOGINS_SEQUENCIA.join('** -> **') + '**',
+      'Ultima gerenciada: **' + (nomeUltima || '?') + '**'
     ].join('\n');
   }
 
   function concluirCicloDiarioCompleto(nomeConta) {
     var login = obterUsuarioLogin();
     var feitas = lerContasDiarioFeitas();
+    var proximo = obterProximoLoginDiarioSequencia(login);
     console.log(
       '%c[Diario] Ciclo do login ' + login + ' concluido (' + feitas.join(' -> ') + ').',
       'color:#2ecc71;font-weight:bold'
     );
     limparEstadoDiario();
-    marcarDiarioCicloSequenciaConcluido();
-    if (loginDiarioDeveAvisarDiscord()) {
+
+    if (!proximo && loginDiarioDeveAvisarDiscord()) {
       enviarDiscordTexto(montarMensagemDiarioCicloCompleto(nomeConta));
+    } else if (!proximo) {
+      console.log('[Diario] Sequencia completa na mesma aba.');
     } else {
-      console.log('[Diario] Login ' + login + ' — sem Discord (avisar so em ' + DIARIO_DISCORD_LOGIN + ').');
+      console.log('[Diario] Proximo login na mesma aba: ' + proximo);
     }
+
     setTimeout(function() {
-      finalizarDiarioLoginAtualEhHandoff();
+      rotacionarDiarioProximoLoginMesmaAba();
     }, 2000);
   }
 
@@ -2393,11 +2256,6 @@
   function tentarLoginAutomatico(origem) {
     if (loginJaEnviado) return false;
 
-    if (diarioHandoffParadoNesteNavegador()) {
-      console.log('[Diario] Handoff concluido neste navegador — login manual (proximo: outro browser).');
-      return false;
-    }
-
     sincronizarModoAba();
     recarregarCredenciaisLogin();
 
@@ -3054,7 +2912,6 @@
     marcarRotacaoCicloPendente();
     portaoRelatoriosAgendado = false;
     if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva() && !precisaRetomarGerenciada()) {
-      marcarDiarioSequenciaRodandoNesteLogin();
       console.warn('[Diario] Conta principal — indo para automacao (diario)...');
       window.location.href = URL_AUTOMACAO;
       return true;
@@ -6410,7 +6267,6 @@
     setTimeout(function() {
     try {
       sincronizarModoAba();
-      if (diarioGerenciadaAtivo()) agendarMonitorDiarioSequenciaLogin();
 
       if (obterModoAba() === 'invasor') {
         var ehLogin = !!document.getElementById('login');
@@ -6472,6 +6328,12 @@
         }
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
+          if (consumirDiarioRetomarPosLogin() && diarioGerenciadaAtivo()) {
+            console.log('[Diario] Pos-login — retomando diario na mesma aba (automacao)...');
+            marcarRotacaoCicloPendente();
+            window.location.href = URL_AUTOMACAO;
+            return;
+          }
           if (processarRotacaoContaPrincipal()) return;
           if (processarCurarHpNaPaginaStatus()) return;
           if (redirecionarParaDiarioGerenciada('status pos-login')) return;
