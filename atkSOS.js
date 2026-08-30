@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.21
+// @version      3.22
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.21';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:15';
+  var SCRIPT_VERSAO = '3.22';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -739,9 +739,21 @@
       return diarioGerenciadaAtivo();
     }
     gravarDiarioGerenciadaParam(ligar ? '1' : '0');
+    if (ligar && !obterModoAba()) {
+      gravarModoAba('cacadas');
+      console.log('[Diario] Modo cacadas ativado — recarregando pagina...');
+      location.reload();
+      return true;
+    }
     console.log('[Diario] ' + descreverDiarioGerenciada());
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
     return diarioGerenciadaAtivo();
+  };
+
+  window.botDiarioReset = function() {
+    limparEstadoDiario();
+    console.log('[Diario] Estado da rotina diaria limpo — recarregue ou navegue para reiniciar.');
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
   };
 
   window.botDiarioSemCacadas = function(ligar) {
@@ -785,9 +797,15 @@
   var ehStatusPosLogin = ehPaginaStatusInicial && ehReferrerPosLogin();
 
   if (!modoInicial && !ehPaginaLoginInicial && !ehStatusPosLogin) {
-    logDiagnosticoModo('cacadas');
-    console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
-    return;
+    if (diarioGerenciadaAtivo()) {
+      console.log('[Diario] BOT_MODO_ABA vazio — ativando modo cacadas automaticamente para rotina diaria.');
+      gravarModoAba('cacadas');
+      modoInicial = 'cacadas';
+    } else {
+      logDiagnosticoModo('cacadas');
+      console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
+      return;
+    }
   }
 
   if (modoInicial && modoInicial !== 'cacadas' && modoInicial !== 'invasor') {
@@ -1204,14 +1222,31 @@
     return redirecionarParaDiarioGerenciada(contexto);
   }
 
+  var FASES_DIARIO_VALIDAS = { evento: 1, raid: 1, animal: 1 };
+
+  function normalizarFaseDiario(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    var f = raw.trim().toLowerCase();
+    return FASES_DIARIO_VALIDAS[f] ? f : '';
+  }
+
   function obterFaseDiario() {
-    try { return sessionStorage.getItem(BOT_DIARIO_FASE_KEY) || ''; } catch (e) {}
+    try {
+      var raw = sessionStorage.getItem(BOT_DIARIO_FASE_KEY) || '';
+      var fase = normalizarFaseDiario(raw);
+      if (raw && !fase) {
+        console.warn('[Diario] Fase invalida no storage — limpando: ' + raw.slice(0, 60));
+        sessionStorage.removeItem(BOT_DIARIO_FASE_KEY);
+      }
+      return fase;
+    } catch (e) {}
     return '';
   }
 
   function definirFaseDiario(fase) {
     try {
-      if (fase) sessionStorage.setItem(BOT_DIARIO_FASE_KEY, fase);
+      var norm = normalizarFaseDiario(fase);
+      if (norm) sessionStorage.setItem(BOT_DIARIO_FASE_KEY, norm);
       else sessionStorage.removeItem(BOT_DIARIO_FASE_KEY);
     } catch (e) {}
   }
@@ -5737,7 +5772,7 @@
     ' | Diario gerenciada: ' + descreverDiarioGerenciada() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
     ' | botInvasorVivo() / botInvasorVivo(true|false) | botDiarioGerenciada() / botDiarioGerenciada(true|false)' +
-    ' | botDiarioSemCacadas() / botDiarioSemCacadas(true|false)' +
+    ' | botDiarioSemCacadas() / botDiarioSemCacadas(true|false) | botDiarioReset()' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
