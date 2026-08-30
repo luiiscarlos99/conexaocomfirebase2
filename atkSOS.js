@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.22
+// @version      3.23
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.22';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:20';
+  var SCRIPT_VERSAO = '3.23';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1200,6 +1200,13 @@
 
   function redirecionarParaDiarioGerenciada(contexto) {
     if (!devePriorizarDiarioSobreCacadas()) return false;
+    if (curarHpAtivo()) return false;
+
+    var urlAtualDiario = window.location.href || '';
+    if (urlAtualDiario.indexOf('status') !== -1 && obterFaseDiario() === 'raid') {
+      var hpStatus = obterStatusHp();
+      if (hpStatus.ok && !hpAtendeMinimoRaid(hpStatus)) return false;
+    }
 
     var fase = obterFaseDiario();
     if (!fase) {
@@ -1377,8 +1384,6 @@
   function encontrarFormRaidDisponivel() {
     var meuNivel = extrairNivelJogadorSidebar();
     var forms = document.querySelectorAll('form[action="raid"], form[action*="raid"]');
-    var melhor = null;
-    var melhorId = -1;
 
     for (var i = 0; i < forms.length; i++) {
       var f = forms[i];
@@ -1393,14 +1398,9 @@
       var minLv = extrairNivelMinimoRaid(bloco);
       if (minLv !== null && meuNivel !== null && meuNivel < minLv) continue;
 
-      var bossId = parseInt(bossInput.value, 10);
-      if (isNaN(bossId)) bossId = 0;
-      if (bossId >= melhorId) {
-        melhorId = bossId;
-        melhor = f;
-      }
+      return f;
     }
-    return melhor;
+    return null;
   }
 
   function marcarDiarioRaidEmCombate() {
@@ -2227,10 +2227,14 @@
     if (obterModoAba() !== 'cacadas') return false;
 
     var hp = obterStatusHp();
+    var precisaCurarRaid = diarioDeveRodar() && obterFaseDiario() === 'raid' &&
+      hp.ok && !hpAtendeMinimoRaid(hp);
     var precisaCurar = hp.ok && !hpAtendeMetaParaCurar(hp);
 
+    if (precisaCurarRaid && !curarHpParaRaidDiario()) marcarCurarHpRaidDiario();
+
     if (!curarHpAtivo()) {
-      if (!precisaCurar) return false;
+      if (!precisaCurar && !precisaCurarRaid) return false;
       marcarCurarHpAtivo();
     } else if (hp.ok && hpAtendeMetaParaCurar(hp)) {
       return finalizarCurarHpPosIchiraku('Vida recuperada');
@@ -5842,11 +5846,14 @@
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
           if (processarRotacaoContaPrincipal()) return;
-          if (redirecionarParaDiarioGerenciada('status pos-login')) return;
           if (processarCurarHpNaPaginaStatus()) return;
+          if (redirecionarParaDiarioGerenciada('status pos-login')) return;
           if (processarDoujutsuNaPaginaStatus('status')) return;
           if (doujutsuAtivarPendente() && doujutsuEstaAtivo()) {
             limparDoujutsuAtivarPendente();
+          }
+          if (devePriorizarDiarioSobreCacadas()) {
+            if (redirecionarParaDiarioGerenciada('status pos-cura')) return;
           }
           console.log('[Script Caçadas] Status — redirecionando ao portao de relatorios...');
           window.location.href = URL_RELATORIOS_ATAQUE;
@@ -5899,7 +5906,7 @@
           checar: function() {
             if (obterModoAba() !== 'cacadas') return false;
             if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
-              return true;
+            return true;
             }
             return ehPaginaCombateCacadas(urlAtual);
           },
@@ -6009,8 +6016,8 @@
             }
 
             if (processarNinjaNaoEncontradoCacadas()) {
-              return true;
-            }
+                  return true;
+                }
 
             if (!gateCacadasLiberado()) {
               console.log('[Caçadas] Gate nao liberado — redirecionando ao portao...');
