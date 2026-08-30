@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.11
+// @version      3.12
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -500,8 +500,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.11';
-  var SCRIPT_ATUALIZADO = '29/08/2026 21:35';
+  var SCRIPT_VERSAO = '3.12';
+  var SCRIPT_ATUALIZADO = '29/08/2026 21:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -756,6 +756,9 @@
   var RANKING_RYOUS_FILA_FB_PATH = 'ranking_ryous_fila';
   var RANKING_RYOUS_FILA_TTL_MS = 3600000;
   var BOT_CACADAS_FB_SKIP_KEY = 'BOT_CACADAS_FB_SKIP';
+  var BOT_CACADAS_BL_SKIP_KEY = 'BOT_CACADAS_BL_SKIP';
+  var BOT_CACADAS_NOME_FALHAS_KEY = 'BOT_CACADAS_NOME_FALHAS';
+  var MAX_TENTATIVAS_CACADA_POR_NOME = 3;
   var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
   var DISCORD_ALVO_IGNORADO_SILENCIOSO = true; // flags 4096 = sem @ping/notificacao push
   var URL_PAINEL_BASE = 'https://luiiscarlos99.github.io/conexaocomfirebase2/firebase.html';
@@ -789,6 +792,8 @@
 
   function marcarContaAutomacaoAssumida() {
     try { sessionStorage.setItem(BOT_ROTACAO_ASSUMIDA_KEY, '1'); } catch (e) {}
+    limparTentativasCacadaPorNome();
+    limparSkipBlacklistCacadas();
   }
 
   function consumirContaAutomacaoAssumida() {
@@ -879,6 +884,8 @@
     consumirGateCacadas();
     portaoRelatoriosAgendado = false;
     limparEstadoModoCacadas();
+    limparTentativasCacadaPorNome();
+    limparSkipBlacklistCacadas();
     setTimeout(function() {
       window.location.href = URL_AUTOMACAO;
     }, 1500);
@@ -2527,7 +2534,7 @@
     return null;
   }
 
-  function extrairVoceJaAtacouCacadas() {
+  function extrairJaAtacouHojeCacadas() {
     var col = document.getElementById('col_direita') || document;
     var avisos = col.querySelectorAll('.avisos_erro');
 
@@ -2536,17 +2543,127 @@
       if (!texto) continue;
 
       var norm = normalizarTextoCombate(texto);
-      if (norm.indexOf('voce atacou') === -1 &&
-          norm.indexOf('voce ja atacou') === -1 &&
-          norm.indexOf('ja atacou') === -1) {
-        continue;
-      }
+      if (norm.indexOf('ja atacou este ninja hoje') === -1) continue;
 
-      var nome = extrairVitimaDoRelatorioAtaque(texto) || obterAlvoNomeCacadasSessao();
-      return nome || null;
+      return obterAlvoNomeCacadasSessao() || null;
     }
 
     return null;
+  }
+
+  function extrairNivelAbaixoMinimoCacadas() {
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('nao pode atacar') === -1) continue;
+      if (norm.indexOf('abaixo') === -1) continue;
+
+      var m = texto.match(/n[aã]o pode atacar\s+(.+?)\s*[—–\-]\s*o n[ií]vel/i);
+      if (m) return m[1].trim();
+
+      return obterAlvoNomeCacadasSessao() || null;
+    }
+
+    return null;
+  }
+
+  function lerSkipBlacklistCacadas() {
+    try {
+      var raw = sessionStorage.getItem(BOT_CACADAS_BL_SKIP_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {};
+  }
+
+  function salvarSkipBlacklistCacadas(mapa) {
+    try { sessionStorage.setItem(BOT_CACADAS_BL_SKIP_KEY, JSON.stringify(mapa || {})); } catch (e) {}
+  }
+
+  function adicionarSkipBlacklistCacadas(nome) {
+    if (!nome) return;
+    var mapa = lerSkipBlacklistCacadas();
+    mapa[normalizarNomeCacadas(nome)] = Date.now();
+    salvarSkipBlacklistCacadas(mapa);
+  }
+
+  function limparSkipBlacklistCacadas() {
+    try { sessionStorage.removeItem(BOT_CACADAS_BL_SKIP_KEY); } catch (e) {}
+  }
+
+  function lerTentativasCacadaPorNome() {
+    try {
+      var n = parseInt(sessionStorage.getItem(BOT_CACADAS_NOME_FALHAS_KEY), 10);
+      return isNaN(n) || n < 0 ? 0 : n;
+    } catch (e) {}
+    return 0;
+  }
+
+  function incrementarTentativasCacadaPorNome() {
+    var n = lerTentativasCacadaPorNome() + 1;
+    try { sessionStorage.setItem(BOT_CACADAS_NOME_FALHAS_KEY, String(n)); } catch (e) {}
+    return n;
+  }
+
+  function limparTentativasCacadaPorNome() {
+    try { sessionStorage.removeItem(BOT_CACADAS_NOME_FALHAS_KEY); } catch (e) {}
+  }
+
+  function processarFalhaCacadaPorNome(nome, motivoLog) {
+    if (!nome) nome = obterAlvoNomeCacadasSessao();
+    if (!nome) return false;
+
+    if (cacadaAtualPorNomeFirebase()) {
+      removerAlvoFirebaseFilaConsumido(nome, motivoLog);
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Firebase fila — ' + motivoLog + ': ' + nome);
+      return true;
+    }
+
+    if (!cacadaAtualPorNomeBlacklist()) return false;
+
+    if (!rotacaoAutomacaoAtiva()) {
+      removerNomeBlacklistCacadas(nome, motivoLog);
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Blacklist — ' + motivoLog + ': ' + nome);
+      return true;
+    }
+
+    adicionarSkipBlacklistCacadas(nome);
+    var tent = incrementarTentativasCacadaPorNome();
+    console.warn(
+      '[Blacklist] Falha caçada por nome (' + tent + '/' + MAX_TENTATIVAS_CACADA_POR_NOME +
+      ') — ' + motivoLog + ': ' + nome
+    );
+    limparEstadoModoCacadas();
+
+    if (tent >= MAX_TENTATIVAS_CACADA_POR_NOME) {
+      limparTentativasCacadaPorNome();
+      limparSkipBlacklistCacadas();
+      irParaRotacaoAutomacao('3 falhas caçada por nome (' + motivoLog + ')');
+      return true;
+    }
+
+    irParaPortaoRelatorios(
+      'Blacklist — tentar outro nome (' + tent + '/' + MAX_TENTATIVAS_CACADA_POR_NOME + ')'
+    );
+    return true;
+  }
+
+  function processarJaAtacouHojeCacadas() {
+    var nome = extrairJaAtacouHojeCacadas();
+    if (!nome) return false;
+    return processarFalhaCacadaPorNome(nome, 'ja atacou hoje');
+  }
+
+  function processarNivelAbaixoMinimoCacadas() {
+    var nome = extrairNivelAbaixoMinimoCacadas();
+    if (!nome) return false;
+    return processarFalhaCacadaPorNome(nome, 'nivel 20+ abaixo');
   }
 
   function removerAlvoFirebaseFilaConsumido(nome, motivo) {
@@ -2597,27 +2714,6 @@
       });
     }
     proximo();
-  }
-
-  function processarVoceJaAtacouCacadas() {
-    var nome = extrairVoceJaAtacouCacadas();
-    if (!nome) return false;
-
-    if (cacadaAtualPorNomeFirebase()) {
-      removerAlvoFirebaseFilaConsumido(nome, 'ja atacado em /cacadas');
-      limparEstadoModoCacadas();
-      irParaPortaoRelatorios('Firebase fila — ja atacado: ' + nome);
-      return true;
-    }
-
-    if (cacadaAtualPorNomeBlacklist()) {
-      removerNomeBlacklistCacadas(nome, 'ja atacado');
-      limparEstadoModoCacadas();
-      irParaPortaoRelatorios('Ja atacado: ' + nome);
-      return true;
-    }
-
-    return false;
   }
 
   function removerNomeBlacklistCacadas(nome, motivo) {
@@ -2929,11 +3025,15 @@
   function escolherProximoAlvoBlacklist(ataques) {
     var lista = obterBlacklistCacadas();
     var mapa = mapaAtacadosNoRelatorio(ataques);
+    var skip = lerSkipBlacklistCacadas();
     var pendentes = [];
 
     for (var i = 0; i < lista.length; i++) {
       var nome = lista[i];
-      if (!mapa[normalizarNomeCacadas(nome)]) pendentes.push(nome);
+      var norm = normalizarNomeCacadas(nome);
+      if (mapa[norm]) continue;
+      if (skip[norm]) continue;
+      pendentes.push(nome);
     }
 
     if (!pendentes.length) return null;
@@ -3961,6 +4061,7 @@
       );
     }
     if (btnAtacar) {
+      limparTentativasCacadaPorNome();
       marcarAtaqueIniciadoRotacao();
       btnAtacar.click();
     }
@@ -5009,7 +5110,11 @@
               return true;
             }
 
-            if (processarVoceJaAtacouCacadas()) {
+            if (processarNivelAbaixoMinimoCacadas()) {
+              return true;
+            }
+
+            if (processarJaAtacouHojeCacadas()) {
               return true;
             }
 
