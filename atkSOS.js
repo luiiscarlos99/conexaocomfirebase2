@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.25
+// @version      3.26
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -568,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.25';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:50';
+  var SCRIPT_VERSAO = '3.26';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -840,6 +840,7 @@
   var BOT_DIARIO_FASE_KEY = 'BOT_DIARIO_FASE';
   var BOT_DIARIO_ANIMAL_SUB_KEY = 'BOT_DIARIO_ANIMAL_SUB';
   var BOT_DIARIO_ANIMAL_IDX_KEY = 'BOT_DIARIO_ANIMAL_IDX';
+  var BOT_DIARIO_ANIMAL_BS_KEY = 'BOT_DIARIO_ANIMAL_BS';
   var BOT_DIARIO_RAID_COMBATE_KEY = 'BOT_DIARIO_RAID_COMBATE';
   var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
   var BOT_HP_CURAR_RAID_KEY = 'BOT_HP_CURAR_RAID';
@@ -1266,6 +1267,7 @@
       sessionStorage.removeItem(BOT_DIARIO_FASE_KEY);
       sessionStorage.removeItem(BOT_DIARIO_ANIMAL_SUB_KEY);
       sessionStorage.removeItem(BOT_DIARIO_ANIMAL_IDX_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_ANIMAL_BS_KEY);
       sessionStorage.removeItem(BOT_DIARIO_RAID_COMBATE_KEY);
     } catch (e) {}
   }
@@ -1566,6 +1568,59 @@
     return max;
   }
 
+  function obterIdxAnimalLojaUrl() {
+    try {
+      var rp = new URLSearchParams(window.location.search);
+      var raw = rp.get('idx');
+      if (raw !== null && raw !== '') {
+        var idx = parseInt(raw, 10);
+        if (!isNaN(idx)) return idx;
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  function limparBuscaAnimalLoja() {
+    try { sessionStorage.removeItem(BOT_DIARIO_ANIMAL_BS_KEY); } catch (e) {}
+  }
+
+  function obterBuscaAnimalLoja() {
+    try {
+      var raw = sessionStorage.getItem(BOT_DIARIO_ANIMAL_BS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  }
+
+  function salvarBuscaAnimalLoja(bs) {
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_BS_KEY, JSON.stringify(bs)); } catch (e) {}
+  }
+
+  function iniciarBuscaAnimalLoja(maxIdx) {
+    var bs = { low: 0, high: maxIdx, best: -1, fase: 'busca' };
+    salvarBuscaAnimalLoja(bs);
+    return bs;
+  }
+
+  function animalLojaCompravel(dados, meuNivel, meusRyous) {
+    if (!dados || dados.jaPossuiAnimal) return false;
+    if (!dados.formComprar || dados.valor === null) return false;
+    var nivelOk = dados.nivelMin === null || meuNivel === null || meuNivel >= dados.nivelMin;
+    var ryousOk = meusRyous === null || meusRyous >= dados.valor;
+    return nivelOk && ryousOk;
+  }
+
+  function comprarAnimalLojaDiario(dados, meuNivel, meusRyous) {
+    console.log('[Diario] Comprando animal valor=' + formatarNumeroBr(dados.valor) +
+      ' (nivel min ' + (dados.nivelMin || '?') + ', ryous ' + formatarNumeroBr(meusRyous) + ')...');
+    limparBuscaAnimalLoja();
+    try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'comprando'); } catch (e) {}
+    var btnC = dados.formComprar.querySelector('input[type="submit"], input[name="btn_comprar"]');
+    if (btnC) btnC.click();
+    else dados.formComprar.submit();
+    return true;
+  }
+
   function extrairDadosAnimalLojaPagina() {
     var col = document.getElementById('col_direita');
     if (!col) return null;
@@ -1611,59 +1666,76 @@
       return true;
     }
 
-    console.log('[Diario] Sem animal para vender — indo a loja.');
+    console.log('[Diario] Sem animal para vender — indo a loja (busca binaria do mais caro).');
     try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'loja'); } catch (e) {}
-    irParaAnimalLojaIdx(extrairUltimoIdxAnimalLoja() || 71);
+    limparBuscaAnimalLoja();
+    window.location.href = URL_ANIMAL_LOJA;
     return true;
   }
 
   function processarDiarioAnimalLoja() {
     var meuNivel = extrairNivelJogadorSidebar();
     var meusRyous = extrairRyousJogadorSidebar();
-    var idxAtual = null;
-    try {
-      var rp = new URLSearchParams(window.location.search);
-      var raw = rp.get('idx');
-      if (raw !== null && raw !== '') idxAtual = parseInt(raw, 10);
-    } catch (e) {}
-    if (idxAtual === null || isNaN(idxAtual)) {
-      var maxIdx = extrairUltimoIdxAnimalLoja();
-      if (maxIdx > 0) {
-        irParaAnimalLojaIdx(maxIdx);
-        return true;
-      }
-      idxAtual = 0;
-    }
-
+    var idxAtual = obterIdxAnimalLojaUrl();
     var dados = extrairDadosAnimalLojaPagina();
 
     if (dados && dados.jaPossuiAnimal) {
       console.warn('[Diario] Ainda possui animal — voltando a Meus animais.');
+      limparBuscaAnimalLoja();
       try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
       window.location.href = URL_ANIMAL_MEUS;
       return true;
     }
 
-    if (dados && dados.formComprar && dados.valor !== null) {
-      var nivelOk = dados.nivelMin === null || meuNivel === null || meuNivel >= dados.nivelMin;
-      var ryousOk = meusRyous === null || meusRyous >= dados.valor;
-      if (nivelOk && ryousOk) {
-        console.log('[Diario] Comprando animal valor=' + formatarNumeroBr(dados.valor) +
-          ' (nivel min ' + (dados.nivelMin || '?') + ', ryous ' + formatarNumeroBr(meusRyous) + ')...');
-        try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'comprando'); } catch (e) {}
-        var btnC = dados.formComprar.querySelector('input[type="submit"], input[name="btn_comprar"]');
-        if (btnC) btnC.click();
-        else dados.formComprar.submit();
-        return true;
+    var bs = obterBuscaAnimalLoja();
+    if (bs && bs.fase === 'comprar') {
+      if (animalLojaCompravel(dados, meuNivel, meusRyous)) {
+        return comprarAnimalLojaDiario(dados, meuNivel, meusRyous);
       }
+      console.warn('[Diario] Animal idx=' + bs.best + ' indisponivel na compra — reiniciando busca.');
+      limparBuscaAnimalLoja();
+      bs = null;
     }
 
-    if (idxAtual > 0) {
-      console.log('[Diario] Animal idx=' + idxAtual + ' indisponivel — tentando idx=' + (idxAtual - 1));
-      irParaAnimalLojaIdx(idxAtual - 1);
+    if (!bs) {
+      var maxIdx = extrairUltimoIdxAnimalLoja();
+      if (maxIdx < 0) maxIdx = 0;
+      bs = iniciarBuscaAnimalLoja(maxIdx);
+      var primeiro = Math.floor((bs.low + bs.high) / 2);
+      console.log('[Diario] Busca binaria animal — idx 0..' + maxIdx + ' (caros no final), probe ' + primeiro);
+      irParaAnimalLojaIdx(primeiro);
       return true;
     }
 
+    var compravel = animalLojaCompravel(dados, meuNivel, meusRyous);
+    if (compravel) {
+      bs.best = idxAtual;
+      bs.low = idxAtual + 1;
+    } else {
+      bs.high = idxAtual - 1;
+    }
+
+    if (bs.low <= bs.high) {
+      var proximo = Math.floor((bs.low + bs.high) / 2);
+      salvarBuscaAnimalLoja(bs);
+      console.log('[Diario] Busca animal idx=' + idxAtual + (compravel ? ' OK' : ' nao') +
+        ' | proximo=' + proximo + ' | melhor=' + bs.best);
+      irParaAnimalLojaIdx(proximo);
+      return true;
+    }
+
+    if (bs.best >= 0) {
+      console.log('[Diario] Melhor animal encontrado — idx ' + bs.best + ' (busca binaria).');
+      bs.fase = 'comprar';
+      salvarBuscaAnimalLoja(bs);
+      if (idxAtual === bs.best && compravel) {
+        return comprarAnimalLojaDiario(dados, meuNivel, meusRyous);
+      }
+      irParaAnimalLojaIdx(bs.best);
+      return true;
+    }
+
+    limparBuscaAnimalLoja();
     console.warn('[Diario] Nenhum animal compravel encontrado na loja — seguindo para caçadas.');
     concluirDiarioGerenciada();
     return true;
