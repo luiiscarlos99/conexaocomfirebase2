@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.27
+// @version      3.28
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -569,8 +569,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.27';
-  var SCRIPT_ATUALIZADO = '30/08/2026 00:05';
+  var SCRIPT_VERSAO = '3.28';
+  var SCRIPT_ATUALIZADO = '30/08/2026 00:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -888,6 +888,8 @@
   var BOT_ROTACAO_RETOMAR_NOME_KEY = 'BOT_ROTACAO_RETOMAR_NOME';
   var BOT_ROTACAO_RETOMAR_ID_KEY = 'BOT_ROTACAO_RETOMAR_ID';
   var BOT_DIARIO_CICLO_CONCLUIDO_KEY = 'BOT_DIARIO_CICLO_CONCLUIDO';
+  var BOT_DIARIO_SEQ_PRESENTES_KEY = 'BOT_DIARIO_SEQ_PRESENTES';
+  var BOT_DIARIO_CONTAS_FEITAS_KEY = 'BOT_DIARIO_CONTAS_FEITAS';
   var DIARIO_ROTACAO_SEQUENCIA = ['Shiroe', 'Shizuo', 'Sora'];
   var DISCORD_WEBHOOK_CAPTCHA = '';
   var DISCORD_WEBHOOK_CACADAS = '';
@@ -1012,7 +1014,72 @@
   }
 
   function limparDiarioCicloSequenciaConcluido() {
-    try { sessionStorage.removeItem(BOT_DIARIO_CICLO_CONCLUIDO_KEY); } catch (e) {}
+    try {
+      sessionStorage.removeItem(BOT_DIARIO_CICLO_CONCLUIDO_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_SEQ_PRESENTES_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_CONTAS_FEITAS_KEY);
+    } catch (e) {}
+  }
+
+  function limparContasDiarioFeitas() {
+    try { sessionStorage.removeItem(BOT_DIARIO_CONTAS_FEITAS_KEY); } catch (e) {}
+  }
+
+  function marcarContaDiarioFeita(nome) {
+    if (!nome) return;
+    var norm = normalizarNomeCacadas(nome);
+    var feitas = lerContasDiarioFeitas();
+    if (feitas.indexOf(norm) === -1) feitas.push(norm);
+    try { sessionStorage.setItem(BOT_DIARIO_CONTAS_FEITAS_KEY, JSON.stringify(feitas)); } catch (e) {}
+  }
+
+  function lerContasDiarioFeitas() {
+    try {
+      var raw = sessionStorage.getItem(BOT_DIARIO_CONTAS_FEITAS_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return arr;
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  function salvarSequenciaDiarioPresentes(contas) {
+    var presentes = filtrarContasDiarioSequencia(contas);
+    var nomes = presentes.map(function(c) { return normalizarNomeCacadas(c.nome); });
+    try { sessionStorage.setItem(BOT_DIARIO_SEQ_PRESENTES_KEY, JSON.stringify(nomes)); } catch (e) {}
+    return presentes;
+  }
+
+  function lerSequenciaDiarioPresentesNorm() {
+    try {
+      var raw = sessionStorage.getItem(BOT_DIARIO_SEQ_PRESENTES_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length) return arr;
+      }
+    } catch (e) {}
+    return DIARIO_ROTACAO_SEQUENCIA.map(function(n) { return normalizarNomeCacadas(n); });
+  }
+
+  function cicloDiarioTodasContasFeitas() {
+    var presentes = lerSequenciaDiarioPresentesNorm();
+    var feitas = lerContasDiarioFeitas();
+    if (!presentes.length) return false;
+    for (var i = 0; i < presentes.length; i++) {
+      if (feitas.indexOf(presentes[i]) === -1) return false;
+    }
+    return true;
+  }
+
+  function proximaContaDiarioSequenciaPendente(contas) {
+    var presentes = filtrarContasDiarioSequencia(contas);
+    var feitas = lerContasDiarioFeitas();
+    for (var i = 0; i < presentes.length; i++) {
+      var norm = normalizarNomeCacadas(presentes[i].nome);
+      if (feitas.indexOf(norm) === -1) return presentes[i];
+    }
+    return null;
   }
 
   function filtrarContasDiarioSequencia(contas) {
@@ -1030,39 +1097,34 @@
   }
 
   function escolherProximaContaDiarioSequencia(contas) {
-    var seq = filtrarContasDiarioSequencia(contas);
-    if (!seq.length) return null;
+    var presentes = salvarSequenciaDiarioPresentes(contas);
+    if (!presentes.length) {
+      console.warn('[Diario] Nenhuma conta da sequencia encontrada em /automacao: ' +
+        DIARIO_ROTACAO_SEQUENCIA.join(', '));
+      return null;
+    }
 
     if (!estaEmContaGerenciada()) {
-      return seq[0];
+      limparContasDiarioFeitas();
     }
 
-    var atual = extrairNomeUsuarioLogado();
-    var normAtual = atual ? normalizarNomeCacadas(atual) : '';
-    var idxAtual = -1;
-    for (var i = 0; i < seq.length; i++) {
-      if (normalizarNomeCacadas(seq[i].nome) === normAtual) {
-        idxAtual = i;
-        break;
-      }
-    }
-
-    if (idxAtual === -1) return seq[0];
-    if (idxAtual >= seq.length - 1) return null;
-    return seq[idxAtual + 1];
-  }
-
-  function ehUltimaContaDiarioSequencia(nome) {
-    if (!nome || !DIARIO_ROTACAO_SEQUENCIA.length) return false;
-    var ultima = DIARIO_ROTACAO_SEQUENCIA[DIARIO_ROTACAO_SEQUENCIA.length - 1];
-    return normalizarNomeCacadas(nome) === normalizarNomeCacadas(ultima);
+    return proximaContaDiarioSequenciaPendente(contas);
   }
 
   function montarMensagemDiarioCicloCompleto(nomeUltima) {
+    var presentes = lerSequenciaDiarioPresentesNorm();
+    var labels = presentes.length
+      ? presentes.map(function(n) {
+          for (var i = 0; i < DIARIO_ROTACAO_SEQUENCIA.length; i++) {
+            if (normalizarNomeCacadas(DIARIO_ROTACAO_SEQUENCIA[i]) === n) return DIARIO_ROTACAO_SEQUENCIA[i];
+          }
+          return n;
+        })
+      : DIARIO_ROTACAO_SEQUENCIA.slice();
     return [
       '**Diario concluido — ciclo completo**',
-      'Sequencia: **' + DIARIO_ROTACAO_SEQUENCIA.join('** -> **') + '**',
-      'Ultima conta: **' + (nomeUltima || DIARIO_ROTACAO_SEQUENCIA[DIARIO_ROTACAO_SEQUENCIA.length - 1]) + '**',
+      'Sequencia: **' + labels.join('** -> **') + '**',
+      'Ultima conta: **' + (nomeUltima || labels[labels.length - 1] || '?') + '**',
       'Principal: **' + obterUsuarioLogin() + '**'
     ].join('\n');
   }
@@ -1227,7 +1289,13 @@
     var proxima = escolherContaAutomacaoParaAssumir(contas);
     if (!proxima) {
       if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva()) {
-        concluirCicloDiarioCompleto(extrairNomeUsuarioLogado());
+        if (cicloDiarioTodasContasFeitas()) {
+          concluirCicloDiarioCompleto(extrairNomeUsuarioLogado());
+        } else {
+          console.warn('[Diario] Sem proxima conta pendente — feitas: ' +
+            lerContasDiarioFeitas().join(', ') + ' | esperadas: ' +
+            lerSequenciaDiarioPresentesNorm().join(', '));
+        }
         return true;
       }
       return irParaPortaoOuPararDiario('Automacao falhou ao escolher conta');
@@ -1416,7 +1484,11 @@
     console.log('%c[Diario] Rotina concluida nesta conta gerenciada: ' + nomeAtual, 'color:#f39c12;font-weight:bold');
     limparEstadoDiario();
     if (diarioSemCacadasPosRotina()) {
-      if (ehUltimaContaDiarioSequencia(nomeAtual)) {
+      marcarContaDiarioFeita(nomeAtual);
+      var feitas = lerContasDiarioFeitas();
+      console.log('[Diario] Contas concluidas neste ciclo: ' + feitas.join(' -> ') +
+        ' (' + feitas.length + '/' + lerSequenciaDiarioPresentesNorm().length + ')');
+      if (cicloDiarioTodasContasFeitas()) {
         concluirCicloDiarioCompleto(nomeAtual);
         return;
       }
@@ -1427,12 +1499,19 @@
   }
 
   function proximaContaDiarioSequenciaLabel(nomeAtual) {
-    var seq = DIARIO_ROTACAO_SEQUENCIA;
-    var norm = normalizarNomeCacadas(nomeAtual || '');
-    for (var i = 0; i < seq.length - 1; i++) {
-      if (normalizarNomeCacadas(seq[i]) === norm) return seq[i + 1];
+    var presentes = lerSequenciaDiarioPresentesNorm();
+    var feitas = lerContasDiarioFeitas();
+    for (var i = 0; i < presentes.length; i++) {
+      if (feitas.indexOf(presentes[i]) === -1) {
+        for (var j = 0; j < DIARIO_ROTACAO_SEQUENCIA.length; j++) {
+          if (normalizarNomeCacadas(DIARIO_ROTACAO_SEQUENCIA[j]) === presentes[i]) {
+            return DIARIO_ROTACAO_SEQUENCIA[j];
+          }
+        }
+        return presentes[i];
+      }
     }
-    return seq[0] || '?';
+    return '?';
   }
 
   function avancarFaseDiario(proxima, motivo) {
