@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.18
+// @version      3.19
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -262,7 +262,33 @@
 
   function descreverDiarioGerenciada() {
     if (!diarioGerenciadaAtivo()) return 'desligado';
-    return 'ligado (evento + raid + animal — so contas gerenciadas na rotacao)';
+    var extra = diarioSemCacadasPosRotina()
+      ? ' | pos-diario: rotaciona (sem caçadas)'
+      : ' | pos-diario: caçadas';
+    return 'ligado (evento + raid + animal — so contas gerenciadas)' + extra;
+  }
+
+  function gravarDiarioSemCacadasParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem('BOT_DIARIO_SEM_CACADAS'); } catch (e) {}
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_DIARIO_SEM_CACADAS', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function diarioSemCacadasPosRotina() {
+    try {
+      var raw = localStorage.getItem('BOT_DIARIO_SEM_CACADAS');
+      if (raw === null || raw === '') return true;
+      return raw === '1';
+    } catch (e) {}
+    return true;
   }
 
   function cacadasFirebaseFilaFlagAtiva() {
@@ -336,6 +362,7 @@
     var djas = rp.get('bot_doujutsu_auto_sabado');
     var cff = rp.get('bot_cacadas_firebase_fila');
     var dg = rp.get('bot_diario_gerenciada');
+    var dgs = rp.get('bot_diario_sem_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
     if (bl !== null) gravarBlacklistCacadasParam(bl);
@@ -348,6 +375,7 @@
     if (djas !== null && djas !== '') gravarDoujutsuAutoSabadoParam(djas);
     if (cff !== null && cff !== '') gravarCacadasFirebaseFilaParam(cff);
     if (dg !== null && dg !== '') gravarDiarioGerenciadaParam(dg);
+    if (dgs !== null && dgs !== '') gravarDiarioSemCacadasParam(dgs);
   }
 
   function gravarMinRyousVitoriaCacadasParam(valor) {
@@ -540,8 +568,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.18';
-  var SCRIPT_ATUALIZADO = '29/08/2026 23:00';
+  var SCRIPT_VERSAO = '3.19';
+  var SCRIPT_ATUALIZADO = '29/08/2026 23:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -574,6 +602,7 @@
       var djas = localStorage.getItem('BOT_DOUJUTSU_AUTO_SABADO');
       var cff = localStorage.getItem('BOT_CACADAS_FIREBASE_FILA');
       var dg = localStorage.getItem('BOT_DIARIO_GERENCIADA');
+      var dgs = localStorage.getItem('BOT_DIARIO_SEM_CACADAS');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
@@ -596,6 +625,8 @@
       else if (cff === '0') params.set('bot_cacadas_firebase_fila', '0');
       if (dg === '1') params.set('bot_diario_gerenciada', '1');
       else if (dg === '0') params.set('bot_diario_gerenciada', '0');
+      if (dgs === '1') params.set('bot_diario_sem_cacadas', '1');
+      else if (dgs === '0') params.set('bot_diario_sem_cacadas', '0');
     } catch (err) {}
 
     var qs = params.toString();
@@ -711,6 +742,17 @@
     console.log('[Diario] ' + descreverDiarioGerenciada());
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
     return diarioGerenciadaAtivo();
+  };
+
+  window.botDiarioSemCacadas = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Diario] Pos-diario sem caçadas: ' + (diarioSemCacadasPosRotina() ? 'sim (rotaciona)' : 'nao (vai ao portao)'));
+      return diarioSemCacadasPosRotina();
+    }
+    gravarDiarioSemCacadasParam(ligar ? '1' : '0');
+    console.log('[Diario] Pos-diario sem caçadas: ' + (diarioSemCacadasPosRotina() ? 'sim (rotaciona)' : 'nao (vai ao portao)'));
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return diarioSemCacadasPosRotina();
   };
 
   if ((function() {
@@ -1107,6 +1149,18 @@
     return diarioGerenciadaAtivo() && estaEmContaGerenciada();
   }
 
+  function diarioEmAndamento() {
+    return diarioDeveRodar() && !!obterFaseDiario();
+  }
+
+  function redirecionarSeDiarioEmAndamento(contexto) {
+    if (!diarioEmAndamento()) return false;
+    var fase = obterFaseDiario();
+    console.log('[Diario] ' + contexto + ' — rotina em andamento (fase ' + fase + '), sem caçadas.');
+    irParaUrlFaseDiario(fase);
+    return true;
+  }
+
   function obterFaseDiario() {
     try { return sessionStorage.getItem(BOT_DIARIO_FASE_KEY) || ''; } catch (e) {}
     return '';
@@ -1176,6 +1230,14 @@
   function concluirDiarioGerenciada() {
     console.log('%c[Diario] Rotina concluida nesta conta gerenciada.', 'color:#f39c12;font-weight:bold');
     limparEstadoDiario();
+    if (diarioSemCacadasPosRotina()) {
+      if (rotacaoAutomacaoAtiva()) {
+        irParaRotacaoAutomacao('diario concluido (sem caçadas)');
+        return;
+      }
+      console.log('[Diario] Concluido — sem caçadas e sem rotacao ativa.');
+      return;
+    }
     window.location.href = URL_RELATORIOS_ATAQUE;
   }
 
@@ -2777,6 +2839,7 @@
   }
 
   function processarPortaoRelatoriosAtaque() {
+    if (redirecionarSeDiarioEmAndamento('Portao relatorios')) return true;
     if (portaoRelatoriosAgendado) return true;
 
     verificarInvasorNoPortao(function(pausado, info) {
@@ -5628,6 +5691,7 @@
     ' | Diario gerenciada: ' + descreverDiarioGerenciada() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
     ' | botInvasorVivo() / botInvasorVivo(true|false) | botDiarioGerenciada() / botDiarioGerenciada(true|false)' +
+    ' | botDiarioSemCacadas() / botDiarioSemCacadas(true|false)' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
@@ -5833,6 +5897,7 @@
             return obterModoAba() === 'cacadas' && urlAtual.indexOf('cacadas') !== -1;
           },
           executar: function() {
+            if (redirecionarSeDiarioEmAndamento('Pagina caçadas')) return true;
             if (paginaCacadasBloqueadaPorMissao()) {
               return processarCacadasBloqueadaPorMissao();
             }
