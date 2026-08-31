@@ -49,6 +49,49 @@
     return '';
   }
 
+  function extrairModoDeUrl(urlStr) {
+    try {
+      if (!urlStr) return '';
+      var u = urlStr.indexOf('://') !== -1
+        ? new URL(urlStr)
+        : new URL(urlStr.replace(/^\?/, ''), 'https://shadowofshinobi.com/');
+      return extrairModo(u.search);
+    } catch (e) {}
+    return '';
+  }
+
+  function recuperarModoAbaBootstrap(origem) {
+    try {
+      var modo = sessionStorage.getItem(BOT_MODO_KEY);
+      if (modo === 'invasor' || modo === 'cacadas') return modo;
+    } catch (e) {}
+
+    var modoRec = '';
+    try {
+      if (window.__BOT_RECOVERY__) {
+        modoRec = extrairModoDeUrl(window.__BOT_RECOVERY__.ler());
+      }
+    } catch (e) {}
+
+    if (!modoRec) {
+      try {
+        var ref = document.referrer || '';
+        if (ref.indexOf('shadowofshinobi.com') !== -1) {
+          modoRec = extrairModoDeUrl(ref);
+        }
+      } catch (e) {}
+    }
+
+    if (modoRec === 'invasor' || modoRec === 'cacadas') {
+      try {
+        sessionStorage.setItem(BOT_MODO_KEY, modoRec);
+        console.log('[Bot Bootstrap] Modo recuperado da aba (' + (origem || 'bootstrap') + '): ' + modoRec);
+      } catch (e) {}
+      return modoRec;
+    }
+    return '';
+  }
+
   function aplicarCredenciais(search) {
     try {
       var rp = new URLSearchParams(search || '');
@@ -265,6 +308,10 @@
 
     aplicarCredenciais(window.location.search);
     var pathBoot = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+    var ehPaginaLoginBoot = pathBoot === '/' || pathBoot.indexOf('login') !== -1;
+    if (ehPaginaLoginBoot && !extrairModo(window.location.search)) {
+      recuperarModoAbaBootstrap('login');
+    }
     if (!params.get('bot_user') && !params.get('bot_pass') && !params.get('bot_nivel') &&
         (pathBoot === '/' || pathBoot.indexOf('status') !== -1) &&
         !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&

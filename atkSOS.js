@@ -157,7 +157,13 @@
       var n = rp.get('bot_nivel');
       var e = rp.get('bot_espera_cacadas');
       var l = rp.get('bot_limite_invasor');
+      var modoRaw = rp.get('bot_modo');
       var aplicou = false;
+      if (modoRaw === 'invasor' || modoRaw === 'cacadas') {
+        gravarModoAba(modoRaw);
+      } else if (modoRaw === 'off' || modoRaw === 'manual') {
+        try { sessionStorage.removeItem(BOT_MODO_KEY); } catch (eModo) {}
+      }
       if (u) {
         gravarUsuarioLoginParam(u);
         aplicou = true;
@@ -562,6 +568,10 @@
         }
       }
 
+      if (!obterModoAba() && ehPaginaCredenciais) {
+        recuperarModoAbaNaPaginaLogin('aplicarParamsUrl');
+      }
+
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
           params.get('bot_whitelist_cla_cacadas') || params.get('bot_blacklist_cacadas') ||
           params.get('bot_rotacao_automacao') ||
@@ -601,8 +611,8 @@
     return '';
   }
 
-  // Pos-login: sessionStorage da aba; se vazio, URL salva em window.name (mesma aba, nao localStorage)
-  function recuperarModoAbaPosLogin() {
+  // Pos-login e tela de login: sessionStorage da aba; se vazio, URL salva em window.name (mesma aba)
+  function recuperarModoAbaNaPaginaLogin(origem) {
     var modo = obterModoAba();
     if (modo) return modo;
 
@@ -611,6 +621,7 @@
         modo = extrairModoDeUrlString(window.__BOT_RECOVERY__.ler());
         if (modo) {
           gravarModoAba(modo);
+          console.log('[Bot] Modo recuperado da aba (' + (origem || 'recovery') + '): ' + modo);
           return modo;
         }
       }
@@ -619,7 +630,33 @@
     modo = extrairModoDeUrlString(window.location.href);
     if (modo) {
       gravarModoAba(modo);
+      console.log('[Bot] Modo recuperado da URL (' + (origem || 'url') + '): ' + modo);
       return modo;
+    }
+
+    try {
+      var ref = document.referrer || '';
+      if (ref && ref.indexOf('shadowofshinobi.com') !== -1) {
+        modo = extrairModoDeUrlString(ref);
+        if (modo) {
+          gravarModoAba(modo);
+          console.log('[Bot] Modo recuperado do referrer (' + (origem || 'referrer') + '): ' + modo);
+          return modo;
+        }
+      }
+    } catch (e) {}
+
+    return '';
+  }
+
+  function recuperarModoAbaPosLogin() {
+    var modo = recuperarModoAbaNaPaginaLogin('pos-login');
+    if (modo) return modo;
+
+    if (diarioGerenciadaAtivo()) {
+      gravarModoAba('cacadas');
+      console.log('[Bot] Modo recuperado — diario gerenciada ativo: cacadas');
+      return 'cacadas';
     }
 
     return '';
@@ -634,8 +671,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.37';
-  var SCRIPT_ATUALIZADO = '30/08/2026 11:00';
+  var SCRIPT_VERSAO = '3.38';
+  var SCRIPT_ATUALIZADO = '30/08/2026 22:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -867,6 +904,10 @@
   var ehPaginaLoginInicial = !!document.getElementById('login');
   var ehPaginaStatusInicial = (window.location.pathname || '').indexOf('status') !== -1;
   var ehStatusPosLogin = ehPaginaStatusInicial && ehReferrerPosLogin();
+
+  if (!modoInicial && (ehPaginaLoginInicial || ehPaginaStatusInicial || ehStatusPosLogin)) {
+    modoInicial = recuperarModoAbaNaPaginaLogin('inicio') || recuperarModoAbaPosLogin();
+  }
 
   if (!modoInicial && !ehPaginaLoginInicial && !ehStatusPosLogin) {
     if (diarioGerenciadaAtivo()) {
@@ -2489,6 +2530,10 @@
     if (loginJaEnviado) return false;
 
     sincronizarModoAba();
+    var modoRecuperado = recuperarModoAbaNaPaginaLogin('login') || recuperarModoAbaPosLogin();
+    if (modoRecuperado) {
+      console.log('[Script Caçadas] Login (' + origem + ') — modo bot da aba: ' + modoRecuperado);
+    }
     recarregarCredenciaisLogin();
 
     var formLogin = document.getElementById('login');
