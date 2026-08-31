@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.14
+// @version      1.15
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,9 +19,10 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.14';
+      var SCRIPT_VERSAO = '1.15';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
+      var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
       var JA_LEU_KEY = 'BOT_RANKING_JA_LEU_PAGINA';
@@ -35,6 +36,8 @@
       var PASSO_RANKING = 50;
       var DELAY_PROXIMA_PAGINA_MS = 1200;
       var DEBUG_PROXIMA_PAGINA_MS = 120000;
+      var PERFIL_FETCH_DELAY_MS = 450;
+      var PERFIL_FETCH_TIMEOUT_MS = 15000;
       var AGUARDAR_TABELA_MS = 250;
       var AGUARDAR_TABELA_TENTATIVAS = 30;
       var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
@@ -219,13 +222,21 @@
           if (linkIdx + 3 < tds.length) derrotas = parseIntRanking(textoCelula(tds[linkIdx + 3]));
         }
 
-        if (nivel === null || ryous === null) return null;
+        var urlJogador = '';
+        try { urlJogador = new URL(link.href, window.location.origin).href; } catch (e) {
+          urlJogador = link.href || '';
+        }
+
+        if (nivel === null) return null;
+        if (!rankingPerfilAtivo() && ryous === null) return null;
 
         return {
           pos: pos, nome: nome, nivel: nivel,
           vitorias: vitorias != null ? vitorias : '?',
           derrotas: derrotas != null ? derrotas : '?',
-          ryous: ryous, ryousTexto: ryousTexto
+          ryous: rankingPerfilAtivo() ? null : ryous,
+          ryousTexto: rankingPerfilAtivo() ? null : ryousTexto,
+          urlJogador: urlJogador
         };
       }
 
@@ -284,6 +295,209 @@
         setTimeout(function() {
           aguardarJogadores(callback, restantes - 1);
         }, AGUARDAR_TABELA_MS);
+      }
+
+      function rankingPerfilAtivo() {
+        try { return sessionStorage.getItem(PERFIL_KEY) === '1'; } catch (e) {}
+        return false;
+      }
+
+      function marcarRankingPerfil(ativo) {
+        try {
+          if (ativo) sessionStorage.setItem(PERFIL_KEY, '1');
+          else sessionStorage.removeItem(PERFIL_KEY);
+        } catch (e) {}
+        if (typeof atualizarPainelRanking === 'function') atualizarPainelRanking();
+      }
+
+      function botRankingPerfilRyous(ligar) {
+        if (arguments.length === 0) {
+          return rankingPerfilAtivo() ? 'perfil ON' : 'perfil OFF';
+        }
+        var desligar = ligar === false || ligar === 0 || ligar === '0' ||
+          ligar === 'off' || ligar === 'false';
+        if (desligar) {
+          marcarRankingPerfil(false);
+          console.log('[Bot Ranking Perfil] Desligado — volta a usar ryous do ranking.');
+          return 'perfil OFF';
+        }
+        if (!watchAtivo() && !scanAtivo()) {
+          console.warn('[Bot Ranking Perfil] Ligue botRankingWatchRyous() ou botRankingScan() primeiro.');
+          return 'perfil OFF (watch/scan inativo)';
+        }
+        marcarRankingPerfil(true);
+        console.log('%c[Bot Ranking Perfil] Ligado — lvl no ranking; ryous/vit/der do perfil do jogador.',
+          'color:#3498db;font-weight:bold');
+        return 'perfil ON';
+      }
+
+      function normalizarRotuloPerfil(texto) {
+        return String(texto || '').trim().toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }
+
+      function extrairValorLinhaHtmlPerfil(doc, rotulos) {
+        if (!doc) return null;
+        var escopos = [
+          doc.getElementById('col_direita'),
+          doc.getElementById('motor_game'),
+          doc.body
+        ];
+        for (var s = 0; s < escopos.length; s++) {
+          var escopo = escopos[s];
+          if (!escopo) continue;
+          var linhas = escopo.querySelectorAll('tr');
+          for (var i = 0; i < linhas.length; i++) {
+            var tds = linhas[i].querySelectorAll('td');
+            if (tds.length < 2) continue;
+            var rot = normalizarRotuloPerfil(tds[0].textContent);
+            for (var r = 0; r < rotulos.length; r++) {
+              if (rot.indexOf(rotulos[r]) !== 0) continue;
+              return (tds[1].textContent || '').replace(/^\|\s*/, '').trim();
+            }
+          }
+        }
+        return null;
+      }
+
+      function extrairCampoRegexPerfil(texto, padroes) {
+        if (!texto) return null;
+        for (var i = 0; i < padroes.length; i++) {
+          var m = texto.match(padroes[i]);
+          if (m && m[1]) return String(m[1]).trim();
+        }
+        return null;
+      }
+
+      function parseHtmlPerfilJogador(html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var bodyTxt = doc.body ? (doc.body.innerText || doc.body.textContent || '') : '';
+        if (doc.getElementById('login') || /login de usu[aá]rio/i.test(bodyTxt)) {
+          return { erro: 'sessao expirada (login)' };
+        }
+
+        var ryousTexto = extrairValorLinhaHtmlPerfil(doc, ['ryous faturados', 'ryous']);
+        if (!ryousTexto) {
+          ryousTexto = extrairCampoRegexPerfil(bodyTxt, [
+            /ryous faturados\s*[:\|]?\s*([\d.,]+(?:\s*[mk])?)/i,
+            /ryous\s*[:\|]?\s*([\d.,]+(?:\s*[mk])?)/i
+          ]);
+        }
+
+        var vitTexto = extrairValorLinhaHtmlPerfil(doc, ['vitorias', 'vitórias']);
+        if (!vitTexto) {
+          vitTexto = extrairCampoRegexPerfil(bodyTxt, [
+            /vit[oó]rias\s*[:\|]?\s*(\d+)/i
+          ]);
+        }
+
+        var derTexto = extrairValorLinhaHtmlPerfil(doc, ['derrotas']);
+        if (!derTexto) {
+          derTexto = extrairCampoRegexPerfil(bodyTxt, [
+            /derrotas\s*[:\|]?\s*(\d+)/i
+          ]);
+        }
+
+        var ryous = ryousTexto != null ? parseNumeroRanking(ryousTexto) : null;
+        var vitorias = vitTexto != null ? parseIntRanking(vitTexto) : null;
+        var derrotas = derTexto != null ? parseIntRanking(derTexto) : null;
+
+        if (ryous === null) {
+          return { erro: 'ryous nao encontrado no perfil' };
+        }
+
+        return {
+          ryous: ryous,
+          ryousTexto: ryousTexto,
+          vitorias: vitorias,
+          derrotas: derrotas
+        };
+      }
+
+      function buscarDadosPerfilJogador(url) {
+        return new Promise(function(resolve) {
+          if (!url) {
+            resolve({ erro: 'url vazia' });
+            return;
+          }
+          var timer = null;
+          var opts = { credentials: 'same-origin', cache: 'no-store' };
+          if (typeof AbortController !== 'undefined') {
+            var ctrl = new AbortController();
+            opts.signal = ctrl.signal;
+            timer = setTimeout(function() { ctrl.abort(); }, PERFIL_FETCH_TIMEOUT_MS);
+          }
+          fetch(url, opts).then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.text();
+          }).then(function(html) {
+            if (timer) clearTimeout(timer);
+            resolve(parseHtmlPerfilJogador(html));
+          }).catch(function(err) {
+            if (timer) clearTimeout(timer);
+            resolve({ erro: String(err && err.message ? err.message : err) });
+          });
+        });
+      }
+
+      function passaFiltroLvlRanking(j, minNivel, scanMode) {
+        if (!j || j.nivel === null || isNaN(j.nivel)) return false;
+        if (scanMode) return j.nivel > minNivel;
+        return j.nivel >= minNivel;
+      }
+
+      function enriquecerJogadoresComPerfil(jogadores, minNivel, scanMode, callback) {
+        var fila = [];
+        for (var i = 0; i < jogadores.length; i++) {
+          var j = jogadores[i];
+          if (!j || !j.urlJogador) continue;
+          if (!passaFiltroLvlRanking(j, minNivel, scanMode)) continue;
+          fila.push(j);
+        }
+
+        if (!fila.length) {
+          console.log('[Bot Ranking Perfil] Nenhum jogador com lvl ok no ranking para buscar perfil.');
+          callback(jogadores);
+          return;
+        }
+
+        console.log('[Bot Ranking Perfil] Buscando ' + fila.length + ' perfil(is) em segundo plano...');
+        var pos = 0;
+
+        function proximo() {
+          if (pos >= fila.length) {
+            callback(jogadores);
+            return;
+          }
+          var jog = fila[pos];
+          pos++;
+          console.log('[Bot Ranking Perfil] (' + pos + '/' + fila.length + ') ' + jog.nome + '...');
+          buscarDadosPerfilJogador(jog.urlJogador).then(function(dados) {
+            if (dados && !dados.erro) {
+              jog.ryous = dados.ryous;
+              jog.ryousTexto = dados.ryousTexto;
+              if (typeof dados.vitorias === 'number') jog.vitorias = dados.vitorias;
+              if (typeof dados.derrotas === 'number') jog.derrotas = dados.derrotas;
+              jog.dadosPerfil = true;
+            } else {
+              jog.erroPerfil = dados ? dados.erro : 'fetch falhou';
+              console.warn('[Bot Ranking Perfil] Falha em ' + jog.nome + ': ' + jog.erroPerfil);
+            }
+            setTimeout(proximo, PERFIL_FETCH_DELAY_MS);
+          });
+        }
+
+        proximo();
+      }
+
+      function prepararJogadoresPagina(processarFn, minNivel, scanMode) {
+        aguardarJogadores(function(jogadores) {
+          if (!rankingPerfilAtivo()) {
+            processarFn(jogadores);
+            return;
+          }
+          enriquecerJogadoresComPerfil(jogadores, minNivel, !!scanMode, processarFn);
+        });
       }
 
       function marcarJaLeuPagina() {
@@ -829,7 +1043,8 @@
             console.log(
               '[Debug] baseline | ' + (j.pos || '?') + ' ' + j.nome +
               ' | lvl ' + j.nivel + ' | vit ' + j.vitorias + ' | der ' + j.derrotas +
-              ' | ryous ' + (j.ryousTexto || '?') + ' (' + formatarNumeroBr(j.ryous) + ')'
+              ' | ryous ' + (j.ryousTexto || '?') + ' (' + formatarNumeroBr(j.ryous) + ')' +
+              (j.dadosPerfil ? ' | fonte: perfil' : (rankingPerfilAtivo() ? ' | perfil pendente/falhou' : ''))
             );
             continue;
           }
@@ -840,13 +1055,17 @@
             : 'vit ' + j.vitorias + ' der ' + j.derrotas;
           console.log(
             '[Debug] compare | ' + (j.pos || '?') + ' ' + j.nome + ' | lvl ' + j.nivel +
-            ' | ' + vitInfo + ' | ' + textoEvDebugWatch(ev, prev, j)
+            ' | ' + vitInfo + ' | ' + textoEvDebugWatch(ev, prev, j) +
+            (j.dadosPerfil ? ' | fonte: perfil' : '')
           );
         }
       }
 
       function motivoScanMultDescarte(j, params) {
-        if (!j || j.ryous === null || j.ryous <= 0) return 'ryous invalido';
+        if (j && j.erroPerfil) return 'perfil: ' + j.erroPerfil;
+        if (!j || j.ryous === null || j.ryous <= 0) {
+          return rankingPerfilAtivo() ? 'ryous perfil invalido' : 'ryous invalido';
+        }
         if (j.nivel === null || j.nivel <= params.minNivel) return 'lvl <= ' + params.minNivel;
         if (j.ryous >= params.maxRyous) return 'ryous >= max (' + formatarNumeroBr(params.maxRyous) + ')';
         return 'nao mult';
@@ -868,7 +1087,8 @@
             '[Debug] scan | ' + (j.pos || '?') + ' ' + j.nome + ' | lvl ' + j.nivel +
             ' | vit ' + j.vitorias + ' | der ' + j.derrotas +
             ' | ryous ' + (j.ryousTexto || '?') + ' (' + formatarNumeroBr(j.ryous) + ') | ' +
-            (passa ? 'MULT ok' : motivoScanMultDescarte(j, params))
+            (passa ? 'MULT ok' : motivoScanMultDescarte(j, params)) +
+            (j.dadosPerfil ? ' | fonte: perfil' : '')
           );
         }
       }
@@ -975,7 +1195,8 @@
           ' | snapshot=' + qtdSnap + ' jogadores | lvl>=' + params.minNivel +
           ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous) +
-          (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : ''));
+          (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
+          (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
       }
 
       function agendarProximoWatchCiclo(params) {
@@ -1077,7 +1298,8 @@
       }
 
       function processarPaginaWatch() {
-        aguardarJogadores(processarPaginaWatchComJogadores);
+        var params = lerParamsWatch();
+        prepararJogadoresPagina(processarPaginaWatchComJogadores, params.minNivel, false);
       }
 
       function iniciarCicloWatchScan(modo) {
@@ -1150,6 +1372,7 @@
         var info = {
           ativo: watchAtivo(),
           debug: rankingDebugAtivo(),
+          perfil: rankingPerfilAtivo(),
           fase: estado.fase,
           modo: estado.modo,
           aguardarAte: estado.aguardarAte,
@@ -1206,6 +1429,8 @@
         console.log('  botRankingWatchStatus()         — status watch ryous');
         console.log('  botRankingDebugPagina(true)        — debug ON (log player a player + 2min/pagina)');
         console.log('  botRankingDebugPagina(false)       — debug OFF');
+        console.log('  botRankingPerfilRyous(true)        — ryous/vit/der do perfil (lvl no ranking)');
+        console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
@@ -1219,7 +1444,8 @@
         var acum = lerResultadosAcumulados().length;
         console.log('%c[Bot Ranking] v' + SCRIPT_VERSAO + ' — scan em andamento', 'color:#9b59b6;font-weight:bold');
         console.log('[Bot Ranking] ranking=' + offset + ' | acumulado=' + acum + ' mult | lvl > ' + params.minNivel + ' | ryous < ' + params.maxRyous.toLocaleString('pt-BR') +
-          (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : ''));
+          (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
+          (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
         console.log('[Bot Ranking] botRankingParar() — cancelar | botRankingStatus() — status');
       }
 
@@ -1283,7 +1509,8 @@
       }
 
       function processarPaginaScan() {
-        aguardarJogadores(processarPaginaScanComJogadores);
+        var params = lerParamsSalvos();
+        prepararJogadoresPagina(processarPaginaScanComJogadores, params.minNivel, true);
       }
 
       function iniciarScan(extraParams) {
@@ -1324,6 +1551,7 @@
         var info = {
           ativo: scanAtivo(),
           debug: rankingDebugAtivo(),
+          perfil: rankingPerfilAtivo(),
           offset: offsetRankingAtual(),
           acumulado: lerResultadosAcumulados().length,
           diag: diagDomRanking(),
@@ -1360,9 +1588,10 @@
           el.innerHTML = [
             el.dataset.botServerBase,
             'Bot: <b>ranking</b> (' + (scanAtivo() ? 'mult ON' : 'mult off') + ' | ' + watchTxt +
-              (rankingDebugAtivo() ? ' | debug ON' : '') + ')',
+              (rankingDebugAtivo() ? ' | debug ON' : '') +
+              (rankingPerfilAtivo() ? ' | perfil ON' : '') + ')',
             'Principal: ' + login,
-            'Console: botRankingScan() | botRankingWatchRyous() | botRankingDebugPagina(true/false)'
+            'Console: botRankingScan() | botRankingWatchRyous() | botRankingPerfilRyous(true/false)'
           ].join('<br>');
           return true;
         }
@@ -1377,6 +1606,7 @@
       window.botRankingWatchParar = pararWatchRyous;
       window.botRankingWatchStatus = statusWatchRyous;
       window.botRankingDebugPagina = botRankingDebugPagina;
+      window.botRankingPerfilRyous = botRankingPerfilRyous;
       window.__BOT_RANKING_OK__ = true;
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
 
