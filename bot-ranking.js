@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.16
+// @version      1.17
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.16';
+      var SCRIPT_VERSAO = '1.17';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -36,6 +36,7 @@
       var PASSO_RANKING = 50;
       var DELAY_PROXIMA_PAGINA_MS = 1200;
       var DEBUG_PROXIMA_PAGINA_MS = 120000;
+      var PERFIL_FETCH_DELAY_MS = 450;
       var PERFIL_FETCH_TIMEOUT_MS = 15000;
       var AGUARDAR_TABELA_MS = 250;
       var AGUARDAR_TABELA_TENTATIVAS = 30;
@@ -473,28 +474,33 @@
           return;
         }
 
-        console.log('[Bot Ranking Perfil] Buscando ' + fila.length + ' perfil(is) em paralelo...');
+        console.log('[Bot Ranking Perfil] Buscando ' + fila.length + ' perfil(is) um por um...');
+        var pos = 0;
         var inicio = Date.now();
-        var promessas = fila.map(function(jog) {
-          return buscarDadosPerfilJogador(jog.urlJogador).then(function(dados) {
-            if (!aplicarDadosPerfilJogador(jog, dados)) {
+        var ok = 0;
+        var falhas = 0;
+
+        function proximo() {
+          if (pos >= fila.length) {
+            var seg = ((Date.now() - inicio) / 1000).toFixed(1);
+            console.log('[Bot Ranking Perfil] Concluido em ' + seg + 's — ' + ok + ' ok, ' + falhas + ' falha(s).');
+            callback(jogadores);
+            return;
+          }
+          var jog = fila[pos];
+          pos++;
+          console.log('[Bot Ranking Perfil] (' + pos + '/' + fila.length + ') ' + jog.nome + '...');
+          buscarDadosPerfilJogador(jog.urlJogador).then(function(dados) {
+            if (aplicarDadosPerfilJogador(jog, dados)) ok++;
+            else {
+              falhas++;
               console.warn('[Bot Ranking Perfil] Falha em ' + jog.nome + ': ' + jog.erroPerfil);
             }
-            return jog;
+            setTimeout(proximo, PERFIL_FETCH_DELAY_MS);
           });
-        });
+        }
 
-        Promise.all(promessas).then(function() {
-          var ok = 0;
-          var falhas = 0;
-          for (var k = 0; k < fila.length; k++) {
-            if (fila[k].dadosPerfil) ok++;
-            else falhas++;
-          }
-          var seg = ((Date.now() - inicio) / 1000).toFixed(1);
-          console.log('[Bot Ranking Perfil] Concluido em ' + seg + 's — ' + ok + ' ok, ' + falhas + ' falha(s).');
-          callback(jogadores);
-        });
+        proximo();
       }
 
       function prepararJogadoresPagina(processarFn, minNivel, scanMode) {
