@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.20
+// @version      1.21
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.20';
+      var SCRIPT_VERSAO = '1.21';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -1089,62 +1089,162 @@
         return linhas;
       }
 
-      function botRankingHistoricoTop(opcoes) {
-        var opts = opcoes || {};
-        var min = opts.min != null ? parseInt(String(opts.min), 10) : HISTORICO_JANELA_MIN;
-        if (isNaN(min) || min < 5) min = HISTORICO_JANELA_MIN;
-        var limite = opts.limite != null ? parseInt(String(opts.limite), 10) : 15;
-        if (isNaN(limite) || limite < 1) limite = 15;
+      function calcularDeltaRyousFonte(cur, prev, fonte) {
+        if (fonte === 'perfil' && (!temRyousPerfil(cur) || !temRyousPerfil(prev))) return null;
+        if (fonte === 'ranking' && (!temRyousRanking(cur) || !temRyousRanking(prev))) return null;
+        var ryCur = obterRyousCompare(cur, fonte);
+        var ryPrev = obterRyousCompare(prev, fonte);
+        if (ryCur === null || ryPrev === null) return null;
+        var vdCur = obterVitDerCompare(cur, fonte);
+        var vdPrev = obterVitDerCompare(prev, fonte);
+        if (typeof vdCur.vit === 'number' && typeof vdPrev.vit === 'number' &&
+            typeof vdCur.der === 'number' && typeof vdPrev.der === 'number') {
+          if (vdCur.vit !== vdPrev.vit || vdCur.der !== vdPrev.der) return null;
+        }
+        var d = ryCur - ryPrev;
+        if (d <= 0) return null;
+        return {
+          delta: d,
+          ryous: ryCur,
+          ryousTexto: obterRyousTextoCompare(cur, fonte),
+          antes: ryPrev,
+          antesTexto: obterRyousTextoCompare(prev, fonte),
+          fonte: fonte
+        };
+      }
 
-        var ref = encontrarSnapshotHistoricoReferencia(min);
+      function normalizarOptsHistoricoDiff(min, opcoes) {
+        var opts = opcoes && typeof opcoes === 'object' ? opcoes : {};
+        var minVal = min;
+        if (minVal != null && typeof minVal === 'object') {
+          opts = minVal;
+          minVal = opts.min;
+        }
+        minVal = parseInt(String(minVal != null ? minVal : HISTORICO_JANELA_MIN), 10);
+        if (isNaN(minVal) || minVal < 5) minVal = HISTORICO_JANELA_MIN;
+        var limite = opts.limite != null ? parseInt(String(opts.limite), 10) : 20;
+        if (isNaN(limite) || limite < 1) limite = 20;
+        var minDelta = opts.minDelta != null ? parseNumeroRanking(opts.minDelta) : 0;
+        if (minDelta === null || minDelta < 0) minDelta = 0;
+        return { min: minVal, limite: limite, minDelta: minDelta, silencioso: !!opts.silencioso };
+      }
+
+      function calcularHistoricoDiff(min, opcoes) {
+        var opts = normalizarOptsHistoricoDiff(min, opcoes);
+        var ref = encontrarSnapshotHistoricoReferencia(opts.min);
         var atualSnap = lerSnapshotRyous();
         if (!ref || !ref.jogadores || !atualSnap.jogadores) {
-          console.log('[Historico Top] Sem snapshot de referencia ou atual vazio.');
-          return [];
+          return { minutosRef: 0, refTs: 0, itens: [], total: 0, vazio: true };
         }
 
         var minutosRef = Math.max(1, Math.round((Date.now() - ref.ts) / 60000));
-        var deltas = [];
+        var todos = [];
         for (var k in atualSnap.jogadores) {
           if (!Object.prototype.hasOwnProperty.call(atualSnap.jogadores, k)) continue;
           var cur = migrarJogadorLegado(atualSnap.jogadores[k]);
           var prev = migrarJogadorLegado(ref.jogadores[k]);
-          if (!prev) continue;
+          if (!prev || !cur || !cur.nome) continue;
+
+          var dRanking = calcularDeltaRyousFonte(cur, prev, 'ranking');
+          var dPerfil = calcularDeltaRyousFonte(cur, prev, 'perfil');
           var fonte = escolherFonteCompare(prev, cur);
-          var ryCur = obterRyousCompare(cur, fonte);
-          var ryPrev = obterRyousCompare(prev, fonte);
-          if (ryCur === null || ryPrev === null) continue;
-          var vdCur = obterVitDerCompare(cur, fonte);
-          var vdPrev = obterVitDerCompare(prev, fonte);
-          if (typeof vdCur.vit === 'number' && typeof vdPrev.vit === 'number' &&
-              typeof vdCur.der === 'number' && typeof vdPrev.der === 'number') {
-            if (vdCur.vit !== vdPrev.vit || vdCur.der !== vdPrev.der) continue;
-          }
-          var d = ryCur - ryPrev;
-          if (d > 0) {
-            deltas.push({
-              nome: cur.nome,
-              delta: d,
-              fonte: fonte,
-              ryous: ryCur,
-              ryousTexto: obterRyousTextoCompare(cur, fonte),
-              antes: ryPrev,
-              antesTexto: obterRyousTextoCompare(prev, fonte)
-            });
-          }
+          var dCanon = calcularDeltaRyousFonte(cur, prev, fonte);
+          if (!dCanon && !dRanking && !dPerfil) continue;
+
+          var deltaOrdenar = dCanon ? dCanon.delta : (dPerfil ? dPerfil.delta : dRanking.delta);
+          if (opts.minDelta && deltaOrdenar < opts.minDelta) continue;
+
+          todos.push({
+            nome: cur.nome,
+            nivel: cur.nivel,
+            fonteCompare: fonte,
+            delta: deltaOrdenar,
+            canonico: dCanon,
+            ranking: dRanking,
+            perfil: dPerfil
+          });
         }
-        deltas.sort(function(a, b) { return b.delta - a.delta; });
-        console.log('%c[Historico Top] maiores deltas vs ~' + minutosRef + 'min atras',
+        todos.sort(function(a, b) { return b.delta - a.delta; });
+        return {
+          minutosRef: minutosRef,
+          refTs: ref.ts,
+          itens: todos.slice(0, opts.limite),
+          total: todos.length,
+          vazio: !todos.length
+        };
+      }
+
+      function logHistoricoDiff(resultado) {
+        if (resultado.vazio) {
+          console.log('[Historico Diff] Nenhum delta positivo (vit/der estaveis) no periodo.');
+          return;
+        }
+        console.log('%c[Historico Diff] vs ~' + resultado.minutosRef + 'min atras (' +
+          new Date(resultado.refTs).toLocaleString('pt-BR') + ') — ' + resultado.total + ' jogador(es)',
           'color:#9b59b6;font-weight:bold');
-        for (var i = 0; i < Math.min(limite, deltas.length); i++) {
-          var x = deltas[i];
-          console.log('  ' + (i + 1) + '. ' + x.nome + ' | +' + formatarNumeroBr(x.delta) +
-            ' [' + x.fonte + '] (' + x.antesTexto + ' -> ' + x.ryousTexto + ')');
+        for (var i = 0; i < resultado.itens.length; i++) {
+          var x = resultado.itens[i];
+          var partes = [];
+          if (x.ranking) {
+            partes.push('+' + formatarNumeroBr(x.ranking.delta) + ' [ranking] ' +
+              x.ranking.antesTexto + '->' + x.ranking.ryousTexto);
+          }
+          if (x.perfil) {
+            partes.push('+' + formatarNumeroBr(x.perfil.delta) + ' [perfil] ' +
+              x.perfil.antesTexto + '->' + x.perfil.ryousTexto);
+          }
+          if (!partes.length && x.canonico) {
+            partes.push('+' + formatarNumeroBr(x.canonico.delta) + ' [' + x.fonteCompare + '] ' +
+              x.canonico.antesTexto + '->' + x.canonico.ryousTexto);
+          }
+          console.log('  ' + (i + 1) + '. ' + x.nome + ' (lvl ' + (x.nivel || '?') + ') | ' +
+            partes.join(' | ') + ' | compare:' + x.fonteCompare);
         }
-        if (!deltas.length) {
-          console.log('[Historico Top] Nenhum delta positivo com vit/der estaveis.');
+        if (resultado.total > resultado.itens.length) {
+          console.log('[Historico Diff] ... +' + (resultado.total - resultado.itens.length) +
+            ' omitido(s) (limite ' + resultado.itens.length + ').');
         }
-        return deltas.slice(0, limite);
+      }
+
+      function botRankingHistoricoDiff(min, opcoes) {
+        var opts = normalizarOptsHistoricoDiff(min, opcoes);
+        var resultado = calcularHistoricoDiff(opts.min, opts);
+        if (!opts.silencioso) logHistoricoDiff(resultado);
+        return resultado;
+      }
+
+      function botRankingHistoricoTop(opcoes) {
+        var opts = opcoes || {};
+        var r = botRankingHistoricoDiff(opts.min, {
+          limite: opts.limite != null ? opts.limite : 15,
+          minDelta: opts.minDelta,
+          silencioso: true
+        });
+        if (r.vazio) {
+          console.log('[Historico Top] Sem snapshot de referencia ou nenhum delta positivo.');
+          return [];
+        }
+        console.log('%c[Historico Top] maiores deltas vs ~' + r.minutosRef + 'min atras',
+          'color:#9b59b6;font-weight:bold');
+        for (var i = 0; i < r.itens.length; i++) {
+          var x = r.itens[i];
+          var d = x.canonico || x.ranking || x.perfil;
+          if (!d) continue;
+          console.log('  ' + (i + 1) + '. ' + x.nome + ' | +' + formatarNumeroBr(d.delta) +
+            ' [' + d.fonte + '] (' + d.antesTexto + ' -> ' + d.ryousTexto + ')');
+        }
+        return r.itens.map(function(x) {
+          var d = x.canonico || x.ranking || x.perfil;
+          return {
+            nome: x.nome,
+            delta: d ? d.delta : x.delta,
+            fonte: d ? d.fonte : x.fonteCompare,
+            ryous: d ? d.ryous : null,
+            ryousTexto: d ? d.ryousTexto : '',
+            antes: d ? d.antes : null,
+            antesTexto: d ? d.antesTexto : ''
+          };
+        });
       }
 
       function lerParcialWatch() {
@@ -2028,6 +2128,8 @@
         console.log('  botRankingHistorico(false)         — desliga historico');
         console.log('  botRankingHistoricoJogador("Nome") — timeline do player (3h)');
         console.log('  botRankingHistoricoTop()           — maiores deltas vs ~3h atras');
+        console.log('  botRankingHistoricoDiff(60)        — diff ranking+perfil vs ~60min');
+        console.log('  botRankingHistoricoDiff(120,{minDelta:100000,limite:30})');
         console.log('  botRankingHistoricoLimpar()        — zera historico');
         console.log('  botRankingWatchRyous({historicoMin:120}) — compara vs ~2h atras (dentro da janela 3h)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
@@ -2211,6 +2313,7 @@
       window.botRankingHistorico = botRankingHistorico;
       window.botRankingHistoricoJogador = botRankingHistoricoJogador;
       window.botRankingHistoricoTop = botRankingHistoricoTop;
+      window.botRankingHistoricoDiff = botRankingHistoricoDiff;
       window.botRankingHistoricoLimpar = botRankingHistoricoLimpar;
       window.__BOT_RANKING_OK__ = true;
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
