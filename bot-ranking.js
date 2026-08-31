@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.15
+// @version      1.16
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.15';
+      var SCRIPT_VERSAO = '1.16';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -36,7 +36,6 @@
       var PASSO_RANKING = 50;
       var DELAY_PROXIMA_PAGINA_MS = 1200;
       var DEBUG_PROXIMA_PAGINA_MS = 120000;
-      var PERFIL_FETCH_DELAY_MS = 450;
       var PERFIL_FETCH_TIMEOUT_MS = 15000;
       var AGUARDAR_TABELA_MS = 250;
       var AGUARDAR_TABELA_TENTATIVAS = 30;
@@ -446,6 +445,19 @@
         return j.nivel >= minNivel;
       }
 
+      function aplicarDadosPerfilJogador(jog, dados) {
+        if (dados && !dados.erro) {
+          jog.ryous = dados.ryous;
+          jog.ryousTexto = dados.ryousTexto;
+          if (typeof dados.vitorias === 'number') jog.vitorias = dados.vitorias;
+          if (typeof dados.derrotas === 'number') jog.derrotas = dados.derrotas;
+          jog.dadosPerfil = true;
+          return true;
+        }
+        jog.erroPerfil = dados ? dados.erro : 'fetch falhou';
+        return false;
+      }
+
       function enriquecerJogadoresComPerfil(jogadores, minNivel, scanMode, callback) {
         var fila = [];
         for (var i = 0; i < jogadores.length; i++) {
@@ -461,33 +473,28 @@
           return;
         }
 
-        console.log('[Bot Ranking Perfil] Buscando ' + fila.length + ' perfil(is) em segundo plano...');
-        var pos = 0;
-
-        function proximo() {
-          if (pos >= fila.length) {
-            callback(jogadores);
-            return;
-          }
-          var jog = fila[pos];
-          pos++;
-          console.log('[Bot Ranking Perfil] (' + pos + '/' + fila.length + ') ' + jog.nome + '...');
-          buscarDadosPerfilJogador(jog.urlJogador).then(function(dados) {
-            if (dados && !dados.erro) {
-              jog.ryous = dados.ryous;
-              jog.ryousTexto = dados.ryousTexto;
-              if (typeof dados.vitorias === 'number') jog.vitorias = dados.vitorias;
-              if (typeof dados.derrotas === 'number') jog.derrotas = dados.derrotas;
-              jog.dadosPerfil = true;
-            } else {
-              jog.erroPerfil = dados ? dados.erro : 'fetch falhou';
+        console.log('[Bot Ranking Perfil] Buscando ' + fila.length + ' perfil(is) em paralelo...');
+        var inicio = Date.now();
+        var promessas = fila.map(function(jog) {
+          return buscarDadosPerfilJogador(jog.urlJogador).then(function(dados) {
+            if (!aplicarDadosPerfilJogador(jog, dados)) {
               console.warn('[Bot Ranking Perfil] Falha em ' + jog.nome + ': ' + jog.erroPerfil);
             }
-            setTimeout(proximo, PERFIL_FETCH_DELAY_MS);
+            return jog;
           });
-        }
+        });
 
-        proximo();
+        Promise.all(promessas).then(function() {
+          var ok = 0;
+          var falhas = 0;
+          for (var k = 0; k < fila.length; k++) {
+            if (fila[k].dadosPerfil) ok++;
+            else falhas++;
+          }
+          var seg = ((Date.now() - inicio) / 1000).toFixed(1);
+          console.log('[Bot Ranking Perfil] Concluido em ' + seg + 's — ' + ok + ' ok, ' + falhas + ' falha(s).');
+          callback(jogadores);
+        });
       }
 
       function prepararJogadoresPagina(processarFn, minNivel, scanMode) {
