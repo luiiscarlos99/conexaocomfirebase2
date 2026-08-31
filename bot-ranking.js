@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.19
+// @version      1.20
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.19';
+      var SCRIPT_VERSAO = '1.20';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -42,6 +42,9 @@
       var DEBUG_PROXIMA_PAGINA_MS = 120000;
       var PERFIL_FETCH_DELAY_MS = 450;
       var PERFIL_FETCH_TIMEOUT_MS = 15000;
+      var PERFIL_FETCH_RETRY_MAX = 3;
+      var PERFIL_FETCH_RETRY_429_MS = 8000;
+      var DISCORD_ALERTAS_KEY = 'BOT_RANKING_DISCORD_ALERTAS';
       var AGUARDAR_TABELA_MS = 250;
       var AGUARDAR_TABELA_TENTATIVAS = 30;
       var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
@@ -53,9 +56,11 @@
       var DEFAULTS_WATCH = {
         maxRyous: 150000000,
         minDeltaRyous: 100000,
+        minDeltaDivergencia: 50000,
         minNivel: 74,
         intervaloMs: 600000,
         historicoMin: HISTORICO_JANELA_MIN,
+        discordCooldownMin: 30,
         vila: 'geral',
         view: 'personagens'
       };
@@ -426,7 +431,8 @@
         };
       }
 
-      function buscarDadosPerfilJogador(url) {
+      function buscarDadosPerfilJogador(url, tentativa) {
+        var n = typeof tentativa === 'number' ? tentativa : 0;
         return new Promise(function(resolve) {
           if (!url) {
             resolve({ erro: 'url vazia' });
@@ -440,14 +446,42 @@
             timer = setTimeout(function() { ctrl.abort(); }, PERFIL_FETCH_TIMEOUT_MS);
           }
           fetch(url, opts).then(function(resp) {
+            if (resp.status === 429) {
+              if (timer) clearTimeout(timer);
+              if (n >= PERFIL_FETCH_RETRY_MAX) {
+                resolve({ erro: 'HTTP 429' });
+                return null;
+              }
+              var espera = PERFIL_FETCH_RETRY_429_MS * (n + 1);
+              console.warn('[Bot Ranking Perfil] HTTP 429 — retry ' + (n + 1) + '/' +
+                PERFIL_FETCH_RETRY_MAX + ' em ' + Math.round(espera / 1000) + 's...');
+              return new Promise(function(retryResolve) {
+                setTimeout(function() {
+                  buscarDadosPerfilJogador(url, n + 1).then(retryResolve);
+                }, espera);
+              });
+            }
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             return resp.text();
           }).then(function(html) {
+            if (html === null || html === undefined) return;
             if (timer) clearTimeout(timer);
+            if (typeof html === 'object') {
+              resolve(html);
+              return;
+            }
             resolve(parseHtmlPerfilJogador(html));
           }).catch(function(err) {
             if (timer) clearTimeout(timer);
-            resolve({ erro: String(err && err.message ? err.message : err) });
+            var msg = String(err && err.message ? err.message : err);
+            if (/429/.test(msg) && n < PERFIL_FETCH_RETRY_MAX) {
+              var esperaErr = PERFIL_FETCH_RETRY_429_MS * (n + 1);
+              setTimeout(function() {
+                buscarDadosPerfilJogador(url, n + 1).then(resolve);
+              }, esperaErr);
+              return;
+            }
+            resolve({ erro: msg });
           });
         });
       }
@@ -744,9 +778,11 @@
             var saved = JSON.parse(raw);
             if (saved.maxRyous != null) base.maxRyous = saved.maxRyous;
             if (saved.minDeltaRyous != null) base.minDeltaRyous = saved.minDeltaRyous;
+            if (saved.minDeltaDivergencia != null) base.minDeltaDivergencia = saved.minDeltaDivergencia;
             if (saved.minNivel != null) base.minNivel = saved.minNivel;
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
             if (saved.historicoMin != null) base.historicoMin = saved.historicoMin;
+            if (saved.discordCooldownMin != null) base.discordCooldownMin = saved.discordCooldownMin;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
           }
@@ -768,6 +804,10 @@
           var md = parseNumeroRanking(extra.minDeltaRyous);
           if (md !== null && md > 0) base.minDeltaRyous = md;
         }
+        if (extra.minDeltaDivergencia != null) {
+          var mdd = parseNumeroRanking(extra.minDeltaDivergencia);
+          if (mdd !== null && mdd > 0) base.minDeltaDivergencia = mdd;
+        }
         if (extra.minNivel != null) {
           var mn = parseInt(String(extra.minNivel).replace(/\./g, ''), 10);
           if (!isNaN(mn)) base.minNivel = mn;
@@ -783,6 +823,10 @@
         if (extra.historicoMin != null) {
           var hm = parseInt(String(extra.historicoMin).replace(/\./g, ''), 10);
           if (!isNaN(hm) && hm >= 5) base.historicoMin = hm;
+        }
+        if (extra.discordCooldownMin != null) {
+          var dcm = parseInt(String(extra.discordCooldownMin).replace(/\./g, ''), 10);
+          if (!isNaN(dcm) && dcm >= 5) base.discordCooldownMin = dcm;
         }
         if (extra.vila) base.vila = String(extra.vila);
         if (extra.view) base.view = String(extra.view);
@@ -1535,6 +1579,121 @@
         return { motivo: topMotivo, qtd: topQtd };
       }
 
+      function limiarDivergenciaRankingPerfil(params) {
+        if (params && params.minDeltaDivergencia != null) return params.minDeltaDivergencia;
+        return DEFAULTS_WATCH.minDeltaDivergencia;
+      }
+
+      function detectarDivergenciasRankingPerfil(jogadores, params) {
+        var minDiv = limiarDivergenciaRankingPerfil(params);
+        var out = [];
+        for (var i = 0; i < jogadores.length; i++) {
+          var j = migrarJogadorLegado(jogadores[i]);
+          if (!temRyousRanking(j) || !temRyousPerfil(j)) continue;
+          var diff = Math.abs(j.ryousPerfil - j.ryousRanking);
+          if (diff >= minDiv) {
+            out.push({
+              jogador: j,
+              diff: diff,
+              ranking: j.ryousRanking,
+              perfil: j.ryousPerfil,
+              rankingTexto: j.ryousRankingTexto || formatarNumeroBr(j.ryousRanking),
+              perfilTexto: j.ryousPerfilTexto || formatarNumeroBr(j.ryousPerfil)
+            });
+          }
+        }
+        out.sort(function(a, b) { return b.diff - a.diff; });
+        return out;
+      }
+
+      function logarDivergenciasRankingPerfil(jogadores, params, offset) {
+        var divs = detectarDivergenciasRankingPerfil(jogadores, params);
+        if (!divs.length) return divs;
+        var minDiv = limiarDivergenciaRankingPerfil(params);
+        console.log('%c[Bot Ranking] ranking=' + offset + ' — ' + divs.length +
+          ' divergencia(s) ranking vs perfil (diff>=' + formatarNumeroBr(minDiv) + ')',
+          'color:#e74c3c;font-weight:bold');
+        for (var i = 0; i < Math.min(8, divs.length); i++) {
+          var d = divs[i];
+          console.warn('[Divergencia] ' + d.jogador.nome + ' | ranking ' + d.rankingTexto +
+            ' vs perfil ' + d.perfilTexto + ' | diff ' + formatarNumeroBr(d.diff));
+        }
+        if (divs.length > 8) {
+          console.warn('[Divergencia] ... +' + (divs.length - 8) + ' omitido(s) no log.');
+        }
+        return divs;
+      }
+
+      function cooldownDiscordMs(params) {
+        var min = (params && params.discordCooldownMin != null)
+          ? params.discordCooldownMin : DEFAULTS_WATCH.discordCooldownMin;
+        return Math.max(5, min) * 60000;
+      }
+
+      function lerAlertasDiscordRecentes() {
+        try {
+          var raw = localStorage.getItem(DISCORD_ALERTAS_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return {};
+      }
+
+      function salvarAlertasDiscordRecentes(map) {
+        try { localStorage.setItem(DISCORD_ALERTAS_KEY, JSON.stringify(map)); } catch (e) {}
+      }
+
+      function limparAlertasDiscordExpirados(map) {
+        var limite = Date.now() - 86400000;
+        var out = {};
+        for (var k in map) {
+          if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+          if (map[k] && map[k].ts >= limite) out[k] = map[k];
+        }
+        return out;
+      }
+
+      function filtrarSuspeitosDiscordAntiSpam(suspeitos, params) {
+        if (!suspeitos.length) return { enviar: [], suprimidos: 0 };
+        var cooldown = cooldownDiscordMs(params);
+        var recentes = limparAlertasDiscordExpirados(lerAlertasDiscordRecentes());
+        var agora = Date.now();
+        var enviar = [];
+        var suprimidos = 0;
+        for (var i = 0; i < suspeitos.length; i++) {
+          var s = suspeitos[i];
+          if (!s || !s.nome) continue;
+          var k = s.nome.toLowerCase();
+          var prev = recentes[k];
+          if (prev && (agora - prev.ts) < cooldown) {
+            var deltaAt = s.deltaRyous || 0;
+            var deltaPrev = prev.delta || 0;
+            var limiarSimilar = Math.max((params.minDeltaRyous || 0) * 0.25, 25000);
+            if (deltaAt <= deltaPrev + limiarSimilar) {
+              suprimidos++;
+              continue;
+            }
+          }
+          enviar.push(s);
+        }
+        if (suprimidos) {
+          console.log('[Bot Ranking Watch] Discord anti-spam: ' + suprimidos +
+            ' alerta(s) suprimido(s) (cooldown ' + Math.round(cooldown / 60000) + ' min).');
+        }
+        return { enviar: enviar, suprimidos: suprimidos };
+      }
+
+      function registrarAlertasDiscordEnviados(suspeitos) {
+        if (!suspeitos.length) return;
+        var map = limparAlertasDiscordExpirados(lerAlertasDiscordRecentes());
+        var ts = Date.now();
+        for (var i = 0; i < suspeitos.length; i++) {
+          var s = suspeitos[i];
+          if (!s || !s.nome) continue;
+          map[s.nome.toLowerCase()] = { ts: ts, delta: s.deltaRyous || 0, tipo: s.tipo || 'ciclo' };
+        }
+        salvarAlertasDiscordRecentes(map);
+      }
+
       function enviarDiscordRyousSuspeitos(offset, suspeitos, params, callback) {
         if (!suspeitos.length) {
           if (callback) callback(false);
@@ -1682,6 +1841,8 @@
         var parcial = mesclarMapsJogadores(lerParcialWatch(), jogadoresParaMap(jogadores));
         salvarParcialWatch(parcial);
 
+        logarDivergenciasRankingPerfil(jogadores, params, offset);
+
         if (estado.modo === 'compare') {
           var snap = lerSnapshotRyous();
           var snapMap = (snap && snap.jogadores) ? snap.jogadores : {};
@@ -1690,7 +1851,12 @@
           var suspeitosHist = detectarRyousSuspeitosHistorico(jogadores, params);
           var suspeitos = mesclarSuspeitosWatch(suspeitosCiclo, suspeitosHist);
           if (suspeitos.length) {
-            enviarDiscordRyousSuspeitos(offset, suspeitos, params);
+            var filtroDiscord = filtrarSuspeitosDiscordAntiSpam(suspeitos, params);
+            if (filtroDiscord.enviar.length) {
+              enviarDiscordRyousSuspeitos(offset, filtroDiscord.enviar, params, function(ok) {
+                if (ok) registrarAlertasDiscordEnviados(filtroDiscord.enviar);
+              });
+            }
             salvarSuspeitosFirebaseFila(suspeitos);
           } else if (jogadores.length && Object.keys(snapMap).length) {
             var resumo = resumirDescartesWatch(jogadores, snapMap, params);
@@ -1851,6 +2017,7 @@
         console.log('  botRankingStatus()              — status scan mult');
         console.log('  botRankingWatchRyous()          — watch ryous (+100k sem vit/der, a cada 10min)');
         console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
+        console.log('  botRankingWatchRyous({minDeltaDivergencia:50000,discordCooldownMin:30})');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');
         console.log('  botRankingDebugPagina(true)        — debug ON (log player a player + 2min/pagina)');
@@ -1927,6 +2094,7 @@
         }
 
         marcarJaLeuPagina();
+        if (rankingPerfilAtivo()) logarDivergenciasRankingPerfil(jogadores, params, offset);
         var mult = filtrarMult(jogadores, params);
         logJogadoresDebugScan(jogadores, params, offset, mult);
         var acumulado = mesclarSemDuplicar(lerResultadosAcumulados(), mult);
