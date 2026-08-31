@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.17
+// @version      1.18
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,10 +19,14 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.17';
+      var SCRIPT_VERSAO = '1.18';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
+      var HISTORICO_KEY = 'BOT_RANKING_RYOUS_HISTORICO';
+      var HISTORICO_FLAG_KEY = 'BOT_RANKING_HISTORICO_ATIVO';
+      var HISTORICO_JANELA_MS = 10800000;
+      var HISTORICO_JANELA_MIN = 180;
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
       var JA_LEU_KEY = 'BOT_RANKING_JA_LEU_PAGINA';
@@ -51,6 +55,7 @@
         minDeltaRyous: 100000,
         minNivel: 74,
         intervaloMs: 600000,
+        historicoMin: HISTORICO_JANELA_MIN,
         vila: 'geral',
         view: 'personagens'
       };
@@ -642,6 +647,7 @@
             if (saved.minDeltaRyous != null) base.minDeltaRyous = saved.minDeltaRyous;
             if (saved.minNivel != null) base.minNivel = saved.minNivel;
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
+            if (saved.historicoMin != null) base.historicoMin = saved.historicoMin;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
           }
@@ -674,6 +680,10 @@
         if (extra.intervaloMin != null) {
           var im = parseFloat(String(extra.intervaloMin).replace(',', '.'));
           if (!isNaN(im) && im >= 1) base.intervaloMs = Math.round(im * 60000);
+        }
+        if (extra.historicoMin != null) {
+          var hm = parseInt(String(extra.historicoMin).replace(/\./g, ''), 10);
+          if (!isNaN(hm) && hm >= 5) base.historicoMin = hm;
         }
         if (extra.vila) base.vila = String(extra.vila);
         if (extra.view) base.view = String(extra.view);
@@ -727,6 +737,247 @@
 
       function salvarSnapshotRyous(snapshot) {
         try { localStorage.setItem(WATCH_SNAPSHOT_KEY, JSON.stringify(snapshot)); } catch (e) {}
+      }
+
+      function rankingHistoricoAtivo() {
+        try {
+          var v = localStorage.getItem(HISTORICO_FLAG_KEY);
+          if (v === null || v === '') return true;
+          return v === '1';
+        } catch (e) {}
+        return true;
+      }
+
+      function marcarRankingHistorico(ativo) {
+        try {
+          if (ativo) localStorage.setItem(HISTORICO_FLAG_KEY, '1');
+          else localStorage.setItem(HISTORICO_FLAG_KEY, '0');
+        } catch (e) {}
+        if (typeof atualizarPainelRanking === 'function') atualizarPainelRanking();
+      }
+
+      function botRankingHistorico(ligar) {
+        if (arguments.length === 0) {
+          return rankingHistoricoAtivo() ? 'historico ON' : 'historico OFF';
+        }
+        var desligar = ligar === false || ligar === 0 || ligar === '0' ||
+          ligar === 'off' || ligar === 'false';
+        marcarRankingHistorico(!desligar);
+        console.log('[Bot Ranking Historico] ' + (desligar ? 'Desligado.' : 'Ligado — janela 3h.'));
+        return desligar ? 'historico OFF' : 'historico ON';
+      }
+
+      function lerHistoricoRyous() {
+        try {
+          var raw = localStorage.getItem(HISTORICO_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return [];
+      }
+
+      function salvarHistoricoRyous(lista) {
+        try { localStorage.setItem(HISTORICO_KEY, JSON.stringify(lista)); } catch (e) {}
+      }
+
+      function limparHistoricoExpirado(lista) {
+        var limite = Date.now() - HISTORICO_JANELA_MS;
+        var out = [];
+        for (var i = 0; i < lista.length; i++) {
+          if (lista[i] && lista[i].ts >= limite) out.push(lista[i]);
+        }
+        return out;
+      }
+
+      function jogadoresMapFiltradoMinNivel(map, minNivel) {
+        var out = {};
+        for (var k in map) {
+          if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
+          var j = map[k];
+          if (!j || j.nivel === null || j.nivel < minNivel) continue;
+          if (j.ryous === null || j.ryous === undefined) continue;
+          out[k] = {
+            nome: j.nome,
+            nivel: j.nivel,
+            vitorias: j.vitorias,
+            derrotas: j.derrotas,
+            ryous: j.ryous,
+            ryousTexto: j.ryousTexto
+          };
+        }
+        return out;
+      }
+
+      function appendHistoricoCiclo(parcialMap, params) {
+        if (!rankingHistoricoAtivo()) return;
+        var filtrado = jogadoresMapFiltradoMinNivel(parcialMap, params.minNivel);
+        var qtd = Object.keys(filtrado).length;
+        if (!qtd) return;
+        var lista = limparHistoricoExpirado(lerHistoricoRyous());
+        lista.push({ ts: Date.now(), jogadores: filtrado });
+        lista.sort(function(a, b) { return a.ts - b.ts; });
+        lista = limparHistoricoExpirado(lista);
+        salvarHistoricoRyous(lista);
+        console.log('[Bot Ranking Historico] +' + qtd + ' jogadores | janela 3h: ' +
+          lista.length + ' ciclo(s) guardado(s).');
+      }
+
+      function encontrarSnapshotHistoricoReferencia(minutosAtras) {
+        var lista = limparHistoricoExpirado(lerHistoricoRyous());
+        if (!lista.length) return null;
+        var alvo = Date.now() - minutosAtras * 60000;
+        var escolhido = null;
+        for (var i = 0; i < lista.length; i++) {
+          if (lista[i].ts <= alvo) escolhido = lista[i];
+          else break;
+        }
+        if (!escolhido) escolhido = lista[0];
+        return escolhido;
+      }
+
+      function detectarRyousSuspeitosHistorico(jogadores, params) {
+        if (!rankingHistoricoAtivo()) return [];
+        var minHist = params.historicoMin != null ? params.historicoMin : HISTORICO_JANELA_MIN;
+        var ref = encontrarSnapshotHistoricoReferencia(minHist);
+        if (!ref || !ref.jogadores) return [];
+        var snapMap = ref.jogadores;
+        var minutosRef = Math.max(1, Math.round((Date.now() - ref.ts) / 60000));
+        var out = [];
+        for (var i = 0; i < jogadores.length; i++) {
+          var j = jogadores[i];
+          var prev = j && j.nome ? snapMap[j.nome.toLowerCase()] : null;
+          var ev = avaliarJogadorWatch(j, prev, params);
+          if (ev.status !== 'suspeito') continue;
+          out.push({
+            pos: j.pos,
+            nome: j.nome,
+            nivel: j.nivel,
+            vitorias: j.vitorias,
+            derrotas: j.derrotas,
+            ryous: j.ryous,
+            ryousTexto: j.ryousTexto,
+            deltaRyous: ev.deltaRyous,
+            ryousAntes: ev.ryousAntes,
+            ryousAntesTexto: ev.ryousAntesTexto,
+            tipo: 'historico',
+            historicoMinutos: minutosRef,
+            historicoTs: ref.ts
+          });
+        }
+        return out;
+      }
+
+      function mesclarSuspeitosWatch(ciclo, historico) {
+        var map = {};
+        var i, s, k;
+        for (i = 0; i < ciclo.length; i++) {
+          s = ciclo[i];
+          k = s.nome.toLowerCase();
+          s.tipo = 'ciclo';
+          map[k] = s;
+        }
+        for (i = 0; i < historico.length; i++) {
+          s = historico[i];
+          k = s.nome.toLowerCase();
+          if (map[k]) {
+            map[k].tipo = 'ciclo+historico';
+            map[k].deltaHistorico = s.deltaRyous;
+            map[k].historicoMinutos = s.historicoMinutos;
+            if ((s.deltaRyous || 0) > (map[k].deltaRyous || 0)) {
+              map[k].deltaRyousHistorico = s.deltaRyous;
+              map[k].ryousAntesHistorico = s.ryousAntesTexto;
+            }
+          } else {
+            map[k] = s;
+          }
+        }
+        var out = [];
+        for (k in map) {
+          if (Object.prototype.hasOwnProperty.call(map, k)) out.push(map[k]);
+        }
+        return out;
+      }
+
+      function botRankingHistoricoLimpar() {
+        try { localStorage.removeItem(HISTORICO_KEY); } catch (e) {}
+        console.log('[Bot Ranking Historico] Historico limpo.');
+        return 'limpo';
+      }
+
+      function botRankingHistoricoJogador(nome) {
+        if (!nome) {
+          console.warn('[Bot Ranking Historico] Informe o nome: botRankingHistoricoJogador("Nome")');
+          return [];
+        }
+        var k = String(nome).trim().toLowerCase();
+        var lista = limparHistoricoExpirado(lerHistoricoRyous());
+        var linhas = [];
+        console.log('%c[Historico] ' + nome + ' — janela 3h (' + lista.length + ' ciclo(s))',
+          'color:#9b59b6;font-weight:bold');
+        for (var i = 0; i < lista.length; i++) {
+          var snap = lista[i];
+          var j = snap.jogadores[k];
+          if (!j) continue;
+          var dt = new Date(snap.ts).toLocaleString('pt-BR');
+          var linha = dt + ' | ryous ' + (j.ryousTexto || formatarNumeroBr(j.ryous)) +
+            ' | vit ' + j.vitorias + ' | der ' + j.derrotas + ' | lvl ' + j.nivel;
+          console.log('  ' + linha);
+          linhas.push({ ts: snap.ts, jogador: j, texto: linha });
+        }
+        if (!linhas.length) {
+          console.log('[Historico] Nenhuma leitura para "' + nome + '" na janela de 3h.');
+        }
+        return linhas;
+      }
+
+      function botRankingHistoricoTop(opcoes) {
+        var opts = opcoes || {};
+        var min = opts.min != null ? parseInt(String(opts.min), 10) : HISTORICO_JANELA_MIN;
+        if (isNaN(min) || min < 5) min = HISTORICO_JANELA_MIN;
+        var limite = opts.limite != null ? parseInt(String(opts.limite), 10) : 15;
+        if (isNaN(limite) || limite < 1) limite = 15;
+
+        var ref = encontrarSnapshotHistoricoReferencia(min);
+        var atualSnap = lerSnapshotRyous();
+        if (!ref || !ref.jogadores || !atualSnap.jogadores) {
+          console.log('[Historico Top] Sem snapshot de referencia ou atual vazio.');
+          return [];
+        }
+
+        var minutosRef = Math.max(1, Math.round((Date.now() - ref.ts) / 60000));
+        var deltas = [];
+        for (var k in atualSnap.jogadores) {
+          if (!Object.prototype.hasOwnProperty.call(atualSnap.jogadores, k)) continue;
+          var cur = atualSnap.jogadores[k];
+          var prev = ref.jogadores[k];
+          if (!prev || cur.ryous === null || prev.ryous === null) continue;
+          if (typeof cur.vitorias === 'number' && typeof prev.vitorias === 'number' &&
+              typeof cur.derrotas === 'number' && typeof prev.derrotas === 'number') {
+            if (cur.vitorias !== prev.vitorias || cur.derrotas !== prev.derrotas) continue;
+          }
+          var d = cur.ryous - prev.ryous;
+          if (d > 0) {
+            deltas.push({
+              nome: cur.nome,
+              delta: d,
+              ryous: cur.ryous,
+              ryousTexto: cur.ryousTexto || formatarNumeroBr(cur.ryous),
+              antes: prev.ryous,
+              antesTexto: prev.ryousTexto || formatarNumeroBr(prev.ryous)
+            });
+          }
+        }
+        deltas.sort(function(a, b) { return b.delta - a.delta; });
+        console.log('%c[Historico Top] maiores deltas vs ~' + minutosRef + 'min atras',
+          'color:#9b59b6;font-weight:bold');
+        for (var i = 0; i < Math.min(limite, deltas.length); i++) {
+          var x = deltas[i];
+          console.log('  ' + (i + 1) + '. ' + x.nome + ' | +' + formatarNumeroBr(x.delta) +
+            ' (' + x.antesTexto + ' -> ' + x.ryousTexto + ')');
+        }
+        if (!deltas.length) {
+          console.log('[Historico Top] Nenhum delta positivo com vit/der estaveis.');
+        }
+        return deltas.slice(0, limite);
       }
 
       function lerParcialWatch() {
@@ -845,6 +1096,8 @@
           nivel: suspeito.nivel,
           vitorias: suspeito.vitorias,
           derrotas: suspeito.derrotas,
+          tipo: suspeito.tipo || 'ciclo',
+          historicoMinutos: suspeito.historicoMinutos || null,
           ts: Date.now()
         };
 
@@ -1163,9 +1416,21 @@
           ];
           for (var i = 0; i < suspeitos.length; i++) {
             var s = suspeitos[i];
+            var tipoTxt = s.tipo === 'historico'
+              ? ' [hist ~' + (s.historicoMinutos || '?') + 'min]'
+              : (s.tipo === 'ciclo+historico'
+                ? ' [ciclo+hist ~' + (s.historicoMinutos || '?') + 'min]'
+                : ' [ciclo]');
+            var deltaTxt = '**+' + formatarNumeroBr(s.deltaRyous) + '**';
+            if (s.tipo === 'historico' || (s.tipo === 'ciclo+historico' && s.deltaRyousHistorico)) {
+              deltaTxt = '**+' + formatarNumeroBr(s.deltaRyous) + '**' +
+                (s.deltaRyousHistorico && s.deltaRyousHistorico !== s.deltaRyous
+                  ? ' (hist +' + formatarNumeroBr(s.deltaRyousHistorico) + ')'
+                  : '');
+            }
             linhas.push(
-              '• **' + s.nome + '** | lvl ' + s.nivel +
-              ' | **+' + formatarNumeroBr(s.deltaRyous) + '** (' +
+              '• **' + s.nome + '**' + tipoTxt + ' | lvl ' + s.nivel +
+              ' | ' + deltaTxt + ' (' +
               s.ryousAntesTexto + ' → ' + s.ryousTexto + ')' +
               ' | vit ' + s.vitorias + ' | der ' + s.derrotas
             );
@@ -1209,7 +1474,8 @@
           ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous) +
           (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
-          (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
+          (rankingPerfilAtivo() ? ' | PERFIL ON' : '') +
+          (rankingHistoricoAtivo() ? ' | HIST 3h ON' : ''));
       }
 
       function agendarProximoWatchCiclo(params) {
@@ -1235,6 +1501,7 @@
 
         if (estado.modo === 'baseline') {
           salvarSnapshotRyous(snapshot);
+          appendHistoricoCiclo(parcial, params);
           salvarParcialWatch({});
           try { sessionStorage.removeItem(WATCH_JA_LEU_KEY); } catch (e) {}
           console.log('[Bot Ranking Watch] Baseline salvo — ' + qtd + ' jogadores.');
@@ -1243,6 +1510,7 @@
         }
 
         salvarSnapshotRyous(snapshot);
+        appendHistoricoCiclo(parcial, params);
         salvarParcialWatch({});
         try { sessionStorage.removeItem(WATCH_JA_LEU_KEY); } catch (e) {}
         console.log('[Bot Ranking Watch] Compare concluido — snapshot atualizado (' + qtd + ' jogadores).');
@@ -1278,7 +1546,9 @@
           var snap = lerSnapshotRyous();
           var snapMap = (snap && snap.jogadores) ? snap.jogadores : {};
           logComparacoesDebugWatch(jogadores, snapMap, params, offset, 'compare');
-          var suspeitos = detectarRyousSuspeitos(jogadores, snapMap, params);
+          var suspeitosCiclo = detectarRyousSuspeitos(jogadores, snapMap, params);
+          var suspeitosHist = detectarRyousSuspeitosHistorico(jogadores, params);
+          var suspeitos = mesclarSuspeitosWatch(suspeitosCiclo, suspeitosHist);
           if (suspeitos.length) {
             enviarDiscordRyousSuspeitos(offset, suspeitos, params);
             salvarSuspeitosFirebaseFila(suspeitos);
@@ -1357,7 +1627,8 @@
           Math.round(params.intervaloMs / 60000) + ' min', 'color:#e67e22;font-weight:bold');
         console.log('[Bot Ranking Watch] maxRyous=' + formatarNumeroBr(params.maxRyous) +
           ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous) +
-          ' | minNivel=' + params.minNivel);
+          ' | minNivel=' + params.minNivel +
+          (rankingHistoricoAtivo() ? ' | historico 3h ON' : ''));
         iniciarCicloWatchScan('baseline');
         atualizarPainelRanking();
         return true;
@@ -1386,6 +1657,8 @@
           ativo: watchAtivo(),
           debug: rankingDebugAtivo(),
           perfil: rankingPerfilAtivo(),
+          historico: rankingHistoricoAtivo(),
+          historicoCiclos: limparHistoricoExpirado(lerHistoricoRyous()).length,
           fase: estado.fase,
           modo: estado.modo,
           aguardarAte: estado.aguardarAte,
@@ -1444,6 +1717,12 @@
         console.log('  botRankingDebugPagina(false)       — debug OFF');
         console.log('  botRankingPerfilRyous(true)        — ryous/vit/der do perfil (lvl no ranking)');
         console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
+        console.log('  botRankingHistorico()              — historico ON/OFF (padrao: ON, janela 3h)');
+        console.log('  botRankingHistorico(false)         — desliga historico');
+        console.log('  botRankingHistoricoJogador("Nome") — timeline do player (3h)');
+        console.log('  botRankingHistoricoTop()           — maiores deltas vs ~3h atras');
+        console.log('  botRankingHistoricoLimpar()        — zera historico');
+        console.log('  botRankingWatchRyous({historicoMin:120}) — compara vs ~2h atras (dentro da janela 3h)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
@@ -1602,7 +1881,8 @@
             el.dataset.botServerBase,
             'Bot: <b>ranking</b> (' + (scanAtivo() ? 'mult ON' : 'mult off') + ' | ' + watchTxt +
               (rankingDebugAtivo() ? ' | debug ON' : '') +
-              (rankingPerfilAtivo() ? ' | perfil ON' : '') + ')',
+              (rankingPerfilAtivo() ? ' | perfil ON' : '') +
+              (rankingHistoricoAtivo() ? ' | hist 3h' : '') + ')',
             'Principal: ' + login,
             'Console: botRankingScan() | botRankingWatchRyous() | botRankingPerfilRyous(true/false)'
           ].join('<br>');
@@ -1620,6 +1900,10 @@
       window.botRankingWatchStatus = statusWatchRyous;
       window.botRankingDebugPagina = botRankingDebugPagina;
       window.botRankingPerfilRyous = botRankingPerfilRyous;
+      window.botRankingHistorico = botRankingHistorico;
+      window.botRankingHistoricoJogador = botRankingHistoricoJogador;
+      window.botRankingHistoricoTop = botRankingHistoricoTop;
+      window.botRankingHistoricoLimpar = botRankingHistoricoLimpar;
       window.__BOT_RANKING_OK__ = true;
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
 
