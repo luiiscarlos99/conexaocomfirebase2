@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.21
+// @version      1.22
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.21';
+      var SCRIPT_VERSAO = '1.22';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -1059,34 +1059,135 @@
         return 'limpo';
       }
 
+      function textoDeltaHistoricoJogador(prev, cur, fonte) {
+        var ryC = obterRyousCompare(cur, fonte);
+        var ryP = obterRyousCompare(prev, fonte);
+        if (ryC === null || ryP === null) return fonte + ': (sem dados)';
+        var d = ryC - ryP;
+        var vdC = obterVitDerCompare(cur, fonte);
+        var vdP = obterVitDerCompare(prev, fonte);
+        var vitOk = typeof vdC.vit === 'number' && typeof vdP.vit === 'number' &&
+          typeof vdC.der === 'number' && typeof vdP.der === 'number' &&
+          vdC.vit === vdP.vit && vdC.der === vdP.der;
+        var sinal = d > 0 ? '+' : '';
+        return fonte + ': ' + sinal + formatarNumeroBr(d) + ' (' +
+          obterRyousTextoCompare(prev, fonte) + '->' + obterRyousTextoCompare(cur, fonte) + ')' +
+          (vitOk ? ' | vit/der ok' : ' | vit/der mudou');
+      }
+
+      function descreverCompareJogadorHistorico(prev, cur, params, rotulo) {
+        prev = migrarJogadorLegado(prev);
+        cur = migrarJogadorLegado(cur);
+        if (!prev || !cur) return null;
+        var ev = avaliarJogadorWatch(cur, prev, params);
+        var fonte = ev.fonteCompare || escolherFonteCompare(prev, cur);
+        var linhas = [];
+        var titulo = rotulo ? ('    compare ' + rotulo + ' [' + fonte + ']: ') :
+          ('    compare [' + fonte + ']: ');
+        if (ev.status === 'suspeito') {
+          linhas.push(titulo + '★ SUSPEITO | delta +' + formatarNumeroBr(ev.deltaRyous));
+        } else {
+          var deltaStr = ev.deltaRyous != null ? formatarNumeroBr(ev.deltaRyous) : '?';
+          linhas.push(titulo + '— ' + ev.motivo + ' | delta ' + deltaStr);
+        }
+        if (temRyousRanking(cur) && temRyousRanking(prev)) {
+          linhas.push('    ' + textoDeltaHistoricoJogador(prev, cur, 'ranking'));
+        }
+        if (temRyousPerfil(cur) && temRyousPerfil(prev)) {
+          linhas.push('    ' + textoDeltaHistoricoJogador(prev, cur, 'perfil'));
+        }
+        return { ev: ev, fonte: fonte, linhas: linhas };
+      }
+
       function botRankingHistoricoJogador(nome) {
         if (!nome) {
           console.warn('[Bot Ranking Historico] Informe o nome: botRankingHistoricoJogador("Nome")');
-          return [];
+          return { leituras: [], compares: [] };
         }
         var k = String(nome).trim().toLowerCase();
         var lista = limparHistoricoExpirado(lerHistoricoRyous());
-        var linhas = [];
+        var params = lerParamsWatch();
+        var leituras = [];
+        var compares = [];
+
         console.log('%c[Historico] ' + nome + ' — janela 3h (' + lista.length + ' ciclo(s))',
           'color:#9b59b6;font-weight:bold');
+        console.log('[Historico] filtros compare: lvl>=' + params.minNivel +
+          ' | delta>=' + formatarNumeroBr(params.minDeltaRyous));
+
         for (var i = 0; i < lista.length; i++) {
           var snap = lista[i];
           var j = snap.jogadores[k];
           if (!j) continue;
-          var dt = new Date(snap.ts).toLocaleString('pt-BR');
           j = migrarJogadorLegado(j);
+          var dt = new Date(snap.ts).toLocaleString('pt-BR');
           var txtRanking = temRyousRanking(j)
             ? ('ranking ' + (j.ryousRankingTexto || formatarNumeroBr(j.ryousRanking))) : 'ranking ?';
           var txtPerfil = temRyousPerfil(j)
             ? ('perfil ' + (j.ryousPerfilTexto || formatarNumeroBr(j.ryousPerfil))) : 'perfil —';
           var linha = dt + ' | ' + txtRanking + ' | ' + txtPerfil + ' | lvl ' + j.nivel;
           console.log('  ' + linha);
-          linhas.push({ ts: snap.ts, jogador: j, texto: linha });
+          leituras.push({ ts: snap.ts, jogador: j, texto: linha });
+
+          if (leituras.length >= 2) {
+            var prevJ = leituras[leituras.length - 2].jogador;
+            var rel = descreverCompareJogadorHistorico(prevJ, j, params, 'vs ciclo anterior');
+            if (rel) {
+              for (var li = 0; li < rel.linhas.length; li++) console.log(rel.linhas[li]);
+              compares.push({
+                ts: snap.ts,
+                rotulo: 'vs ciclo anterior',
+                ev: rel.ev,
+                fonte: rel.fonte
+              });
+            }
+          }
         }
-        if (!linhas.length) {
+
+        if (!leituras.length) {
           console.log('[Historico] Nenhuma leitura para "' + nome + '" na janela de 3h.');
+          return { leituras: [], compares: [] };
         }
-        return linhas;
+
+        var primeiro = leituras[0];
+        var ultimo = leituras[leituras.length - 1];
+        var minSpan = Math.max(1, Math.round((ultimo.ts - primeiro.ts) / 60000));
+        console.log('');
+        console.log('%c[Historico] Resumo compare vs primeiro registro (~' + minSpan + 'min)',
+          'color:#9b59b6;font-weight:bold');
+        var resumoHist = descreverCompareJogadorHistorico(primeiro.jogador, ultimo.jogador, params, 'periodo');
+        if (resumoHist) {
+          for (var ri = 0; ri < resumoHist.linhas.length; ri++) console.log(resumoHist.linhas[ri]);
+          compares.push({
+            ts: ultimo.ts,
+            rotulo: 'vs primeiro (~' + minSpan + 'min)',
+            ev: resumoHist.ev,
+            fonte: resumoHist.fonte
+          });
+        }
+
+        var snapAtual = lerSnapshotRyous();
+        var curAtual = snapAtual.jogadores ? migrarJogadorLegado(snapAtual.jogadores[k]) : null;
+        if (curAtual && ultimo.ts !== snapAtual.ts) {
+          console.log('');
+          console.log('%c[Historico] Compare vs snapshot atual',
+            'color:#9b59b6;font-weight:bold');
+          var vsAtual = descreverCompareJogadorHistorico(ultimo.jogador, curAtual, params, 'vs snapshot atual');
+          if (vsAtual) {
+            for (var ai = 0; ai < vsAtual.linhas.length; ai++) console.log(vsAtual.linhas[ai]);
+            compares.push({
+              ts: snapAtual.ts || Date.now(),
+              rotulo: 'vs snapshot atual',
+              ev: vsAtual.ev,
+              fonte: vsAtual.fonte
+            });
+          }
+        } else if (curAtual && leituras.length === 1) {
+          console.log('');
+          console.log('[Historico] Snapshot atual = unica leitura no historico.');
+        }
+
+        return { leituras: leituras, compares: compares, params: params };
       }
 
       function calcularDeltaRyousFonte(cur, prev, fonte) {
@@ -2126,7 +2227,7 @@
         console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
         console.log('  botRankingHistorico()              — historico ON/OFF (padrao: ON, janela 3h)');
         console.log('  botRankingHistorico(false)         — desliga historico');
-        console.log('  botRankingHistoricoJogador("Nome") — timeline do player (3h)');
+        console.log('  botRankingHistoricoJogador("Nome") — timeline + compare ciclo a ciclo');
         console.log('  botRankingHistoricoTop()           — maiores deltas vs ~3h atras');
         console.log('  botRankingHistoricoDiff(60)        — diff ranking+perfil vs ~60min');
         console.log('  botRankingHistoricoDiff(120,{minDelta:100000,limite:30})');
