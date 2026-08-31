@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.29
+// @version      3.40
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -684,8 +684,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.39';
-  var SCRIPT_ATUALIZADO = '30/08/2026 22:35';
+  var SCRIPT_VERSAO = '3.40';
+  var SCRIPT_ATUALIZADO = '31/08/2026 20:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3061,21 +3061,48 @@
     try { sessionStorage.removeItem(BOT_DOUJUTSU_ATIVAR_KEY); } catch (e) {}
   }
 
+  function sidebarTemLinkReativeDoujutsu(col) {
+    if (!col) return false;
+    var links = col.querySelectorAll('a[href*="status"]');
+    for (var i = 0; i < links.length; i++) {
+      if (/\breative\b/i.test(links[i].textContent || '')) return true;
+    }
+    return false;
+  }
+
+  function interpretarEstadoDoujutsuSidebar(val, col) {
+    var texto = (val || '').replace(/\s+/g, ' ').trim();
+    var expirado = /\bexpirado\b/i.test(texto) || /\breative\b/i.test(texto) ||
+      sidebarTemLinkReativeDoujutsu(col);
+    if (expirado) {
+      return { ativo: false, expirado: true, texto: texto };
+    }
+    if (/ativo\s+at[eé]/i.test(texto) || /\bativo\b/i.test(texto)) {
+      return { ativo: true, expirado: false, texto: texto };
+    }
+    return { ativo: false, expirado: false, texto: texto };
+  }
+
   function extrairDoujutsuSidebar() {
-    var raizes = [];
     var col = document.getElementById('col_esquerda');
+    var raizes = [];
     if (col) raizes.push(col);
     if (document.body) raizes.push(document.body);
 
     for (var r = 0; r < raizes.length; r++) {
-      var texto = raizes[r].innerText || raizes[r].textContent || '';
-      var m = texto.match(/Doujutsu:\s*([^\n]+)/i);
+      var raiz = raizes[r];
+      var textoPagina = raiz.innerText || raiz.textContent || '';
+      var m = textoPagina.match(/Doujutsu:\s*([^\n]+)/i);
       if (!m) continue;
-      var val = m[1].trim();
-      var ativo = /ativo\s+at[eé]/i.test(val);
-      return { encontrado: true, ativo: ativo, texto: val };
+      var estado = interpretarEstadoDoujutsuSidebar(m[1], col);
+      return {
+        encontrado: true,
+        ativo: estado.ativo,
+        expirado: estado.expirado,
+        texto: estado.texto
+      };
     }
-    return { encontrado: false, ativo: false, texto: '' };
+    return { encontrado: false, ativo: false, expirado: false, texto: '' };
   }
 
   function doujutsuEstaAtivo() {
@@ -4009,6 +4036,7 @@
     var info = extrairDoujutsuSidebar();
     if (info.ativo) return 'ATIVO — ' + info.texto;
     if (doujutsuAtivarPendente()) return 'ativando em /status...';
+    if (info.expirado) return 'ligado — expirado (10k ryous)';
     return 'ligado — inativo (10k ryous)';
   }
 
@@ -6814,7 +6842,7 @@
               return false;
             }
             if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
-            return true;
+              return true;
             }
             return ehPaginaCombateCacadas(urlAtual);
           },
@@ -6930,8 +6958,8 @@
             }
 
             if (processarNinjaNaoEncontradoCacadas()) {
-                  return true;
-                }
+              return true;
+            }
 
             if (!gateCacadasLiberado()) {
               console.log('[Caçadas] Gate nao liberado — redirecionando ao portao...');
@@ -6951,8 +6979,8 @@
 
             if (modo === 'firebase_fila' && alvoNome) {
               if (executarCacadaPorNome(alvoNome)) {
-                  return true;
-                }
+                return true;
+              }
               console.warn('[Firebase Fila] Formulario por_nome indisponivel — tentando caçada por nivel...');
             }
 
