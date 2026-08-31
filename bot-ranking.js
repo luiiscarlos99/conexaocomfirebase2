@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.12
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.11';
+      var SCRIPT_VERSAO = '1.12';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
@@ -669,41 +669,284 @@
         });
       }
 
+      function avaliarJogadorWatch(j, prev, params) {
+        if (!j) return { status: 'descartado', motivo: 'jogador invalido' };
+        if (j.ryous === null) {
+          return { status: 'descartado', motivo: 'ryous nao parseado', ryousTexto: j.ryousTexto || '?' };
+        }
+        if (j.ryous > params.maxRyous) {
+          return {
+            status: 'descartado', motivo: 'ryous acima do max',
+            ryous: j.ryous, maxRyous: params.maxRyous
+          };
+        }
+        if (j.nivel === null || j.nivel < params.minNivel) {
+          return {
+            status: 'descartado', motivo: 'nivel abaixo do min',
+            nivel: j.nivel, minNivel: params.minNivel
+          };
+        }
+        if (!prev || prev.ryous === null) {
+          return { status: 'descartado', motivo: 'sem snapshot anterior', nome: j.nome };
+        }
+
+        var vitAnt = prev.vitorias;
+        var derAnt = prev.derrotas;
+        var vitAt = j.vitorias;
+        var derAt = j.derrotas;
+        if (typeof vitAnt !== 'number' || typeof derAnt !== 'number') {
+          return {
+            status: 'descartado', motivo: 'snapshot vit/der invalido',
+            vitAnt: vitAnt, derAnt: derAnt
+          };
+        }
+        if (typeof vitAt !== 'number' || typeof derAt !== 'number') {
+          return {
+            status: 'descartado', motivo: 'vit/der invalido na pagina',
+            vitAt: vitAt, derAt: derAt
+          };
+        }
+        if (vitAnt !== vitAt || derAnt !== derAt) {
+          return {
+            status: 'descartado', motivo: 'vit/der mudou',
+            vitAnt: vitAnt, vitAt: vitAt, derAnt: derAnt, derAt: derAt
+          };
+        }
+
+        var delta = j.ryous - prev.ryous;
+        if (delta >= params.minDeltaRyous) {
+          return {
+            status: 'suspeito', motivo: 'delta ok', deltaRyous: delta,
+            ryousAntes: prev.ryous,
+            ryousAntesTexto: prev.ryousTexto || formatarNumeroBr(prev.ryous)
+          };
+        }
+        if (delta > 0) {
+          return {
+            status: 'descartado', motivo: 'delta abaixo do min',
+            deltaRyous: delta, minDeltaRyous: params.minDeltaRyous
+          };
+        }
+        if (delta < 0) {
+          return { status: 'descartado', motivo: 'ryous caiu', deltaRyous: delta };
+        }
+        return { status: 'descartado', motivo: 'ryous igual', deltaRyous: 0 };
+      }
+
       function detectarRyousSuspeitos(jogadores, snapshotMap, params) {
         var out = [];
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
-          if (!j || j.ryous === null || j.ryous > params.maxRyous) continue;
-          if (j.nivel === null || j.nivel < params.minNivel) continue;
-
-          var prev = snapshotMap[j.nome.toLowerCase()];
-          if (!prev || prev.ryous === null) continue;
-
-          var vitAnt = prev.vitorias;
-          var derAnt = prev.derrotas;
-          var vitAt = j.vitorias;
-          var derAt = j.derrotas;
-          if (typeof vitAnt !== 'number' || typeof derAnt !== 'number') continue;
-          if (typeof vitAt !== 'number' || typeof derAt !== 'number') continue;
-          if (vitAnt !== vitAt || derAnt !== derAt) continue;
-
-          var delta = j.ryous - prev.ryous;
-          if (delta >= params.minDeltaRyous) {
-            out.push({
-              pos: j.pos,
-              nome: j.nome,
-              nivel: j.nivel,
-              vitorias: vitAt,
-              derrotas: derAt,
-              ryous: j.ryous,
-              ryousTexto: j.ryousTexto,
-              deltaRyous: delta,
-              ryousAntes: prev.ryous,
-              ryousAntesTexto: prev.ryousTexto || formatarNumeroBr(prev.ryous)
-            });
-          }
+          var prev = j && j.nome ? snapshotMap[j.nome.toLowerCase()] : null;
+          var ev = avaliarJogadorWatch(j, prev, params);
+          if (ev.status !== 'suspeito') continue;
+          out.push({
+            pos: j.pos,
+            nome: j.nome,
+            nivel: j.nivel,
+            vitorias: j.vitorias,
+            derrotas: j.derrotas,
+            ryous: j.ryous,
+            ryousTexto: j.ryousTexto,
+            deltaRyous: ev.deltaRyous,
+            ryousAntes: ev.ryousAntes,
+            ryousAntesTexto: ev.ryousAntesTexto
+          });
         }
         return out;
+      }
+
+      function contarLinhasRankingParseaveis() {
+        var linhas = 0;
+        var falhas = 0;
+        var tabelas = document.querySelectorAll('table.box_largura_100, table');
+        for (var t = 0; t < tabelas.length; t++) {
+          var tb = tabelas[t];
+          var header = tb.querySelector('tr.box_preto_tarja');
+          if (!header) continue;
+          if ((header.textContent || '').toLowerCase().indexOf('player') === -1) continue;
+          var rows = tb.querySelectorAll('tr');
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].classList.contains('box_preto_tarja')) continue;
+            var tds = rows[i].querySelectorAll('td');
+            if (tds.length < 4) continue;
+            if (!rows[i].querySelector('a[href*="jogador"]')) continue;
+            linhas++;
+            if (!parseLinhaRanking(rows[i])) falhas++;
+          }
+        }
+        return { linhas: linhas, falhas: falhas };
+      }
+
+      function debugPaginaRanking(opcoes) {
+        var opts = opcoes || {};
+        var limite = opts.limite != null ? parseInt(opts.limite, 10) : 8;
+        if (isNaN(limite) || limite < 1) limite = 8;
+        var comparar = opts.comparar !== false;
+
+        console.log('%c[Bot Ranking Debug] v' + SCRIPT_VERSAO + ' — pagina atual', 'color:#1abc9c;font-weight:bold;font-size:13px');
+
+        var diag = diagDomRanking();
+        var offset = offsetRankingAtual();
+        var params = lerParamsWatch();
+        var estado = lerEstadoWatch();
+        var snap = lerSnapshotRyous();
+        var snapMap = (snap && snap.jogadores) ? snap.jogadores : {};
+        var qtdSnap = Object.keys(snapMap).length;
+        var contagemDom = contarLinhasRankingParseaveis();
+
+        console.log('[Debug] ranking=' + offset + ' | diag:', diag);
+        console.log('[Debug] linhas com link jogador: ' + contagemDom.linhas +
+          (contagemDom.falhas ? ' | parse falhou em ' + contagemDom.falhas : ''));
+        console.log('[Debug] watch=' + (watchAtivo() ? 'ON' : 'OFF') +
+          ' | fase=' + estado.fase + ' | modo=' + estado.modo);
+        console.log('[Debug] snapshot=' + qtdSnap + ' jogadores' +
+          (snap.ts ? ' (' + new Date(snap.ts).toLocaleString('pt-BR') + ')' : ''));
+        console.log('[Debug] filtros: lvl>=' + params.minNivel +
+          ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
+          ' | maxRyous=' + formatarNumeroBr(params.maxRyous));
+
+        var jogadores = extrairJogadoresPagina();
+        console.log('[Debug] extraidos: ' + jogadores.length + ' jogadores');
+
+        if (!jogadores.length) {
+          console.warn('[Debug] Nenhum jogador extraido — confira login e tabela Player/Ryous.');
+          return {
+            offset: offset, jogadores: 0, diag: diag, contagemDom: contagemDom,
+            params: params, estado: estado
+          };
+        }
+
+        console.log('%c[Debug] Amostra parse (primeiros ' + limite + ')', 'color:#1abc9c;font-weight:bold');
+        for (var i = 0; i < Math.min(limite, jogadores.length); i++) {
+          var j = jogadores[i];
+          console.log(
+            '  ' + (j.pos || '?') + ' | ' + j.nome +
+            ' | lvl ' + j.nivel + ' | vit ' + j.vitorias + ' | der ' + j.derrotas +
+            ' | ryous ' + (j.ryousTexto || '?') + ' -> ' + formatarNumeroBr(j.ryous)
+          );
+        }
+
+        var comSnap = 0;
+        for (var c = 0; c < jogadores.length; c++) {
+          if (snapMap[jogadores[c].nome.toLowerCase()]) comSnap++;
+        }
+        console.log('[Debug] com snapshot nesta pagina: ' + comSnap + '/' + jogadores.length);
+
+        if (!comparar || !qtdSnap) {
+          if (!qtdSnap) {
+            console.warn('[Debug] Snapshot vazio — rode botRankingWatchRyous() e aguarde o baseline completo.');
+          }
+          return {
+            offset: offset, jogadores: jogadores.length, comSnapshot: comSnap,
+            snapshotTotal: qtdSnap, amostra: jogadores.slice(0, limite),
+            params: params, estado: estado, contagemDom: contagemDom
+          };
+        }
+
+        var contagem = {};
+        var suspeitos = [];
+        var quase = [];
+        var vitDerExemplos = [];
+
+        for (var k = 0; k < jogadores.length; k++) {
+          var jk = jogadores[k];
+          var prev = snapMap[jk.nome.toLowerCase()];
+          var ev = avaliarJogadorWatch(jk, prev, params);
+          contagem[ev.motivo] = (contagem[ev.motivo] || 0) + 1;
+
+          if (ev.status === 'suspeito') {
+            suspeitos.push({ jogador: jk, avaliacao: ev });
+          } else if (ev.motivo === 'delta abaixo do min') {
+            quase.push({ jogador: jk, avaliacao: ev, prev: prev });
+          } else if (ev.motivo === 'vit/der mudou' && vitDerExemplos.length < 3) {
+            vitDerExemplos.push({ jogador: jk, avaliacao: ev });
+          }
+        }
+
+        console.log('%c[Debug] Resumo descartes (ranking=' + offset + ')', 'color:#1abc9c;font-weight:bold');
+        var keys = Object.keys(contagem).sort(function(a, b) {
+          return (contagem[b] || 0) - (contagem[a] || 0);
+        });
+        for (var ki = 0; ki < keys.length; ki++) {
+          console.log('  ' + contagem[keys[ki]] + 'x — ' + keys[ki]);
+        }
+
+        console.log('[Debug] suspeitos nesta pagina: ' + suspeitos.length);
+        for (var si = 0; si < suspeitos.length; si++) {
+          var s = suspeitos[si];
+          console.log(
+            '  ★ ' + s.jogador.nome + ' | +' + formatarNumeroBr(s.avaliacao.deltaRyous) +
+            ' (' + s.avaliacao.ryousAntesTexto + ' -> ' + s.jogador.ryousTexto + ')' +
+            ' | vit/der ' + s.jogador.vitorias + '/' + s.jogador.derrotas
+          );
+        }
+
+        if (!suspeitos.length && quase.length) {
+          quase.sort(function(a, b) { return b.avaliacao.deltaRyous - a.avaliacao.deltaRyous; });
+          console.log('[Debug] Quase-suspeitos (delta>0 mas < min ' + formatarNumeroBr(params.minDeltaRyous) + '):');
+          for (var qi = 0; qi < Math.min(5, quase.length); qi++) {
+            var q = quase[qi];
+            console.log(
+              '  ~ ' + q.jogador.nome + ' | +' + formatarNumeroBr(q.avaliacao.deltaRyous) +
+              ' | ' + (q.prev.ryousTexto || formatarNumeroBr(q.prev.ryous)) +
+              ' -> ' + q.jogador.ryousTexto
+            );
+          }
+        }
+
+        if (vitDerExemplos.length) {
+          console.log('[Debug] Exemplos vit/der mudou (primeiros ' + vitDerExemplos.length + '):');
+          for (var vi = 0; vi < vitDerExemplos.length; vi++) {
+            var vx = vitDerExemplos[vi];
+            var evx = vx.avaliacao;
+            console.log(
+              '  x ' + vx.jogador.nome + ' | vit ' + evx.vitAnt + '->' + evx.vitAt +
+              ' | der ' + evx.derAnt + '->' + evx.derAt +
+              ' | ryous ' + vx.jogador.ryousTexto
+            );
+          }
+        }
+
+        if (estado.modo === 'baseline') {
+          console.warn('[Debug] Modo baseline — alertas so no proximo ciclo compare.');
+        }
+
+        return {
+          offset: offset,
+          jogadores: jogadores.length,
+          comSnapshot: comSnap,
+          snapshotTotal: qtdSnap,
+          contagem: contagem,
+          suspeitos: suspeitos,
+          quase: quase.slice(0, 5),
+          params: params,
+          estado: estado,
+          contagemDom: contagemDom
+        };
+      }
+
+      function resumirDescartesWatch(jogadores, snapMap, params) {
+        var contagem = {};
+        for (var i = 0; i < jogadores.length; i++) {
+          var prev = snapMap[jogadores[i].nome.toLowerCase()];
+          var ev = avaliarJogadorWatch(jogadores[i], prev, params);
+          contagem[ev.motivo] = (contagem[ev.motivo] || 0) + 1;
+        }
+        return contagem;
+      }
+
+      function motivoMaisComumContagem(contagem) {
+        var topMotivo = '';
+        var topQtd = 0;
+        for (var k in contagem) {
+          if (!Object.prototype.hasOwnProperty.call(contagem, k)) continue;
+          if (contagem[k] > topQtd) {
+            topQtd = contagem[k];
+            topMotivo = k;
+          }
+        }
+        return { motivo: topMotivo, qtd: topQtd };
       }
 
       function enviarDiscordRyousSuspeitos(offset, suspeitos, params, callback) {
@@ -843,6 +1086,13 @@
           if (suspeitos.length) {
             enviarDiscordRyousSuspeitos(offset, suspeitos, params);
             salvarSuspeitosFirebaseFila(suspeitos);
+          } else if (jogadores.length && Object.keys(snapMap).length) {
+            var resumo = resumirDescartesWatch(jogadores, snapMap, params);
+            var top = motivoMaisComumContagem(resumo);
+            if (top.motivo) {
+              console.log('[Bot Ranking Watch] ranking=' + offset + ': 0 suspeitos — motivo mais comum: ' +
+                top.motivo + ' (' + top.qtd + '/' + jogadores.length + ')');
+            }
           }
           console.log('[Bot Ranking Watch] ranking=' + offset + ': ' + jogadores.length +
             ' jogadores, ' + suspeitos.length + ' suspeito(s).');
@@ -985,6 +1235,8 @@
         console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');
+        console.log('  botRankingDebugPagina()         — debug parse + descartes na pagina atual');
+        console.log('  botRankingDebugPagina({limite:12, comparar:false}) — so parse, sem snapshot');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
@@ -1140,7 +1392,7 @@
             el.dataset.botServerBase,
             'Bot: <b>ranking</b> (' + (scanAtivo() ? 'mult ON' : 'mult off') + ' | ' + watchTxt + ')',
             'Principal: ' + login,
-            'Console: botRankingScan() | botRankingWatchRyous() | botRankingParar() | botRankingWatchParar()'
+            'Console: botRankingScan() | botRankingWatchRyous() | botRankingDebugPagina()'
           ].join('<br>');
           return true;
         }
@@ -1154,6 +1406,7 @@
       window.botRankingWatchRyous = iniciarWatchRyous;
       window.botRankingWatchParar = pararWatchRyous;
       window.botRankingWatchStatus = statusWatchRyous;
+      window.botRankingDebugPagina = debugPaginaRanking;
       window.__BOT_RANKING_OK__ = true;
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
 
