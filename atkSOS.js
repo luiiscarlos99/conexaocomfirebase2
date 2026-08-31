@@ -130,6 +130,19 @@
     return true;
   }
 
+  function aplicarPrincipalLoginDoPainel(valor) {
+    var u = String(valor || '').trim();
+    if (!u) return false;
+    var anterior = lerUsuarioLoginArmazenado();
+    if (anterior === u) return true;
+    gravarUsuarioLoginParam(u);
+    console.log('[Bot] Principal alterado no painel: ' + (anterior || '?') + ' -> ' + u);
+    if (typeof recarregarCredenciaisLogin === 'function') recarregarCredenciaisLogin();
+    return true;
+  }
+
+  try { window.__BOT_APLICAR_PRINCIPAL__ = aplicarPrincipalLoginDoPainel; } catch (e) {}
+
   function gravarSenhaLoginParam(valor) {
     if (valor === null || valor === undefined) return false;
     var p = String(valor);
@@ -671,8 +684,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.38';
-  var SCRIPT_ATUALIZADO = '30/08/2026 22:20';
+  var SCRIPT_VERSAO = '3.39';
+  var SCRIPT_ATUALIZADO = '30/08/2026 22:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3835,6 +3848,36 @@
       .replace(/>/g, '&gt;');
   }
 
+  function escAttrPainelServer(s) {
+    return escHtmlPainelServer(s).replace(/"/g, '&quot;');
+  }
+
+  function montarHtmlLinhaPrincipalLogin(login) {
+    var val = escAttrPainelServer(login || '');
+    return 'Principal: <input type="text" id="bot-principal-login" value="' + val +
+      '" autocomplete="off" spellcheck="false"' +
+      ' title="Login principal — Enter ou sair do campo para salvar"' +
+      ' style="width:76px;max-width:42vw;font-size:9pt;padding:1px 4px;margin:0;' +
+      'border:1px solid #555;background:#1a1a1a;color:#eee;border-radius:2px;" />';
+  }
+
+  function instalarEditorPrincipalLogin(el) {
+    if (!el || el.dataset.botPrincipalEditor === '1') return;
+    el.dataset.botPrincipalEditor = '1';
+    el.addEventListener('focusout', function(ev) {
+      var t = ev.target;
+      if (!t || t.id !== 'bot-principal-login') return;
+      aplicarPrincipalLoginDoPainel(t.value);
+    });
+    el.addEventListener('keydown', function(ev) {
+      if (!ev.target || ev.target.id !== 'bot-principal-login') return;
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.target.blur();
+      }
+    });
+  }
+
   function obterNomeAutomacaoPainel() {
     var login = obterUsuarioLogin();
     var ativo = obterUsuarioExibicao();
@@ -4029,7 +4072,7 @@
     var linhas = [
       escHtmlPainelServer(el.dataset.botServerBase),
       'Bot: <b>' + escHtmlPainelServer(label) + '</b>',
-      'Principal: ' + escHtmlPainelServer(login)
+      montarHtmlLinhaPrincipalLogin(login)
     ];
 
     if (auto) {
@@ -4071,10 +4114,13 @@
     function aplicar() {
       var el = document.getElementById('serverID');
       if (!el) return false;
+      var inputAtivo = document.activeElement && document.activeElement.id === 'bot-principal-login';
+      if (inputAtivo) return true;
       el.style.lineHeight = '1.35';
       el.style.fontSize = '9pt';
       el.style.whiteSpace = 'normal';
       el.innerHTML = montarHtmlPainelServerID(el);
+      instalarEditorPrincipalLogin(el);
       return true;
     }
     if (aplicar()) return;

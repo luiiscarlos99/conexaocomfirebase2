@@ -198,6 +198,43 @@
     return s.substring(0, max - 3) + '...';
   }
 
+  function escAttrPainelBootstrap(s) {
+    return escHtmlPainelBootstrap(s).replace(/"/g, '&quot;');
+  }
+
+  function montarHtmlLinhaPrincipalLoginBootstrap(login) {
+    var val = escAttrPainelBootstrap(login || '');
+    return 'Principal: <input type="text" id="bot-principal-login" value="' + val +
+      '" autocomplete="off" spellcheck="false"' +
+      ' title="Login principal — Enter ou sair do campo para salvar"' +
+      ' style="width:76px;max-width:42vw;font-size:9pt;padding:1px 4px;margin:0;' +
+      'border:1px solid #555;background:#1a1a1a;color:#eee;border-radius:2px;" />';
+  }
+
+  function instalarEditorPrincipalLoginBootstrap(el) {
+    if (!el || el.dataset.botPrincipalEditor === '1') return;
+    el.dataset.botPrincipalEditor = '1';
+    el.addEventListener('focusout', function(ev) {
+      var t = ev.target;
+      if (!t || t.id !== 'bot-principal-login') return;
+      var u = String(t.value || '').trim();
+      if (!u) return;
+      if (window.__BOT_APLICAR_PRINCIPAL__) {
+        window.__BOT_APLICAR_PRINCIPAL__(u);
+        return;
+      }
+      gravarUsuarioLoginParam(u);
+      console.log('[Bot Bootstrap] Principal alterado no painel: ' + u);
+    });
+    el.addEventListener('keydown', function(ev) {
+      if (!ev.target || ev.target.id !== 'bot-principal-login') return;
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.target.blur();
+      }
+    });
+  }
+
   function ehPaginaRankingBootstrap() {
     try {
       var path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
@@ -210,6 +247,8 @@
     function aplicar() {
       var el = document.getElementById('serverID');
       if (!el) return false;
+      var inputAtivo = document.activeElement && document.activeElement.id === 'bot-principal-login';
+      if (inputAtivo) return true;
       if (!el.dataset.botServerBase) {
         var primeira = (el.textContent || '').split('\n')[0];
         el.dataset.botServerBase = primeira.replace(/\s*\|\s*Bot:.*$/i, '').trim();
@@ -224,10 +263,11 @@
         el.innerHTML = [
           escHtmlPainelBootstrap(el.dataset.botServerBase),
           'Bot: <b>manual</b> (ranking — sem acao)',
-          'Principal: ' + escHtmlPainelBootstrap(login),
+          montarHtmlLinhaPrincipalLoginBootstrap(login),
           '<span style="opacity:.65">—</span>',
           'Ranking: bot-ranking.js + botRankingScan()'
         ].join('<br>');
+        instalarEditorPrincipalLoginBootstrap(el);
         return true;
       }
 
@@ -251,7 +291,7 @@
       var linhas = [
         escHtmlPainelBootstrap(el.dataset.botServerBase),
         'Bot: <b>' + escHtmlPainelBootstrap(label) + '</b>',
-        'Principal: ' + escHtmlPainelBootstrap(login),
+        montarHtmlLinhaPrincipalLoginBootstrap(login),
         '<span style="opacity:.65">—</span>',
         'Nivel: ' + escHtmlPainelBootstrap(nivel) + ' | Rotacao: ' + escHtmlPainelBootstrap(rot),
         'Blacklist: ' + escHtmlPainelBootstrap(resumirBootstrap(bl || 'vazia', 64))
@@ -261,6 +301,7 @@
       el.style.fontSize = '9pt';
       el.style.whiteSpace = 'normal';
       el.innerHTML = linhas.join('<br>');
+      instalarEditorPrincipalLoginBootstrap(el);
       return true;
     }
     if (aplicar()) return;
