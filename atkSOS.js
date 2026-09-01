@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.45
+// @version      3.47
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.45';
-  var SCRIPT_ATUALIZADO = '01/09/2026 16:15';
+  var SCRIPT_VERSAO = '3.47';
+  var SCRIPT_ATUALIZADO = '01/09/2026 16:26';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -4270,6 +4270,24 @@
     return null;
   }
 
+  function detectarAvisoBatalhaRecente30mCacadas() {
+    var avisos = document.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('sofreu uma') === -1 || norm.indexOf('batalha') === -1) continue;
+      if (norm.indexOf('30 minutos') === -1) continue;
+      if (norm.indexOf('cacadas') === -1) continue;
+
+      return texto;
+    }
+
+    return null;
+  }
+
   function extrairNivelAbaixoMinimoCacadas() {
     var col = document.getElementById('col_direita') || document;
     var avisos = col.querySelectorAll('.avisos_erro');
@@ -4377,6 +4395,43 @@
     var nome = extrairJaAtacouHojeCacadas();
     if (!nome) return false;
     return processarFalhaCacadaPorNome(nome, 'ja atacou hoje');
+  }
+
+  function montarMensagemInimigoBatalhaRecente30m(nome, avisoTexto) {
+    var linhas = [
+      '**Caçadas — Inimigo em cooldown (30min)** — ' + obterUsuarioExibicao(),
+      'Inimigo: **' + (nome || '?') + '**',
+      'Motivo: batalha recente em caçadas — removido da fila Firebase; tentar outro alvo'
+    ];
+    if (avisoTexto) linhas.push('Aviso: ' + avisoTexto);
+    return linhas.join('\n');
+  }
+
+  function processarInimigoBatalhaRecente30mCacadas() {
+    var avisoTexto = detectarAvisoBatalhaRecente30mCacadas();
+    if (!avisoTexto) return false;
+
+    var nome = obterAlvoNomeCacadasSessao() || '(desconhecido)';
+    console.warn('[Caçadas] Inimigo em protecao 30min — ' + nome);
+    enviarDiscordTexto(montarMensagemInimigoBatalhaRecente30m(nome, avisoTexto));
+
+    if (cacadaAtualPorNomeFirebase()) {
+      removerAlvoFirebaseFilaConsumido(nome, 'batalha recente 30min');
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Firebase fila — batalha recente 30min: ' + nome, { rotacionarAutomacao: true });
+      return true;
+    }
+
+    if (cacadaAtualPorNomeBlacklist()) {
+      adicionarSkipBlacklistCacadas(nome);
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Blacklist — batalha recente 30min: ' + nome, { rotacionarAutomacao: true });
+      return true;
+    }
+
+    limparEstadoModoCacadas();
+    irParaPortaoRelatorios('Batalha recente 30min: ' + nome, { rotacionarAutomacao: true });
+    return true;
   }
 
   function processarNivelAbaixoMinimoCacadas() {
@@ -7073,6 +7128,10 @@
             }
 
             if (processarNivelAbaixoMinimoCacadas()) {
+              return true;
+            }
+
+            if (processarInimigoBatalhaRecente30mCacadas()) {
               return true;
             }
 
