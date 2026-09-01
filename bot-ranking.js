@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.24
+// @version      1.25
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,14 +19,10 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.24';
+      var SCRIPT_VERSAO = '1.25';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
-      var HISTORICO_KEY = 'BOT_RANKING_RYOUS_HISTORICO';
-      var HISTORICO_FLAG_KEY = 'BOT_RANKING_HISTORICO_ATIVO';
-      var HISTORICO_JANELA_MS = 10800000;
-      var HISTORICO_JANELA_MIN = 180;
       var DADOS_KEY = 'BOT_RANKING_MULT_RESULTADOS';
       var PARAMS_KEY = 'BOT_RANKING_SCAN_PARAMS';
       var JA_LEU_KEY = 'BOT_RANKING_JA_LEU_PAGINA';
@@ -59,7 +55,6 @@
         minDeltaDivergencia: 50000,
         minNivel: 74,
         intervaloMs: 600000,
-        historicoMin: HISTORICO_JANELA_MIN,
         discordCooldownMin: 30,
         vila: 'geral',
         view: 'personagens'
@@ -781,7 +776,6 @@
             if (saved.minDeltaDivergencia != null) base.minDeltaDivergencia = saved.minDeltaDivergencia;
             if (saved.minNivel != null) base.minNivel = saved.minNivel;
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
-            if (saved.historicoMin != null) base.historicoMin = saved.historicoMin;
             if (saved.discordCooldownMin != null) base.discordCooldownMin = saved.discordCooldownMin;
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
@@ -819,10 +813,6 @@
         if (extra.intervaloMin != null) {
           var im = parseFloat(String(extra.intervaloMin).replace(',', '.'));
           if (!isNaN(im) && im >= 1) base.intervaloMs = Math.round(im * 60000);
-        }
-        if (extra.historicoMin != null) {
-          var hm = parseInt(String(extra.historicoMin).replace(/\./g, ''), 10);
-          if (!isNaN(hm) && hm >= 5) base.historicoMin = hm;
         }
         if (extra.discordCooldownMin != null) {
           var dcm = parseInt(String(extra.discordCooldownMin).replace(/\./g, ''), 10);
@@ -882,55 +872,6 @@
         try { localStorage.setItem(WATCH_SNAPSHOT_KEY, JSON.stringify(snapshot)); } catch (e) {}
       }
 
-      function rankingHistoricoAtivo() {
-        try {
-          var v = localStorage.getItem(HISTORICO_FLAG_KEY);
-          if (v === null || v === '') return true;
-          return v === '1';
-        } catch (e) {}
-        return true;
-      }
-
-      function marcarRankingHistorico(ativo) {
-        try {
-          if (ativo) localStorage.setItem(HISTORICO_FLAG_KEY, '1');
-          else localStorage.setItem(HISTORICO_FLAG_KEY, '0');
-        } catch (e) {}
-        if (typeof atualizarPainelRanking === 'function') atualizarPainelRanking();
-      }
-
-      function botRankingHistorico(ligar) {
-        if (arguments.length === 0) {
-          return rankingHistoricoAtivo() ? 'historico ON' : 'historico OFF';
-        }
-        var desligar = ligar === false || ligar === 0 || ligar === '0' ||
-          ligar === 'off' || ligar === 'false';
-        marcarRankingHistorico(!desligar);
-        console.log('[Bot Ranking Historico] ' + (desligar ? 'Desligado.' : 'Ligado — janela 3h.'));
-        return desligar ? 'historico OFF' : 'historico ON';
-      }
-
-      function lerHistoricoRyous() {
-        try {
-          var raw = localStorage.getItem(HISTORICO_KEY);
-          if (raw) return JSON.parse(raw);
-        } catch (e) {}
-        return [];
-      }
-
-      function salvarHistoricoRyous(lista) {
-        try { localStorage.setItem(HISTORICO_KEY, JSON.stringify(lista)); } catch (e) {}
-      }
-
-      function limparHistoricoExpirado(lista) {
-        var limite = Date.now() - HISTORICO_JANELA_MS;
-        var out = [];
-        for (var i = 0; i < lista.length; i++) {
-          if (lista[i] && lista[i].ts >= limite) out.push(lista[i]);
-        }
-        return out;
-      }
-
       function jogadorParaSnapshot(j) {
         j = migrarJogadorLegado(j);
         return {
@@ -946,398 +887,6 @@
           vitoriasPerfil: typeof j.vitoriasPerfil === 'number' ? j.vitoriasPerfil : null,
           derrotasPerfil: typeof j.derrotasPerfil === 'number' ? j.derrotasPerfil : null
         };
-      }
-
-      function jogadoresMapFiltradoMinNivel(map, minNivel) {
-        var out = {};
-        for (var k in map) {
-          if (!Object.prototype.hasOwnProperty.call(map, k)) continue;
-          var j = migrarJogadorLegado(map[k]);
-          if (!j || j.nivel === null || j.nivel < minNivel) continue;
-          if (!temRyousRanking(j) && !temRyousPerfil(j)) continue;
-          out[k] = jogadorParaSnapshot(j);
-        }
-        return out;
-      }
-
-      function appendHistoricoCiclo(parcialMap, params) {
-        if (!rankingHistoricoAtivo()) return;
-        var filtrado = jogadoresMapFiltradoMinNivel(parcialMap, params.minNivel);
-        var qtd = Object.keys(filtrado).length;
-        if (!qtd) return;
-        var lista = limparHistoricoExpirado(lerHistoricoRyous());
-        lista.push({ ts: Date.now(), jogadores: filtrado });
-        lista.sort(function(a, b) { return a.ts - b.ts; });
-        lista = limparHistoricoExpirado(lista);
-        salvarHistoricoRyous(lista);
-        console.log('[Bot Ranking Historico] +' + qtd + ' jogadores | janela 3h: ' +
-          lista.length + ' ciclo(s) guardado(s).');
-      }
-
-      function encontrarSnapshotHistoricoReferencia(minutosAtras) {
-        var lista = limparHistoricoExpirado(lerHistoricoRyous());
-        if (!lista.length) return null;
-        var alvo = Date.now() - minutosAtras * 60000;
-        var escolhido = null;
-        for (var i = 0; i < lista.length; i++) {
-          if (lista[i].ts <= alvo) escolhido = lista[i];
-          else break;
-        }
-        if (!escolhido) escolhido = lista[0];
-        return escolhido;
-      }
-
-      function detectarRyousSuspeitosHistorico(jogadores, params) {
-        if (!rankingHistoricoAtivo()) return [];
-        var minHist = params.historicoMin != null ? params.historicoMin : HISTORICO_JANELA_MIN;
-        var ref = encontrarSnapshotHistoricoReferencia(minHist);
-        if (!ref || !ref.jogadores) return [];
-        var snapMap = ref.jogadores;
-        var minutosRef = Math.max(1, Math.round((Date.now() - ref.ts) / 60000));
-        var out = [];
-        for (var i = 0; i < jogadores.length; i++) {
-          var j = migrarJogadorLegado(jogadores[i]);
-          var prev = j && j.nome ? snapMap[j.nome.toLowerCase()] : null;
-          var ev = avaliarJogadorWatch(j, prev, params);
-          if (ev.status !== 'suspeito') continue;
-          out.push(montarRegistroSuspeitoWatch(j, prev, ev, {
-            tipo: 'historico',
-            historicoMinutos: minutosRef,
-            historicoTs: ref.ts
-          }));
-        }
-        return out;
-      }
-
-      function mesclarSuspeitosWatch(ciclo, historico) {
-        var map = {};
-        var i, s, k;
-        for (i = 0; i < ciclo.length; i++) {
-          s = ciclo[i];
-          k = s.nome.toLowerCase();
-          s.tipo = 'ciclo';
-          map[k] = s;
-        }
-        for (i = 0; i < historico.length; i++) {
-          s = historico[i];
-          k = s.nome.toLowerCase();
-          if (map[k]) {
-            map[k].tipo = 'ciclo+historico';
-            map[k].deltaHistorico = s.deltaRyous;
-            map[k].historicoMinutos = s.historicoMinutos;
-            if ((s.deltaRyous || 0) > (map[k].deltaRyous || 0)) {
-              map[k].deltaRyousHistorico = s.deltaRyous;
-              map[k].ryousAntesHistorico = s.ryousAntesTexto;
-            }
-          } else {
-            map[k] = s;
-          }
-        }
-        var out = [];
-        for (k in map) {
-          if (Object.prototype.hasOwnProperty.call(map, k)) out.push(map[k]);
-        }
-        return out;
-      }
-
-      function botRankingHistoricoLimpar() {
-        try { localStorage.removeItem(HISTORICO_KEY); } catch (e) {}
-        console.log('[Bot Ranking Historico] Historico limpo.');
-        return 'limpo';
-      }
-
-      function textoDeltaHistoricoJogador(prev, cur, fonte) {
-        var ryC = obterRyousCompare(cur, fonte);
-        var ryP = obterRyousCompare(prev, fonte);
-        if (ryC === null || ryP === null) return fonte + ': (sem dados)';
-        var d = ryC - ryP;
-        var vdC = obterVitDerCompare(cur, fonte);
-        var vdP = obterVitDerCompare(prev, fonte);
-        var vitOk = typeof vdC.vit === 'number' && typeof vdP.vit === 'number' &&
-          typeof vdC.der === 'number' && typeof vdP.der === 'number' &&
-          vdC.vit === vdP.vit && vdC.der === vdP.der;
-        var sinal = d > 0 ? '+' : '';
-        return fonte + ': ' + sinal + formatarNumeroBr(d) + ' (' +
-          obterRyousTextoCompare(prev, fonte) + '->' + obterRyousTextoCompare(cur, fonte) + ')' +
-          (vitOk ? ' | vit/der ok' : ' | vit/der mudou');
-      }
-
-      function descreverCompareJogadorHistorico(prev, cur, params, rotulo) {
-        prev = migrarJogadorLegado(prev);
-        cur = migrarJogadorLegado(cur);
-        if (!prev || !cur) return null;
-        var ev = avaliarJogadorWatch(cur, prev, params);
-        var fonte = ev.fonteCompare || escolherFonteCompare(prev, cur);
-        var linhas = [];
-        var titulo = rotulo ? ('    compare ' + rotulo + ' [' + fonte + ']: ') :
-          ('    compare [' + fonte + ']: ');
-        if (ev.status === 'suspeito') {
-          if (ev.tipoSuspeito === 'vit_sem_ryous') {
-            linhas.push(titulo + '★ SUSPEITO vit+' + (ev.deltaVitorias || '?') +
-              ' sem ryous faturados | delta ryous ' + formatarNumeroBr(ev.deltaRyous));
-          } else {
-            linhas.push(titulo + '★ SUSPEITO | delta +' + formatarNumeroBr(ev.deltaRyous));
-          }
-        } else {
-          var deltaStr = ev.deltaRyous != null ? formatarNumeroBr(ev.deltaRyous) : '?';
-          linhas.push(titulo + '— ' + ev.motivo + ' | delta ' + deltaStr);
-        }
-        if (temRyousRanking(cur) && temRyousRanking(prev)) {
-          linhas.push('    ' + textoDeltaHistoricoJogador(prev, cur, 'ranking'));
-        }
-        if (temRyousPerfil(cur) && temRyousPerfil(prev)) {
-          linhas.push('    ' + textoDeltaHistoricoJogador(prev, cur, 'perfil'));
-        }
-        return { ev: ev, fonte: fonte, linhas: linhas };
-      }
-
-      function botRankingHistoricoJogador(nome) {
-        if (!nome) {
-          console.warn('[Bot Ranking Historico] Informe o nome: botRankingHistoricoJogador("Nome")');
-          return { leituras: [], compares: [] };
-        }
-        var k = String(nome).trim().toLowerCase();
-        var lista = limparHistoricoExpirado(lerHistoricoRyous());
-        var params = lerParamsWatch();
-        var leituras = [];
-        var compares = [];
-
-        console.log('%c[Historico] ' + nome + ' — janela 3h (' + lista.length + ' ciclo(s))',
-          'color:#9b59b6;font-weight:bold');
-        console.log('[Historico] filtros compare: lvl>=' + params.minNivel +
-          ' | delta>=' + formatarNumeroBr(params.minDeltaRyous));
-
-        for (var i = 0; i < lista.length; i++) {
-          var snap = lista[i];
-          var j = snap.jogadores[k];
-          if (!j) continue;
-          j = migrarJogadorLegado(j);
-          var dt = new Date(snap.ts).toLocaleString('pt-BR');
-          var txtRanking = temRyousRanking(j)
-            ? ('ranking ' + (j.ryousRankingTexto || formatarNumeroBr(j.ryousRanking))) : 'ranking ?';
-          var txtPerfil = temRyousPerfil(j)
-            ? ('perfil ' + (j.ryousPerfilTexto || formatarNumeroBr(j.ryousPerfil))) : 'perfil —';
-          var linha = dt + ' | ' + txtRanking + ' | ' + txtPerfil + ' | lvl ' + j.nivel;
-          console.log('  ' + linha);
-          leituras.push({ ts: snap.ts, jogador: j, texto: linha });
-
-          if (leituras.length >= 2) {
-            var prevJ = leituras[leituras.length - 2].jogador;
-            var rel = descreverCompareJogadorHistorico(prevJ, j, params, 'vs ciclo anterior');
-            if (rel) {
-              for (var li = 0; li < rel.linhas.length; li++) console.log(rel.linhas[li]);
-              compares.push({
-                ts: snap.ts,
-                rotulo: 'vs ciclo anterior',
-                ev: rel.ev,
-                fonte: rel.fonte
-              });
-            }
-          }
-        }
-
-        if (!leituras.length) {
-          console.log('[Historico] Nenhuma leitura para "' + nome + '" na janela de 3h.');
-          return { leituras: [], compares: [] };
-        }
-
-        var primeiro = leituras[0];
-        var ultimo = leituras[leituras.length - 1];
-        var minSpan = Math.max(1, Math.round((ultimo.ts - primeiro.ts) / 60000));
-        console.log('');
-        console.log('%c[Historico] Resumo compare vs primeiro registro (~' + minSpan + 'min)',
-          'color:#9b59b6;font-weight:bold');
-        var resumoHist = descreverCompareJogadorHistorico(primeiro.jogador, ultimo.jogador, params, 'periodo');
-        if (resumoHist) {
-          for (var ri = 0; ri < resumoHist.linhas.length; ri++) console.log(resumoHist.linhas[ri]);
-          compares.push({
-            ts: ultimo.ts,
-            rotulo: 'vs primeiro (~' + minSpan + 'min)',
-            ev: resumoHist.ev,
-            fonte: resumoHist.fonte
-          });
-        }
-
-        var snapAtual = lerSnapshotRyous();
-        var curAtual = snapAtual.jogadores ? migrarJogadorLegado(snapAtual.jogadores[k]) : null;
-        if (curAtual && ultimo.ts !== snapAtual.ts) {
-          console.log('');
-          console.log('%c[Historico] Compare vs snapshot atual',
-            'color:#9b59b6;font-weight:bold');
-          var vsAtual = descreverCompareJogadorHistorico(ultimo.jogador, curAtual, params, 'vs snapshot atual');
-          if (vsAtual) {
-            for (var ai = 0; ai < vsAtual.linhas.length; ai++) console.log(vsAtual.linhas[ai]);
-            compares.push({
-              ts: snapAtual.ts || Date.now(),
-              rotulo: 'vs snapshot atual',
-              ev: vsAtual.ev,
-              fonte: vsAtual.fonte
-            });
-          }
-        } else if (curAtual && leituras.length === 1) {
-          console.log('');
-          console.log('[Historico] Snapshot atual = unica leitura no historico.');
-        }
-
-        return { leituras: leituras, compares: compares, params: params };
-      }
-
-      function calcularDeltaRyousFonte(cur, prev, fonte) {
-        if (fonte === 'perfil' && (!temRyousPerfil(cur) || !temRyousPerfil(prev))) return null;
-        if (fonte === 'ranking' && (!temRyousRanking(cur) || !temRyousRanking(prev))) return null;
-        var ryCur = obterRyousCompare(cur, fonte);
-        var ryPrev = obterRyousCompare(prev, fonte);
-        if (ryCur === null || ryPrev === null) return null;
-        var vdCur = obterVitDerCompare(cur, fonte);
-        var vdPrev = obterVitDerCompare(prev, fonte);
-        if (typeof vdCur.vit === 'number' && typeof vdPrev.vit === 'number' &&
-            typeof vdCur.der === 'number' && typeof vdPrev.der === 'number') {
-          if (vdCur.vit !== vdPrev.vit || vdCur.der !== vdPrev.der) return null;
-        }
-        var d = ryCur - ryPrev;
-        if (d <= 0) return null;
-        return {
-          delta: d,
-          ryous: ryCur,
-          ryousTexto: obterRyousTextoCompare(cur, fonte),
-          antes: ryPrev,
-          antesTexto: obterRyousTextoCompare(prev, fonte),
-          fonte: fonte
-        };
-      }
-
-      function normalizarOptsHistoricoDiff(min, opcoes) {
-        var opts = opcoes && typeof opcoes === 'object' ? opcoes : {};
-        var minVal = min;
-        if (minVal != null && typeof minVal === 'object') {
-          opts = minVal;
-          minVal = opts.min;
-        }
-        minVal = parseInt(String(minVal != null ? minVal : HISTORICO_JANELA_MIN), 10);
-        if (isNaN(minVal) || minVal < 5) minVal = HISTORICO_JANELA_MIN;
-        var limite = opts.limite != null ? parseInt(String(opts.limite), 10) : 20;
-        if (isNaN(limite) || limite < 1) limite = 20;
-        var minDelta = opts.minDelta != null ? parseNumeroRanking(opts.minDelta) : 0;
-        if (minDelta === null || minDelta < 0) minDelta = 0;
-        return { min: minVal, limite: limite, minDelta: minDelta, silencioso: !!opts.silencioso };
-      }
-
-      function calcularHistoricoDiff(min, opcoes) {
-        var opts = normalizarOptsHistoricoDiff(min, opcoes);
-        var ref = encontrarSnapshotHistoricoReferencia(opts.min);
-        var atualSnap = lerSnapshotRyous();
-        if (!ref || !ref.jogadores || !atualSnap.jogadores) {
-          return { minutosRef: 0, refTs: 0, itens: [], total: 0, vazio: true };
-        }
-
-        var minutosRef = Math.max(1, Math.round((Date.now() - ref.ts) / 60000));
-        var todos = [];
-        for (var k in atualSnap.jogadores) {
-          if (!Object.prototype.hasOwnProperty.call(atualSnap.jogadores, k)) continue;
-          var cur = migrarJogadorLegado(atualSnap.jogadores[k]);
-          var prev = migrarJogadorLegado(ref.jogadores[k]);
-          if (!prev || !cur || !cur.nome) continue;
-
-          var dRanking = calcularDeltaRyousFonte(cur, prev, 'ranking');
-          var dPerfil = calcularDeltaRyousFonte(cur, prev, 'perfil');
-          var fonte = escolherFonteCompare(prev, cur);
-          var dCanon = calcularDeltaRyousFonte(cur, prev, fonte);
-          if (!dCanon && !dRanking && !dPerfil) continue;
-
-          var deltaOrdenar = dCanon ? dCanon.delta : (dPerfil ? dPerfil.delta : dRanking.delta);
-          if (opts.minDelta && deltaOrdenar < opts.minDelta) continue;
-
-          todos.push({
-            nome: cur.nome,
-            nivel: cur.nivel,
-            fonteCompare: fonte,
-            delta: deltaOrdenar,
-            canonico: dCanon,
-            ranking: dRanking,
-            perfil: dPerfil
-          });
-        }
-        todos.sort(function(a, b) { return b.delta - a.delta; });
-        return {
-          minutosRef: minutosRef,
-          refTs: ref.ts,
-          itens: todos.slice(0, opts.limite),
-          total: todos.length,
-          vazio: !todos.length
-        };
-      }
-
-      function logHistoricoDiff(resultado) {
-        if (resultado.vazio) {
-          console.log('[Historico Diff] Nenhum delta positivo (vit/der estaveis) no periodo.');
-          return;
-        }
-        console.log('%c[Historico Diff] vs ~' + resultado.minutosRef + 'min atras (' +
-          new Date(resultado.refTs).toLocaleString('pt-BR') + ') — ' + resultado.total + ' jogador(es)',
-          'color:#9b59b6;font-weight:bold');
-        for (var i = 0; i < resultado.itens.length; i++) {
-          var x = resultado.itens[i];
-          var partes = [];
-          if (x.ranking) {
-            partes.push('+' + formatarNumeroBr(x.ranking.delta) + ' [ranking] ' +
-              x.ranking.antesTexto + '->' + x.ranking.ryousTexto);
-          }
-          if (x.perfil) {
-            partes.push('+' + formatarNumeroBr(x.perfil.delta) + ' [perfil] ' +
-              x.perfil.antesTexto + '->' + x.perfil.ryousTexto);
-          }
-          if (!partes.length && x.canonico) {
-            partes.push('+' + formatarNumeroBr(x.canonico.delta) + ' [' + x.fonteCompare + '] ' +
-              x.canonico.antesTexto + '->' + x.canonico.ryousTexto);
-          }
-          console.log('  ' + (i + 1) + '. ' + x.nome + ' (lvl ' + (x.nivel || '?') + ') | ' +
-            partes.join(' | ') + ' | compare:' + x.fonteCompare);
-        }
-        if (resultado.total > resultado.itens.length) {
-          console.log('[Historico Diff] ... +' + (resultado.total - resultado.itens.length) +
-            ' omitido(s) (limite ' + resultado.itens.length + ').');
-        }
-      }
-
-      function botRankingHistoricoDiff(min, opcoes) {
-        var opts = normalizarOptsHistoricoDiff(min, opcoes);
-        var resultado = calcularHistoricoDiff(opts.min, opts);
-        if (!opts.silencioso) logHistoricoDiff(resultado);
-        return resultado;
-      }
-
-      function botRankingHistoricoTop(opcoes) {
-        var opts = opcoes || {};
-        var r = botRankingHistoricoDiff(opts.min, {
-          limite: opts.limite != null ? opts.limite : 15,
-          minDelta: opts.minDelta,
-          silencioso: true
-        });
-        if (r.vazio) {
-          console.log('[Historico Top] Sem snapshot de referencia ou nenhum delta positivo.');
-          return [];
-        }
-        console.log('%c[Historico Top] maiores deltas vs ~' + r.minutosRef + 'min atras',
-          'color:#9b59b6;font-weight:bold');
-        for (var i = 0; i < r.itens.length; i++) {
-          var x = r.itens[i];
-          var d = x.canonico || x.ranking || x.perfil;
-          if (!d) continue;
-          console.log('  ' + (i + 1) + '. ' + x.nome + ' | +' + formatarNumeroBr(d.delta) +
-            ' [' + d.fonte + '] (' + d.antesTexto + ' -> ' + d.ryousTexto + ')');
-        }
-        return r.itens.map(function(x) {
-          var d = x.canonico || x.ranking || x.perfil;
-          return {
-            nome: x.nome,
-            delta: d ? d.delta : x.delta,
-            fonte: d ? d.fonte : x.fonteCompare,
-            ryous: d ? d.ryous : null,
-            ryousTexto: d ? d.ryousTexto : '',
-            antes: d ? d.antes : null,
-            antesTexto: d ? d.antesTexto : ''
-          };
-        });
       }
 
       function lerParcialWatch() {
@@ -1453,7 +1002,6 @@
           tipoSuspeito: suspeito.tipoSuspeito || 'ryous_sem_vitder',
           deltaVitorias: suspeito.deltaVitorias != null ? suspeito.deltaVitorias : null,
           fonteCompare: suspeito.fonteCompare || null,
-          historicoMinutos: suspeito.historicoMinutos || null,
           ts: Date.now()
         };
 
@@ -1629,7 +1177,8 @@
           ryousAntesTexto: ev.ryousAntesTexto,
           fonteCompare: fonte,
           tipoSuspeito: ev.tipoSuspeito || 'ryous_sem_vitder',
-          motivoSuspeito: ev.motivo
+          motivoSuspeito: ev.motivo,
+          tipo: 'ciclo'
         };
         if (ev.deltaVitorias != null) reg.deltaVitorias = ev.deltaVitorias;
         if (typeof ev.vitAnt === 'number') reg.vitoriasAntes = ev.vitAnt;
@@ -1958,22 +1507,12 @@
           ];
           for (var i = 0; i < suspeitos.length; i++) {
             var s = suspeitos[i];
-            var tipoTxt = s.tipo === 'historico'
-              ? ' [hist ~' + (s.historicoMinutos || '?') + 'min|' + (s.fonteCompare || '?') + ']'
-              : (s.tipo === 'ciclo+historico'
-                ? ' [ciclo+hist ~' + (s.historicoMinutos || '?') + 'min|' + (s.fonteCompare || '?') + ']'
-                : ' [ciclo|' + (s.fonteCompare || 'ranking') + ']');
+            var tipoTxt = ' [ciclo|' + (s.fonteCompare || 'ranking') + ']';
             var deltaTxt;
             if (s.tipoSuspeito === 'vit_sem_ryous') {
               deltaTxt = '**vit +' + (s.deltaVitorias || '?') + ' sem ryous**';
             } else {
               deltaTxt = '**+' + formatarNumeroBr(s.deltaRyous) + '**';
-              if (s.tipo === 'historico' || (s.tipo === 'ciclo+historico' && s.deltaRyousHistorico)) {
-                deltaTxt = '**+' + formatarNumeroBr(s.deltaRyous) + '**' +
-                  (s.deltaRyousHistorico && s.deltaRyousHistorico !== s.deltaRyous
-                    ? ' (hist +' + formatarNumeroBr(s.deltaRyousHistorico) + ')'
-                    : '');
-              }
             }
             linhas.push(
               '• **' + s.nome + '**' + tipoTxt + ' | lvl ' + s.nivel +
@@ -2021,8 +1560,7 @@
           ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous) +
           (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
-          (rankingPerfilAtivo() ? ' | PERFIL ON' : '') +
-          (rankingHistoricoAtivo() ? ' | HIST 3h ON' : ''));
+          (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
       }
 
       function agendarProximoWatchCiclo(params) {
@@ -2048,7 +1586,6 @@
 
         if (estado.modo === 'baseline') {
           salvarSnapshotRyous(snapshot);
-          appendHistoricoCiclo(parcial, params);
           salvarParcialWatch({});
           try { sessionStorage.removeItem(WATCH_JA_LEU_KEY); } catch (e) {}
           console.log('[Bot Ranking Watch] Baseline salvo — ' + qtd + ' jogadores.');
@@ -2057,7 +1594,6 @@
         }
 
         salvarSnapshotRyous(snapshot);
-        appendHistoricoCiclo(parcial, params);
         salvarParcialWatch({});
         try { sessionStorage.removeItem(WATCH_JA_LEU_KEY); } catch (e) {}
         console.log('[Bot Ranking Watch] Compare concluido — snapshot atualizado (' + qtd + ' jogadores).');
@@ -2095,9 +1631,7 @@
           var snap = lerSnapshotRyous();
           var snapMap = (snap && snap.jogadores) ? snap.jogadores : {};
           logComparacoesDebugWatch(jogadores, snapMap, params, offset, 'compare');
-          var suspeitosCiclo = detectarRyousSuspeitos(jogadores, snapMap, params);
-          var suspeitosHist = detectarRyousSuspeitosHistorico(jogadores, params);
-          var suspeitos = mesclarSuspeitosWatch(suspeitosCiclo, suspeitosHist);
+          var suspeitos = detectarRyousSuspeitos(jogadores, snapMap, params);
           if (suspeitos.length) {
             var filtroDiscord = filtrarSuspeitosDiscordAntiSpam(suspeitos, params);
             if (filtroDiscord.enviar.length) {
@@ -2181,8 +1715,7 @@
           Math.round(params.intervaloMs / 60000) + ' min', 'color:#e67e22;font-weight:bold');
         console.log('[Bot Ranking Watch] maxRyous=' + formatarNumeroBr(params.maxRyous) +
           ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous) +
-          ' | minNivel=' + params.minNivel +
-          (rankingHistoricoAtivo() ? ' | historico 3h ON' : ''));
+          ' | minNivel=' + params.minNivel);
         iniciarCicloWatchScan('baseline');
         atualizarPainelRanking();
         return true;
@@ -2211,8 +1744,6 @@
           ativo: watchAtivo(),
           debug: rankingDebugAtivo(),
           perfil: rankingPerfilAtivo(),
-          historico: rankingHistoricoAtivo(),
-          historicoCiclos: limparHistoricoExpirado(lerHistoricoRyous()).length,
           fase: estado.fase,
           modo: estado.modo,
           aguardarAte: estado.aguardarAte,
@@ -2272,14 +1803,6 @@
         console.log('  botRankingDebugPagina(false)       — debug OFF');
         console.log('  botRankingPerfilRyous(true)        — ryous/vit/der do perfil (lvl no ranking)');
         console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
-        console.log('  botRankingHistorico()              — historico ON/OFF (padrao: ON, janela 3h)');
-        console.log('  botRankingHistorico(false)         — desliga historico');
-        console.log('  botRankingHistoricoJogador("Nome") — timeline + compare ciclo a ciclo');
-        console.log('  botRankingHistoricoTop()           — maiores deltas vs ~3h atras');
-        console.log('  botRankingHistoricoDiff(60)        — diff ranking+perfil vs ~60min');
-        console.log('  botRankingHistoricoDiff(120,{minDelta:100000,limite:30})');
-        console.log('  botRankingHistoricoLimpar()        — zera historico');
-        console.log('  botRankingWatchRyous({historicoMin:120}) — compara vs ~2h atras (dentro da janela 3h)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
@@ -2439,8 +1962,7 @@
             el.dataset.botServerBase,
             'Bot: <b>ranking</b> (' + (scanAtivo() ? 'mult ON' : 'mult off') + ' | ' + watchTxt +
               (rankingDebugAtivo() ? ' | debug ON' : '') +
-              (rankingPerfilAtivo() ? ' | perfil ON' : '') +
-              (rankingHistoricoAtivo() ? ' | hist 3h' : '') + ')',
+              (rankingPerfilAtivo() ? ' | perfil ON' : '') + ')',
             'Principal: ' + login,
             'Console: botRankingScan() | botRankingWatchRyous() | botRankingPerfilRyous(true/false)'
           ].join('<br>');
@@ -2458,11 +1980,6 @@
       window.botRankingWatchStatus = statusWatchRyous;
       window.botRankingDebugPagina = botRankingDebugPagina;
       window.botRankingPerfilRyous = botRankingPerfilRyous;
-      window.botRankingHistorico = botRankingHistorico;
-      window.botRankingHistoricoJogador = botRankingHistoricoJogador;
-      window.botRankingHistoricoTop = botRankingHistoricoTop;
-      window.botRankingHistoricoDiff = botRankingHistoricoDiff;
-      window.botRankingHistoricoLimpar = botRankingHistoricoLimpar;
       window.__BOT_RANKING_OK__ = true;
       window.__BOT_RANKING_BUILD__ = { versao: SCRIPT_VERSAO };
 
