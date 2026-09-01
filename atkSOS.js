@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.43
+// @version      3.44
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -687,8 +687,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.43';
-  var SCRIPT_ATUALIZADO = '01/09/2026 15:48';
+  var SCRIPT_VERSAO = '3.44';
+  var SCRIPT_ATUALIZADO = '01/09/2026 15:53';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3592,6 +3592,21 @@
     return ataques;
   }
 
+  function formatarHorarioLocalBr(ts) {
+    try {
+      return new Date(ts).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    } catch (e) {
+      return String(ts);
+    }
+  }
+
   function calcularEsperaAposUltimoAtaque(ultimoAtaqueMs) {
     var iv = calcularIntervaloEsperaCacadas();
     var agora = Date.now();
@@ -3652,7 +3667,9 @@
 
     return {
       waitMs: waitMs,
-      motivo: 'aguardando ' + Math.round(waitMs / 1000) + 's (' +
+      liberacaoEm: agora + waitMs,
+      motivo: 'aguardando ' + Math.round(waitMs / 1000) + 's — libera ~' +
+        formatarHorarioLocalBr(agora + waitMs) + ' (' +
         elapsedMin + 'min desde ultimo, alvo ' + targetMin + 'min, teto ' + tetoMin + 'min)',
       elapsedMs: elapsedMs,
       targetMs: targetMs,
@@ -3775,7 +3792,8 @@
 
       portaoRelatoriosAgendado = true;
       var segundos = Math.round(decisao.waitMs / 1000);
-      console.log('[Caçadas] Portao — aguardando ' + segundos + 's nesta pagina...');
+      var quando = formatarHorarioLocalBr(decisao.liberacaoEm || (Date.now() + decisao.waitMs));
+      console.log('[Caçadas] Portao — aguardando ' + segundos + 's nesta pagina (proxima acao ~' + quando + ')...');
 
       setTimeout(function() {
         var ultimoPos = extrairUltimoAtaqueRelatorios();
