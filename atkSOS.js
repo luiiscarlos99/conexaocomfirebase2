@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.47
+// @version      3.48
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.47';
-  var SCRIPT_ATUALIZADO = '01/09/2026 16:26';
+  var SCRIPT_VERSAO = '3.48';
+  var SCRIPT_ATUALIZADO = '01/09/2026 16:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -4397,23 +4397,12 @@
     return processarFalhaCacadaPorNome(nome, 'ja atacou hoje');
   }
 
-  function montarMensagemInimigoBatalhaRecente30m(nome, avisoTexto) {
-    var linhas = [
-      '**Caçadas — Inimigo em cooldown (30min)** — ' + obterUsuarioExibicao(),
-      'Inimigo: **' + (nome || '?') + '**',
-      'Motivo: batalha recente em caçadas — removido da fila Firebase; tentar outro alvo'
-    ];
-    if (avisoTexto) linhas.push('Aviso: ' + avisoTexto);
-    return linhas.join('\n');
-  }
-
   function processarInimigoBatalhaRecente30mCacadas() {
     var avisoTexto = detectarAvisoBatalhaRecente30mCacadas();
     if (!avisoTexto) return false;
 
     var nome = obterAlvoNomeCacadasSessao() || '(desconhecido)';
     console.warn('[Caçadas] Inimigo em protecao 30min — ' + nome);
-    enviarDiscordTexto(montarMensagemInimigoBatalhaRecente30m(nome, avisoTexto));
 
     if (cacadaAtualPorNomeFirebase()) {
       removerAlvoFirebaseFilaConsumido(nome, 'batalha recente 30min');
