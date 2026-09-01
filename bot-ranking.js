@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.25
+// @version      1.26
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.25';
+      var SCRIPT_VERSAO = '1.26';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -50,7 +50,7 @@
 
       var DEFAULTS = { maxRyous: 1000000, minNivel: 55, vila: 'geral', view: 'personagens' };
       var DEFAULTS_WATCH = {
-        maxRyous: 150000000,
+        maxRyous: 100000000,
         minDeltaRyous: 100000,
         minDeltaDivergencia: 50000,
         minNivel: 74,
@@ -1795,7 +1795,7 @@
         console.log('  botRankingParar()               — cancela scan mult');
         console.log('  botRankingStatus()              — status scan mult');
         console.log('  botRankingWatchRyous()          — watch ryous (+100k sem vit/der, a cada 10min)');
-        console.log('  botRankingWatchRyous({maxRyous:150000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
+        console.log('  botRankingWatchRyous({maxRyous:100000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
         console.log('  botRankingWatchRyous({minDeltaDivergencia:50000,discordCooldownMin:30})');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');

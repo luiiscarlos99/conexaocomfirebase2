@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.42
+// @version      3.43
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -687,8 +687,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.42';
-  var SCRIPT_ATUALIZADO = '01/09/2026 11:36';
+  var SCRIPT_VERSAO = '3.43';
+  var SCRIPT_ATUALIZADO = '01/09/2026 15:48';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3242,8 +3242,8 @@
     return true;
   }
 
-  // Nível da Caçada (Lê do localStorage ou usa '1' como padrão)
-  var NIVEL_CACADAS_DEFAULT = '1';
+  // Nível da Caçada (Lê do localStorage ou usa '4' como padrão)
+  var NIVEL_CACADAS_DEFAULT = '4';
   var BOT_NIVEL_CACADAS_BASE_KEY = 'BOT_NIVEL_CACADAS_BASE';
   var BOT_NIVEL_ESCALADO_PAGINA_KEY = 'BOT_NIVEL_ESCALADO_PAGINA';
   var NIVEL_CACADAS_ESCALONAMENTO_MAX = 3;
@@ -3797,7 +3797,7 @@
   }
 
   // --- Whitelist = nomes/clas que NAO atacar (pagina atacar) ---
-  var MAX_RYOUS_CACADAS_DEFAULT = 30000000;
+  var MAX_RYOUS_CACADAS_DEFAULT = 100000000;
   var DIFF_NIVEL_CACADAS_DEFAULT = 20;
 
   function normalizarNomeCacadas(nome) {
@@ -4692,6 +4692,7 @@
   }
 
   function resolverFirebaseFilaNoPortao(decisao, callback, opcoes) {
+    var opts = opcoes || {};
     limparEstadoModoCacadas();
 
     buscarFilaFirebaseRyous(function(fila) {
@@ -4700,14 +4701,26 @@
         var proximo = escolherProximoAlvoFirebase(filaLimpa, ataques);
         if (proximo) {
           definirModoCacadasFirebaseFila(proximo);
-        } else {
-          console.warn(
-            '[Firebase Fila] Nenhum alvo disponivel (' + filaLimpa.length +
-            ' na fila apos limpeza, skip/relatorio) — caçada por nivel.'
-          );
-          limparSkipFirebaseFila();
-          definirModoCacadasClasse('fila firebase esgotada ou vazia');
+          callback();
+          return;
         }
+
+        console.warn(
+          '[Firebase Fila] Nenhum alvo disponivel (' + filaLimpa.length +
+          ' na fila apos limpeza, skip/relatorio).'
+        );
+        limparSkipFirebaseFila();
+
+        if (blacklistCacadasAtiva()) {
+          console.warn('[Firebase Fila] Fila vazia — fallback para blacklist.');
+          resolverBlacklistNoPortao(decisao, callback, Object.assign({}, opts, {
+            firebaseFallback: true
+          }));
+          return;
+        }
+
+        console.warn('[Firebase Fila] Fila vazia e blacklist vazia — caçada por classe.');
+        definirModoCacadasClasse('fila firebase esgotada ou vazia');
         callback();
       });
     });
@@ -4738,7 +4751,13 @@
       resolverFirebaseFilaNoPortao(decisao, callback, opts);
       return;
     }
-    resolverBlacklistNoPortao(decisao, callback, opts);
+    if (blacklistCacadasAtiva()) {
+      resolverBlacklistNoPortao(decisao, callback, opts);
+      return;
+    }
+    limparEstadoModoCacadas();
+    definirModoCacadasClasse('firebase e blacklist desligados ou vazios');
+    callback();
   }
 
   function processarFirebaseFilaAposVitoria(dados) {
@@ -4859,7 +4878,7 @@
       return;
     }
 
-    if (!opts.forcarBlacklist && decisaoForcaCacadaPorClasse(decisao)) {
+    if (!opts.forcarBlacklist && !opts.firebaseFallback && decisaoForcaCacadaPorClasse(decisao)) {
       marcarCacadasTetoOcioso(true);
       definirModoCacadasClasse('teto ocioso — caçada por classe');
       callback();
