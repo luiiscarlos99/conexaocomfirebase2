@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.40
+// @version      3.41
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -117,16 +117,15 @@
   var BOT_USUARIO_LOGIN_KEY = 'BOT_USUARIO_LOGIN';
 
   function gravarUsuarioLoginParam(valor) {
-    if (valor === null || valor === undefined) return false;
+    if (!valor) return false;
     var u = String(valor).trim();
     if (!u) return false;
-    // Credencial de login: localStorage (perfil do navegador), nunca sessionStorage (aba)
+    try {
+      sessionStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
+      sessionStorage.setItem('BOT_USUARIO', u);
+    } catch (e) {}
     localStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
     localStorage.setItem('BOT_USUARIO', u);
-    try {
-      sessionStorage.removeItem(BOT_USUARIO_LOGIN_KEY);
-      sessionStorage.removeItem('BOT_USUARIO');
-    } catch (e) {}
     return true;
   }
 
@@ -147,8 +146,8 @@
     if (valor === null || valor === undefined) return false;
     var p = String(valor);
     if (!p) return false;
+    try { sessionStorage.setItem('BOT_SENHA', p); } catch (e) {}
     localStorage.setItem('BOT_SENHA', p);
-    try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
     return true;
   }
 
@@ -213,6 +212,8 @@
 
   function lerUsuarioLoginArmazenado() {
     try {
+      var aba = sessionStorage.getItem(BOT_USUARIO_LOGIN_KEY) || sessionStorage.getItem('BOT_USUARIO');
+      if (aba) return aba;
       return localStorage.getItem(BOT_USUARIO_LOGIN_KEY) || localStorage.getItem('BOT_USUARIO') || '';
     } catch (e) {
       return '';
@@ -221,6 +222,8 @@
 
   function lerSenhaLoginArmazenada() {
     try {
+      var aba = sessionStorage.getItem('BOT_SENHA');
+      if (aba) return aba;
       return localStorage.getItem('BOT_SENHA') || '';
     } catch (e) {
       return '';
@@ -684,8 +687,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.40';
-  var SCRIPT_ATUALIZADO = '31/08/2026 20:05';
+  var SCRIPT_VERSAO = '3.41';
+  var SCRIPT_ATUALIZADO = '01/09/2026 10:58';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;

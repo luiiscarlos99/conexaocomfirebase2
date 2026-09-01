@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.10
+// @version      7.11
 // @description  Automação do Invasor: last hit sorteio (2k-3k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -12,7 +12,7 @@
 
   var BOT_MODO_KEY = 'BOT_MODO_ABA';
 
-  // sessionStorage = desta aba (modo). localStorage = navegador (credenciais/config). Nunca modo em localStorage.
+  // sessionStorage = desta aba (modo + credenciais de login). localStorage = fallback compartilhado.
   try {
     localStorage.removeItem('BOT_MODO_ABA');
     localStorage.removeItem('BOT_MODO_PREFERIDO');
@@ -229,25 +229,39 @@
     if (!valor) return false;
     var u = String(valor).trim();
     if (!u) return false;
+    try {
+      sessionStorage.setItem('BOT_USUARIO_LOGIN', u);
+      sessionStorage.setItem('BOT_USUARIO', u);
+    } catch (e) {}
     localStorage.setItem('BOT_USUARIO_LOGIN', u);
     localStorage.setItem('BOT_USUARIO', u);
-    try {
-      sessionStorage.removeItem('BOT_USUARIO_LOGIN');
-      sessionStorage.removeItem('BOT_USUARIO');
-    } catch (e) {}
     return true;
   }
 
   function gravarSenhaLoginParam(valor) {
     if (!valor) return false;
-    localStorage.setItem('BOT_SENHA', String(valor));
-    try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
+    var p = String(valor);
+    if (!p) return false;
+    try { sessionStorage.setItem('BOT_SENHA', p); } catch (e) {}
+    localStorage.setItem('BOT_SENHA', p);
     return true;
   }
 
   function lerUsuarioLoginArmazenado() {
     try {
+      var aba = sessionStorage.getItem('BOT_USUARIO_LOGIN') || sessionStorage.getItem('BOT_USUARIO');
+      if (aba) return aba;
       return localStorage.getItem('BOT_USUARIO_LOGIN') || localStorage.getItem('BOT_USUARIO') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function lerSenhaLoginArmazenada() {
+    try {
+      var aba = sessionStorage.getItem('BOT_SENHA');
+      if (aba) return aba;
+      return localStorage.getItem('BOT_SENHA') || '';
     } catch (e) {
       return '';
     }
@@ -383,8 +397,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.10';
-  var SCRIPT_ATUALIZADO = '29/08/2026 13:05';
+  var SCRIPT_VERSAO = '7.11';
+  var SCRIPT_ATUALIZADO = '01/09/2026 10:58';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {

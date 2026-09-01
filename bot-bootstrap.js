@@ -12,25 +12,39 @@
     if (!valor) return false;
     var u = String(valor).trim();
     if (!u) return false;
+    try {
+      sessionStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
+      sessionStorage.setItem('BOT_USUARIO', u);
+    } catch (e) {}
     localStorage.setItem(BOT_USUARIO_LOGIN_KEY, u);
     localStorage.setItem('BOT_USUARIO', u);
-    try {
-      sessionStorage.removeItem(BOT_USUARIO_LOGIN_KEY);
-      sessionStorage.removeItem('BOT_USUARIO');
-    } catch (e) {}
     return true;
   }
 
   function gravarSenhaLoginParam(valor) {
     if (!valor) return false;
-    localStorage.setItem('BOT_SENHA', String(valor));
-    try { sessionStorage.removeItem('BOT_SENHA'); } catch (e) {}
+    var p = String(valor);
+    if (!p) return false;
+    try { sessionStorage.setItem('BOT_SENHA', p); } catch (e) {}
+    localStorage.setItem('BOT_SENHA', p);
     return true;
   }
 
   function lerUsuarioLoginArmazenado() {
     try {
+      var aba = sessionStorage.getItem(BOT_USUARIO_LOGIN_KEY) || sessionStorage.getItem('BOT_USUARIO');
+      if (aba) return aba;
       return localStorage.getItem(BOT_USUARIO_LOGIN_KEY) || localStorage.getItem('BOT_USUARIO') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function lerSenhaLoginArmazenada() {
+    try {
+      var aba = sessionStorage.getItem('BOT_SENHA');
+      if (aba) return aba;
+      return localStorage.getItem('BOT_SENHA') || '';
     } catch (e) {
       return '';
     }
@@ -375,7 +389,11 @@
       if (window.__BOT_RECOVERY__) {
         var modoSalvar = sessionStorage.getItem(BOT_MODO_KEY);
         if (modoSalvar === 'invasor' || modoSalvar === 'cacadas') {
-          window.__BOT_RECOVERY__.salvar();
+          var urlSalvar = '';
+          if (params.get('bot_user') || params.get('bot_pass') || params.get('bot_modo')) {
+            urlSalvar = location.href;
+          }
+          window.__BOT_RECOVERY__.salvar(urlSalvar || undefined);
         }
       }
     } catch (e) {}
@@ -383,7 +401,7 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '2.0', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '2.1', rotacao: descreverRotacaoAutomacaoBootstrap() };
   console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
