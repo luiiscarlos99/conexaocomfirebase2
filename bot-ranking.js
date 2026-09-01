@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.23
+// @version      1.24
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.23';
+      var SCRIPT_VERSAO = '1.24';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -1447,6 +1447,7 @@
           ryous: suspeito.ryous,
           nivel: suspeito.nivel,
           vitorias: suspeito.vitorias,
+          vitoriasAntes: suspeito.vitoriasAntes != null ? suspeito.vitoriasAntes : null,
           derrotas: suspeito.derrotas,
           tipo: suspeito.tipo || 'ciclo',
           tipoSuspeito: suspeito.tipoSuspeito || 'ryous_sem_vitder',
@@ -1465,8 +1466,14 @@
           .then(function(existing) {
             if (existing && existing.ts >= Date.now() - RANKING_RYOUS_FILA_TTL_MS) {
               var mesmoTipo = (existing.tipoSuspeito || 'ryous_sem_vitder') === payload.tipoSuspeito;
-              if (mesmoTipo && (existing.deltaRyous || 0) >= payload.deltaRyous) {
-                return { ok: false, motivo: 'delta menor ou igual' };
+              if (mesmoTipo) {
+                if (payload.tipoSuspeito === 'vit_sem_ryous') {
+                  if ((existing.deltaVitorias || 0) >= (payload.deltaVitorias || 0)) {
+                    return { ok: false, motivo: 'delta vit menor ou igual' };
+                  }
+                } else if ((existing.deltaRyous || 0) >= (payload.deltaRyous || 0)) {
+                  return { ok: false, motivo: 'delta ryous menor ou igual' };
+                }
               }
             }
             return fetch(urlFirebaseRankingFila('/' + chave), {
@@ -1474,6 +1481,11 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
             }).then(function(r) {
+              if (r.ok && payload.tipoSuspeito === 'vit_sem_ryous') {
+                console.log('[Bot Ranking Watch] Firebase fila vit+sem ryous: ' + payload.nome +
+                  ' (vit ' + (payload.vitoriasAntes != null ? payload.vitoriasAntes : '?') +
+                  '->' + payload.vitorias + ', delta vit +' + (payload.deltaVitorias || '?') + ')');
+              }
               return { ok: r.ok, motivo: r.ok ? 'salvo' : 'HTTP ' + r.status };
             });
           })
@@ -1493,7 +1505,8 @@
           var salvos = 0;
           function proximo() {
             if (idx >= suspeitos.length) {
-              console.log('[Bot Ranking Watch] Firebase fila: ' + salvos + '/' + suspeitos.length + ' salvo(s) (TTL 1h, ordem por deltaRyous).');
+              console.log('[Bot Ranking Watch] Firebase fila: ' + salvos + '/' + suspeitos.length +
+                ' salvo(s) (TTL 1h; prioridade: delta ryous, depois vit+ sem ryous).');
               if (callback) callback(salvos);
               return;
             }
@@ -1619,6 +1632,7 @@
           motivoSuspeito: ev.motivo
         };
         if (ev.deltaVitorias != null) reg.deltaVitorias = ev.deltaVitorias;
+        if (typeof ev.vitAnt === 'number') reg.vitoriasAntes = ev.vitAnt;
         if (extra && typeof extra === 'object') {
           for (var ek in extra) {
             if (Object.prototype.hasOwnProperty.call(extra, ek)) reg[ek] = extra[ek];

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.41
+// @version      3.42
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -687,8 +687,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.41';
-  var SCRIPT_ATUALIZADO = '01/09/2026 10:58';
+  var SCRIPT_VERSAO = '3.42';
+  var SCRIPT_ATUALIZADO = '01/09/2026 11:36';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -4584,6 +4584,31 @@
     try { sessionStorage.removeItem(BOT_CACADAS_FB_SKIP_KEY); } catch (e) {}
   }
 
+  function ordenarFilaFirebaseRyous(lista) {
+    lista.sort(function(a, b) {
+      var tipoA = a.tipoSuspeito || 'ryous_sem_vitder';
+      var tipoB = b.tipoSuspeito || 'ryous_sem_vitder';
+      if (tipoA !== tipoB) {
+        if (tipoA === 'ryous_sem_vitder') return -1;
+        if (tipoB === 'ryous_sem_vitder') return 1;
+      }
+      if (tipoA === 'vit_sem_ryous') {
+        return (b.deltaVitorias || 0) - (a.deltaVitorias || 0);
+      }
+      return (b.deltaRyous || 0) - (a.deltaRyous || 0);
+    });
+    return lista;
+  }
+
+  function descreverItemFirebaseFila(item) {
+    if (!item) return '?';
+    if (item.tipoSuspeito === 'vit_sem_ryous') {
+      return 'vit+' + (item.deltaVitorias || '?') + ' sem ryous (vit ' +
+        (item.vitoriasAntes != null ? item.vitoriasAntes : '?') + '->' + item.vitorias + ')';
+    }
+    return '+' + formatarNumeroBr(item.deltaRyous || 0) + ' ryous';
+  }
+
   function buscarFilaFirebaseRyous(callback) {
     var limiteTs = Date.now() - RANKING_RYOUS_FILA_TTL_MS;
     fetch(urlFirebaseRankingFila(''), { cache: 'no-store' })
@@ -4609,9 +4634,7 @@
           lista.push(item);
         }
         Promise.all(deletes).catch(function() {}).finally(function() {
-          lista.sort(function(a, b) {
-            return (b.deltaRyous || 0) - (a.deltaRyous || 0);
-          });
+          ordenarFilaFirebaseRyous(lista);
           callback(lista);
         });
       })
@@ -4646,6 +4669,7 @@
       var norm = normalizarNomeCacadas(item.nome);
       if (mapa[norm]) continue;
       if (skip[norm]) continue;
+      console.warn('[Firebase Fila] Proximo alvo: ' + item.nome + ' — ' + descreverItemFirebaseFila(item));
       return item.nome;
     }
     return null;
@@ -4656,7 +4680,7 @@
       sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'firebase_fila');
       sessionStorage.setItem(BOT_CACADAS_ALVO_NOME_KEY, nome);
     } catch (e) {}
-    console.warn('[Firebase Fila] Proximo alvo por nome: ' + nome);
+    console.warn('[Firebase Fila] Modo por_nome — alvo: ' + nome);
   }
 
   function cacadaAtualPorNomeFirebase() {
