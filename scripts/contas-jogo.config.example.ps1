@@ -12,6 +12,7 @@ $NivelCacadas = '1'
 #   Caçadas:  $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas
 #   Caçadas (blacklist por nome):  ...&bot_blacklist_cacadas=Nome1,Nome2,Nome3
 #   Caçadas (rotacao 10 contas automacao):  ...&bot_rotacao_automacao=1
+#   Caçadas (portao 5-6min, teto ocioso 29min):  ...&bot_cacadas_teto_29=1
 #   Invasor:  $UrlBase/invasor?bot_modo=invasor
 #   Invasor (last hit por data):  ...&bot_lasthit_modo=data
 #   Invasor (last hit sorteio 36k-38k):  ...&bot_lasthit_modo=sorteio

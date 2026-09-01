@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.44
+// @version      3.45
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -387,6 +387,31 @@
       : 'desligada';
   }
 
+  function gravarCacadasPortaoTeto29Param(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      localStorage.setItem('BOT_CACADAS_PORTAO_TETO_29', '0');
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_CACADAS_PORTAO_TETO_29', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function cacadasPortaoTeto29FlagAtiva() {
+    try { return localStorage.getItem('BOT_CACADAS_PORTAO_TETO_29') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function descreverCacadasPortaoTeto29() {
+    return cacadasPortaoTeto29FlagAtiva()
+      ? 'ligada (5-6min no portao, teto ocioso 29min)'
+      : 'desligada';
+  }
+
   function descreverDoujutsu() {
     var manual = doujutsuFlagManualAtiva() ? 'ligado' : 'desligado';
     var autoSab = doujutsuAutoSabadoFlagAtiva() ? 'ligado' : 'desligado';
@@ -446,6 +471,7 @@
     var dj = rp.get('bot_doujutsu');
     var djas = rp.get('bot_doujutsu_auto_sabado');
     var cff = rp.get('bot_cacadas_firebase_fila');
+    var ct29 = rp.get('bot_cacadas_teto_29');
     var dg = rp.get('bot_diario_gerenciada');
     var dgs = rp.get('bot_diario_sem_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
@@ -459,6 +485,7 @@
     if (dj !== null && dj !== '') gravarDoujutsuParam(dj);
     if (djas !== null && djas !== '') gravarDoujutsuAutoSabadoParam(djas);
     if (cff !== null && cff !== '') gravarCacadasFirebaseFilaParam(cff);
+    if (ct29 !== null && ct29 !== '') gravarCacadasPortaoTeto29Param(ct29);
     if (dg !== null && dg !== '') gravarDiarioGerenciadaParam(dg);
     if (dgs !== null && dgs !== '') gravarDiarioSemCacadasParam(dgs);
   }
@@ -594,7 +621,8 @@
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
           params.get('bot_doujutsu') || params.get('bot_doujutsu_auto_sabado') ||
-          params.get('bot_cacadas_firebase_fila') || params.get('bot_diario_gerenciada') ||
+          params.get('bot_cacadas_firebase_fila') || params.get('bot_cacadas_teto_29') ||
+          params.get('bot_diario_gerenciada') ||
           params.get('bot_diario_sem_cacadas') ||
           modoVeioDeQuery || modo === 'invasor' || modo === 'cacadas') &&
           window.history && window.history.replaceState) {
@@ -687,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.44';
-  var SCRIPT_ATUALIZADO = '01/09/2026 15:53';
+  var SCRIPT_VERSAO = '3.45';
+  var SCRIPT_ATUALIZADO = '01/09/2026 16:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -720,6 +748,7 @@
       var dj = localStorage.getItem('BOT_DOUJUTSU');
       var djas = localStorage.getItem('BOT_DOUJUTSU_AUTO_SABADO');
       var cff = localStorage.getItem('BOT_CACADAS_FIREBASE_FILA');
+      var ct29 = localStorage.getItem('BOT_CACADAS_PORTAO_TETO_29');
       var dg = localStorage.getItem('BOT_DIARIO_GERENCIADA');
       var dgs = localStorage.getItem('BOT_DIARIO_SEM_CACADAS');
       if (u) params.set('bot_user', u);
@@ -742,6 +771,8 @@
       else if (djas === '1') params.set('bot_doujutsu_auto_sabado', '1');
       if (cff === '1') params.set('bot_cacadas_firebase_fila', '1');
       else if (cff === '0') params.set('bot_cacadas_firebase_fila', '0');
+      if (ct29 === '1') params.set('bot_cacadas_teto_29', '1');
+      else if (ct29 === '0') params.set('bot_cacadas_teto_29', '0');
       if (dg === '1') params.set('bot_diario_gerenciada', '1');
       else if (dg === '0') params.set('bot_diario_gerenciada', '0');
       if (dgs === '1') params.set('bot_diario_sem_cacadas', '1');
@@ -850,6 +881,17 @@
     console.log('[Firebase Fila] ' + descreverCacadasFirebaseFila());
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
     return cacadasFirebaseFilaFlagAtiva();
+  };
+
+  window.botCacadasTeto29 = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Caçadas Teto29] ' + descreverCacadasPortaoTeto29());
+      return cacadasPortaoTeto29FlagAtiva();
+    }
+    gravarCacadasPortaoTeto29Param(ligar ? '1' : '0');
+    console.log('[Caçadas Teto29] ' + descreverCacadasPortaoTeto29());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return cacadasPortaoTeto29FlagAtiva();
   };
 
   window.botDiarioGerenciada = function(ligar) {
@@ -3328,6 +3370,9 @@
   var ESPERA_CACADAS_HORA_INICIO_LENTA = 2;       // 02:00
   var ESPERA_CACADAS_HORA_FIM_LENTA = 9;          // ate 08:59
   var GATE_CACADAS_VALIDADE_MS = 60000;
+  var TETO_OCIOSO_PORTAO_TETO_29_MS = 29 * 60000; // teto ocioso com bot_cacadas_teto_29=1
+  var ESPERA_PORTAO_TETO_29_MIN_MS = 5 * 60000;   // 5min total (inclui penalidade)
+  var ESPERA_PORTAO_TETO_29_MAX_MS = 6 * 60000;   // 6min total (inclui penalidade)
 
   function estaNoHorarioEsperaCacadasLenta() {
     var hora = new Date().getHours();
@@ -3335,6 +3380,16 @@
   }
 
   function calcularIntervaloEsperaCacadas() {
+    if (cacadasPortaoTeto29FlagAtiva()) {
+      return {
+        minMs: ESPERA_PORTAO_TETO_29_MIN_MS,
+        maxMs: ESPERA_PORTAO_TETO_29_MAX_MS,
+        tetoOciosoMs: TETO_OCIOSO_PORTAO_TETO_29_MS,
+        penMs: COOLDOWN_PENALIDADE_CACADAS_MS,
+        origem: 'portao-teto-29'
+      };
+    }
+
     var madrugada = estaNoHorarioEsperaCacadasLenta();
     var penMs = COOLDOWN_PENALIDADE_CACADAS_MS;
     var minutos = parseEsperaCacadasMinutos(localStorage.getItem('BOT_ESPERA_CACADAS'));
@@ -3399,6 +3454,9 @@
     var maxMin = Math.round(iv.maxMs / 60000);
     if (iv.origem === 'padrao-madrugada') {
       return penMin + 'min cooldown + 8-15min (' + minMin + '-' + maxMin + ' total, madrugada)';
+    }
+    if (iv.origem === 'portao-teto-29') {
+      return minMin + '-' + maxMin + 'min total no portao (teto ocioso 29min, bot_cacadas_teto_29=1)';
     }
     if (iv.origem === 'padrao-comercial') {
       return penMin + 'min cooldown + 2-4min (' + minMin + '-' + maxMin + ' total, comercial)';
@@ -6756,10 +6814,11 @@
     ' | HP minimo ataque: ' + descreverHpMinimoAtacar() +
     ' | Doujutsu: ' + descreverDoujutsu() +
     ' | InvasorVivo: ' + descreverInvasorVivo() +
+    ' | Teto29: ' + descreverCacadasPortaoTeto29() +
     ' | Diario gerenciada: ' + descreverDiarioGerenciada() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
-    ' | botInvasorVivo() / botInvasorVivo(true|false) | botDiarioGerenciada() / botDiarioGerenciada(true|false)' +
-    ' | botDiarioSemCacadas() / botDiarioSemCacadas(true|false) | botDiarioReset()' +
+    ' | botInvasorVivo() / botInvasorVivo(true|false) | botCacadasTeto29() / botCacadasTeto29(true|false)' +
+    ' | botDiarioGerenciada() / botDiarioGerenciada(true|false) | botDiarioSemCacadas() / botDiarioSemCacadas(true|false) | botDiarioReset()' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();

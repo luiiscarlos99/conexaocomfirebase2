@@ -51,8 +51,11 @@
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
       if (d !== null && d !== '') params.set('bot_diff_nivel_cacadas', d);
       if (v !== null && v !== '') params.set('bot_min_ryous_vitoria_cacadas', v);
+      var ct29 = localStorage.getItem('BOT_CACADAS_PORTAO_TETO_29');
       var dg = localStorage.getItem('BOT_DIARIO_GERENCIADA');
       var dgs = localStorage.getItem('BOT_DIARIO_SEM_CACADAS');
+      if (ct29 === '1') params.set('bot_cacadas_teto_29', '1');
+      else if (ct29 === '0') params.set('bot_cacadas_teto_29', '0');
       if (dg === '1') params.set('bot_diario_gerenciada', '1');
       else if (dg === '0') params.set('bot_diario_gerenciada', '0');
       if (dgs === '1') params.set('bot_diario_sem_cacadas', '1');
@@ -76,7 +79,8 @@
      'bot_whitelist_cacadas', 'bot_whitelist_cla_cacadas', 'bot_blacklist_cacadas',
      'bot_rotacao_automacao',
      'bot_max_ryous_cacadas', 'bot_diff_nivel_cacadas',
-     'bot_min_ryous_vitoria_cacadas', 'bot_diario_gerenciada', 'bot_diario_sem_cacadas'].forEach(function(k) {
+     'bot_min_ryous_vitoria_cacadas', 'bot_cacadas_teto_29',
+     'bot_diario_gerenciada', 'bot_diario_sem_cacadas'].forEach(function(k) {
       var v = rp.get(k);
       if (v !== null && v !== '') dest.set(k, v);
     });
