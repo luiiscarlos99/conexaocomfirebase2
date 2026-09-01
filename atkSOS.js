@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.48
+// @version      3.49
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.48';
-  var SCRIPT_ATUALIZADO = '01/09/2026 16:30';
+  var SCRIPT_VERSAO = '3.49';
+  var SCRIPT_ATUALIZADO = '01/09/2026 16:51';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -4288,6 +4288,24 @@
     return null;
   }
 
+  function detectarAvisoEnergiaVitalBaixaCacadas() {
+    var avisos = document.querySelectorAll('.avisos_erro');
+
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('energia vital') === -1) continue;
+      if (norm.indexOf('muito baixa') === -1) continue;
+      if (norm.indexOf('atacado') === -1) continue;
+
+      return texto;
+    }
+
+    return null;
+  }
+
   function extrairNivelAbaixoMinimoCacadas() {
     var col = document.getElementById('col_direita') || document;
     var avisos = col.querySelectorAll('.avisos_erro');
@@ -4420,6 +4438,32 @@
 
     limparEstadoModoCacadas();
     irParaPortaoRelatorios('Batalha recente 30min: ' + nome, { rotacionarAutomacao: true });
+    return true;
+  }
+
+  function processarInimigoEnergiaVitalBaixaCacadas() {
+    var avisoTexto = detectarAvisoEnergiaVitalBaixaCacadas();
+    if (!avisoTexto) return false;
+
+    var nome = obterAlvoNomeCacadasSessao() || '(desconhecido)';
+    console.warn('[Caçadas] Inimigo com energia vital baixa — ' + nome);
+
+    if (cacadaAtualPorNomeFirebase()) {
+      removerAlvoFirebaseFilaConsumido(nome, 'energia vital baixa');
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Firebase fila — energia vital baixa: ' + nome, { rotacionarAutomacao: true });
+      return true;
+    }
+
+    if (cacadaAtualPorNomeBlacklist()) {
+      adicionarSkipBlacklistCacadas(nome);
+      limparEstadoModoCacadas();
+      irParaPortaoRelatorios('Blacklist — energia vital baixa: ' + nome, { rotacionarAutomacao: true });
+      return true;
+    }
+
+    limparEstadoModoCacadas();
+    irParaPortaoRelatorios('Energia vital baixa: ' + nome, { rotacionarAutomacao: true });
     return true;
   }
 
@@ -7121,6 +7165,10 @@
             }
 
             if (processarInimigoBatalhaRecente30mCacadas()) {
+              return true;
+            }
+
+            if (processarInimigoEnergiaVitalBaixaCacadas()) {
               return true;
             }
 
