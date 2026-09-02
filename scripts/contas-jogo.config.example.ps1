@@ -20,6 +20,9 @@ $NivelCacadas = '1'
 #   Invasor (last hit scout):  ...&bot_lasthit_modo=scout
 # Nao use /cacadas direto — o bot exige passar pelo portao de relatorios primeiro.
 
+# Master switch — abrir navegadores (atalho manual e auto-start no logon)
+$ScriptAbrirNavegadores = $false
+
 # Intervalo entre abrir cada navegador (segundos)
 $IntervaloEntreContas = 3
 

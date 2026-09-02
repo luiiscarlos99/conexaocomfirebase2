@@ -8,7 +8,8 @@
 param(
     [ValidateSet('manual', 'auto')]
     [string]$Origem = 'manual',
-    [switch]$DevTools
+    [switch]$DevTools,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,24 @@ if (-not (Test-Path $configPath)) {
 }
 
 . $configPath
+
+if (-not (Get-Variable -Name 'ScriptAbrirNavegadores' -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:ScriptAbrirNavegadores = $false
+} else {
+    $script:ScriptAbrirNavegadores = [bool]$ScriptAbrirNavegadores
+}
+
+if (-not $ScriptAbrirNavegadores -and -not $Force) {
+    Write-Host ''
+    Write-Host 'Script de abertura de navegadores DESATIVADO.' -ForegroundColor Yellow
+    Write-Host '  Config: ScriptAbrirNavegadores = $true em contas-jogo.config.ps1' -ForegroundColor DarkGray
+    Write-Host '  Ou execute com -Force para abrir uma vez.' -ForegroundColor DarkGray
+    if ($Origem -eq 'auto') {
+        Write-Host '  (auto-start ignorado)' -ForegroundColor DarkGray
+    }
+    Write-Host ''
+    exit 0
+}
 
 if (-not (Get-Variable -Name 'AbrirDevTools' -Scope Script -ErrorAction SilentlyContinue)) {
     $script:AbrirDevTools = $false

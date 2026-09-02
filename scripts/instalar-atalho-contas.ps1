@@ -73,6 +73,15 @@ if ($instalarStartup) {
         Write-Warning "Arquivo de config nao encontrado: $configPath"
         Write-Warning 'Copie contas-jogo.config.example.ps1 para contas-jogo.config.ps1 antes de usar o auto-start.'
         $instalarStartup = $false
+    } else {
+        . $configPath
+        if (-not (Get-Variable -Name 'ScriptAbrirNavegadores' -Scope Script -ErrorAction SilentlyContinue)) {
+            $script:ScriptAbrirNavegadores = $false
+        }
+        if (-not $ScriptAbrirNavegadores) {
+            Write-Warning 'ScriptAbrirNavegadores=$false no config — auto-start nao sera instalado.'
+            $instalarStartup = $false
+        }
     }
 }
 
