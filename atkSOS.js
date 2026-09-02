@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.49
+// @version      3.50
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -26,7 +26,7 @@
   } catch (e) {}
 
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,shizuo,sora,shiroe';
-  var WHITELIST_CLA_CACADAS_DEFAULT = 'akatsuki';
+  var WHITELIST_CLA_CACADAS_DEFAULT = 'Tropa do NP';
 
   function parseEsperaCacadasMinutos(valor) {
     if (valor === null || valor === undefined || valor === '') return null;
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.49';
-  var SCRIPT_ATUALIZADO = '01/09/2026 16:51';
+  var SCRIPT_VERSAO = '3.50';
+  var SCRIPT_ATUALIZADO = '02/09/2026 11:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
