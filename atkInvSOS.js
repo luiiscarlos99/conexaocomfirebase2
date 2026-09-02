@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.11
-// @description  Automação do Invasor: last hit sorteio (2k-3k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
+// @version      7.12
+// @description  Automação do Invasor: last hit sorteio (26k-27k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -194,8 +194,8 @@
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
   var LASTHIT_MODO_DEFAULT = 'sorteio';
-  var LASTHIT_SORTEIO_MIN_DEFAULT = 2000;
-  var LASTHIT_SORTEIO_MAX_DEFAULT = 3000;
+  var LASTHIT_SORTEIO_MIN_DEFAULT = 26000;
+  var LASTHIT_SORTEIO_MAX_DEFAULT = 27000;
 
   function extrairModoDeUrlString(urlStr) {
     try {
@@ -397,8 +397,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.11';
-  var SCRIPT_ATUALIZADO = '01/09/2026 10:58';
+  var SCRIPT_VERSAO = '7.12';
+  var SCRIPT_ATUALIZADO = '02/09/2026 13:31';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -718,8 +718,8 @@
     if (norm.indexOf('ainda n') !== -1) return false;
     if (norm.indexOf('nao derrotado') !== -1) return false;
     if (norm.replace(/[^a-z0-9]/g, '').length < 2) return false;
-    return true;
-  }
+      return true;
+    }
 
   function derrotadoEmValido(em) {
     var s = String(em || '').trim();
@@ -1491,9 +1491,9 @@
       body: JSON.stringify({ content: conteudo })
     }).catch(function(err) {
       console.warn('[Discord] Falha ao avisar last hit:', err);
-    });
-    });
-  }
+          });
+        });
+    }
 
   function registrarJanelaLastHitSeNecessario(derrotadosAtual) {
     return fetchCoordInvasor().then(function(coord) {

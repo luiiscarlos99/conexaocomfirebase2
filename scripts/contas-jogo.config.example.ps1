@@ -15,7 +15,7 @@ $NivelCacadas = '1'
 #   Caçadas (portao 5-6min, teto ocioso 29min):  ...&bot_cacadas_teto_29=1
 #   Invasor:  $UrlBase/invasor?bot_modo=invasor
 #   Invasor (last hit por data):  ...&bot_lasthit_modo=data
-#   Invasor (last hit sorteio 36k-38k):  ...&bot_lasthit_modo=sorteio
+#   Invasor (last hit sorteio 26k-27k):  ...&bot_lasthit_modo=sorteio
 # Nao use /cacadas direto — o bot exige passar pelo portao de relatorios primeiro.
 
 # Intervalo entre abrir cada navegador (segundos)
