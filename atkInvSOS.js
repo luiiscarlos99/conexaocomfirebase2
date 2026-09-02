@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.13
-// @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Discord boss morto 1x via Firebase.
+// @version      7.14
+// @description  Automação do Invasor: last hit off e early off (padrao), scout/sorteio/data opcionais. Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -43,6 +43,44 @@
     var raw = localStorage.getItem('BOT_LIMITE_INVASOR');
     if (raw === null || raw === '') return limite + ' (padrao)';
     return limite + ' (bot_limite_invasor=' + raw + ')';
+  }
+
+  function parseBoolInvasorParam(valor, padrao) {
+    if (valor === null || valor === undefined) return padrao;
+    if (typeof valor === 'boolean') return valor;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      return false;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      return true;
+    }
+    return padrao;
+  }
+
+  function gravarInvasorEarlyParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var ativo = parseBoolInvasorParam(valor, true);
+    localStorage.setItem('BOT_INVASOR_EARLY', ativo ? '1' : '0');
+    return true;
+  }
+
+  function invasorEarlyAtivo() {
+    try {
+      var raw = localStorage.getItem('BOT_INVASOR_EARLY');
+      if (raw === null || raw === '') return INVASOR_EARLY_DEFAULT;
+      return parseBoolInvasorParam(raw, INVASOR_EARLY_DEFAULT);
+    } catch (e) {}
+    return INVASOR_EARLY_DEFAULT;
+  }
+
+  function descreverInvasorEarly() {
+    if (!invasorEarlyAtivo()) return 'desligado';
+    return 'ligado (ataca se derrotados <= ' + obterLimitePlayersDerrotados() + ')';
+  }
+
+  function deveAtacarFaseEarly(derrotados, temBotao) {
+    return invasorEarlyAtivo() && temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS;
   }
 
   function parseMinAtaquesInvasor(valor) {
@@ -175,7 +213,7 @@
 
   function descreverLastHitModo() {
     var modo = obterLastHitModo();
-    if (modo === 'off') return 'off (so limite early, padrao)';
+    if (modo === 'off') return 'off (sem last hit ni early, padrao)';
     if (modo === 'data') return 'data (+3min pos-janela)';
     if (modo === 'sorteio') {
       return 'sorteio (' + formatarNumeroInvasor(obterLastHitSorteioMin()) + '-' +
@@ -200,6 +238,7 @@
   }
 
   var LIMITE_INVASOR_DEFAULT = 500;
+  var INVASOR_EARLY_DEFAULT = false;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
   var LASTHIT_MODO_DEFAULT = 'off';
   var LASTHIT_SORTEIO_MIN_DEFAULT = 26000;
@@ -333,10 +372,12 @@
       var lm = params.get('bot_lasthit_modo');
       var lsm = params.get('bot_lasthit_sorteio_min');
       var lsx = params.get('bot_lasthit_sorteio_max');
+      var ie = params.get('bot_invasor_early');
       if (u) gravarUsuarioLoginParam(u);
       if (p) gravarSenhaLoginParam(p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
+      if (ie !== null && ie !== '') gravarInvasorEarlyParam(ie);
       if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
       else if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
       if (lsm !== null && lsm !== '') gravarLastHitSorteioMinParam(lsm);
@@ -354,7 +395,7 @@
         aplicarCredenciaisReferrer();
       }
 
-      if ((u || p || l || ma || lh || lm || lsm || lsx || modoVeioDeQuery) &&
+      if ((u || p || l || ma || lh || lm || lsm || lsx || ie || modoVeioDeQuery) &&
           window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
@@ -405,8 +446,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.13';
-  var SCRIPT_ATUALIZADO = '02/09/2026 19:25';
+  var SCRIPT_VERSAO = '7.14';
+  var SCRIPT_ATUALIZADO = '02/09/2026 19:42';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -460,6 +501,17 @@
     logLastHitNoConsole('comando manual — recarregando...');
     location.reload();
     return 'sorteio';
+  };
+
+  window.botInvasorEarly = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Invasor] Early: ' + descreverInvasorEarly());
+      return invasorEarlyAtivo();
+    }
+    gravarInvasorEarlyParam(ligar ? '1' : '0');
+    console.log('[Invasor] Early: ' + descreverInvasorEarly() + ' — recarregando...');
+    location.reload();
+    return invasorEarlyAtivo();
   };
 
   window.__BOT_BUILD_INVASOR__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
@@ -564,6 +616,7 @@
       var lm = localStorage.getItem('BOT_LASTHIT_MODO');
       var lsm = localStorage.getItem('BOT_LASTHIT_SORTEIO_MIN');
       var lsx = localStorage.getItem('BOT_LASTHIT_SORTEIO_MAX');
+      var ie = localStorage.getItem('BOT_INVASOR_EARLY');
       if (u) params.set('bot_user', u);
       if (p) params.set('bot_pass', p);
       if (n) params.set('bot_nivel', n);
@@ -573,6 +626,8 @@
       if (lm === 'data' || lm === 'sorteio' || lm === 'scout' || lm === 'off') {
         params.set('bot_lasthit_modo', lm);
       }
+      if (ie === '1') params.set('bot_invasor_early', '1');
+      else if (ie === '0') params.set('bot_invasor_early', '0');
       if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
       if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
     } catch (err) {}
@@ -1728,10 +1783,14 @@
 
   function processarInvasorSoEarly(derrotados, temBotao, temTimer) {
     console.log('[Invasor] Players derrotados: ' + derrotados +
-      ' (limite early: ' + LIMITE_PLAYERS_DERROTADOS + ', last hit off)');
+      ' (early: ' + descreverInvasorEarly() + ', last hit off)');
 
-    if (temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS) {
+    if (deveAtacarFaseEarly(derrotados, temBotao)) {
       tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
+    } else if (!invasorEarlyAtivo()) {
+      var tempo = resolverTempoReloadInvasor(null);
+      console.log('[Invasor] Early desligado — sem ataque automatico, reload ' +
+        descreverTempoReload(tempo) + '.');
     } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
       var tempoPosLimite = resolverTempoReloadInvasor(null);
       console.log('[Invasor] Pos-limite (last hit off) — sem ataque, reload ' +
@@ -1815,10 +1874,17 @@
     }
 
     console.log('[Invasor] Players derrotados: ' + derrotados +
-      ' (limite early: ' + LIMITE_PLAYERS_DERROTADOS + ')');
+      ' (early: ' + descreverInvasorEarly() + ')');
 
-    if (temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS) {
+    if (deveAtacarFaseEarly(derrotados, temBotao)) {
       tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
+    } else if (!invasorEarlyAtivo()) {
+      var tempoEarlyOff = resolverTempoReloadInvasor(coord);
+      console.log('[Invasor] Early desligado — sem ataque, reload ' +
+        descreverTempoReload(tempoEarlyOff) + '.');
+      if (deveEscutarCoordScout(coord, derrotados)) {
+        iniciarEscutaCoordInvasor();
+      }
     } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
       var tempoPosLimite = resolverTempoReloadInvasor(coord);
       if (lastHitModoData()) {
@@ -1828,7 +1894,7 @@
         console.log('[Invasor] Pos-limite (modo sorteio) — aguardando >= ' +
           formatarNumeroInvasor(obterLastHitSorteioMin()) + ' derrotados (reload ' +
           descreverTempoReload(tempoPosLimite) + ').');
-    } else {
+      } else {
         console.log('[Invasor] Pos-limite — aguardando scout registrar janela no Firebase (reload ' +
           descreverTempoReload(tempoPosLimite) + ').');
       }
@@ -2039,8 +2105,10 @@
   }
 
   console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL +
+    ' | Early: ' + descreverInvasorEarly() +
     ' | Limite early: ' + descreverLimiteInvasor() +
-    ' | Min ataques last hit: ' + descreverMinAtaquesInvasor());
+    ' | Min ataques last hit: ' + descreverMinAtaquesInvasor() +
+    ' | Console: botInvasorEarly() / botInvasorEarly(true|false)');
   logLastHitNoConsole();
 
   setTimeout(function() {

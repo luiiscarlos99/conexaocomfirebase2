@@ -28,6 +28,7 @@
       var lm = localStorage.getItem('BOT_LASTHIT_MODO');
       var lsm = localStorage.getItem('BOT_LASTHIT_SORTEIO_MIN');
       var lsx = localStorage.getItem('BOT_LASTHIT_SORTEIO_MAX');
+      var ie = localStorage.getItem('BOT_INVASOR_EARLY');
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
       var bl = localStorage.getItem('BOT_BLACKLIST_CACADAS');
@@ -45,6 +46,8 @@
       else if (lm === 'off') params.set('bot_lasthit_modo', 'off');
       if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
       if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
+      if (ie === '1') params.set('bot_invasor_early', '1');
+      else if (ie === '0') params.set('bot_invasor_early', '0');
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
       if (bl !== null && bl !== '') params.set('bot_blacklist_cacadas', bl);
@@ -76,7 +79,7 @@
 
     ['bot_user', 'bot_pass', 'bot_nivel', 'bot_espera_cacadas', 'bot_limite_invasor',
      'bot_min_ataques_invasor', 'bot_lasthit_data', 'bot_lasthit_modo',
-     'bot_lasthit_sorteio_min', 'bot_lasthit_sorteio_max',
+     'bot_lasthit_sorteio_min', 'bot_lasthit_sorteio_max', 'bot_invasor_early',
      'bot_whitelist_cacadas', 'bot_whitelist_cla_cacadas', 'bot_blacklist_cacadas',
      'bot_rotacao_automacao',
      'bot_max_ryous_cacadas', 'bot_diff_nivel_cacadas',
