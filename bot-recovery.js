@@ -42,6 +42,7 @@
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (ma !== null && ma !== '') params.set('bot_min_ataques_invasor', ma);
       if (lm === 'data' || lm === 'sorteio' || lm === 'scout') params.set('bot_lasthit_modo', lm);
+      else if (lm === 'off') params.set('bot_lasthit_modo', 'off');
       if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
       if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);

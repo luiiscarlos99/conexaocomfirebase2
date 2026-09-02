@@ -144,8 +144,10 @@
       if (lm !== null && lm !== '') {
         var lmv = String(lm).trim().toLowerCase();
         if (lmv === 'scout' || lmv === 'data' || lmv === 'sorteio' ||
+            lmv === 'off' || lmv === 'none' || lmv === 'early' ||
             lmv === 'random' || lmv === 'aleatorio' || lmv === 'aleatório') {
           if (lmv === 'random' || lmv === 'aleatorio' || lmv === 'aleatório') lmv = 'sorteio';
+          if (lmv === 'none' || lmv === 'early') lmv = 'off';
           localStorage.setItem('BOT_LASTHIT_MODO', lmv);
           try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e2) {}
         }
@@ -154,7 +156,7 @@
         if (lhv === '1' || lhv === 'true' || lhv === 'on' || lhv === 'sim' || lhv === 'yes') {
           localStorage.setItem('BOT_LASTHIT_MODO', 'data');
         } else if (lhv === '0' || lhv === 'false' || lhv === 'off' || lhv === 'nao' || lhv === 'não' || lhv === 'no') {
-          localStorage.setItem('BOT_LASTHIT_MODO', 'scout');
+          localStorage.setItem('BOT_LASTHIT_MODO', 'off');
         }
         try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e2) {}
       }

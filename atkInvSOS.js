@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.12
-// @description  Automação do Invasor: last hit sorteio (26k-27k, padrao), scout ou data (+3min). Discord boss morto 1x via Firebase.
+// @version      7.13
+// @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -88,7 +88,7 @@
     if (v) {
       localStorage.setItem('BOT_LASTHIT_MODO', 'data');
     } else {
-      localStorage.setItem('BOT_LASTHIT_MODO', 'scout');
+      localStorage.setItem('BOT_LASTHIT_MODO', 'off');
     }
     try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
     return true;
@@ -97,7 +97,8 @@
   function normalizarLastHitModo(valor) {
     if (valor === null || valor === undefined || valor === '') return null;
     var s = String(valor).trim().toLowerCase();
-    if (s === 'scout' || s === '0' || s === 'false' || s === 'off') return 'scout';
+    if (s === 'off' || s === 'none' || s === 'early' || s === '0' || s === 'false') return 'off';
+    if (s === 'scout') return 'scout';
     if (s === 'data' || s === '1' || s === 'true' || s === 'on') return 'data';
     if (s === 'sorteio' || s === 'random' || s === 'aleatorio' || s === 'aleatório') return 'sorteio';
     return null;
@@ -120,6 +121,10 @@
 
   function lastHitModoData() {
     return obterLastHitModo() === 'data';
+  }
+
+  function lastHitModoOff() {
+    return obterLastHitModo() === 'off';
   }
 
   function lastHitModoSorteio() {
@@ -170,14 +175,16 @@
 
   function descreverLastHitModo() {
     var modo = obterLastHitModo();
+    if (modo === 'off') return 'off (so limite early, padrao)';
     if (modo === 'data') return 'data (+3min pos-janela)';
     if (modo === 'sorteio') {
       return 'sorteio (' + formatarNumeroInvasor(obterLastHitSorteioMin()) + '-' +
-        formatarNumeroInvasor(obterLastHitSorteioMax()) + ' aleatorio, padrao)';
+        formatarNumeroInvasor(obterLastHitSorteioMax()) + ' aleatorio)';
     }
     return 'scout (derrotados)';
   }
 
+  var COMANDO_LASTHIT_OFF = 'botLastHitOff()';
   var COMANDO_LASTHIT_SCOUT = 'botLastHitScout()';
   var COMANDO_LASTHIT_DATA = 'botLastHitData()';
   var COMANDO_LASTHIT_SORTEIO = 'botLastHitSorteio()';
@@ -186,6 +193,7 @@
     var linha = '[Script Invasor] Last hit: ' + descreverLastHitModo();
     if (origem) linha += ' — ' + origem;
     console.log(linha);
+    console.log(COMANDO_LASTHIT_OFF);
     console.log(COMANDO_LASTHIT_SCOUT);
     console.log(COMANDO_LASTHIT_DATA);
     console.log(COMANDO_LASTHIT_SORTEIO);
@@ -193,7 +201,7 @@
 
   var LIMITE_INVASOR_DEFAULT = 500;
   var MIN_ATAQUES_INVASOR_DEFAULT = 5;
-  var LASTHIT_MODO_DEFAULT = 'sorteio';
+  var LASTHIT_MODO_DEFAULT = 'off';
   var LASTHIT_SORTEIO_MIN_DEFAULT = 26000;
   var LASTHIT_SORTEIO_MAX_DEFAULT = 27000;
 
@@ -397,8 +405,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.12';
-  var SCRIPT_ATUALIZADO = '02/09/2026 13:31';
+  var SCRIPT_VERSAO = '7.13';
+  var SCRIPT_ATUALIZADO = '02/09/2026 19:25';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -421,6 +429,14 @@
     window.botLigar = window.__BOT_CONTROLE__.ligar;
     window.botStatus = window.__BOT_CONTROLE__.status;
   }
+
+  window.botLastHitOff = function() {
+    localStorage.setItem('BOT_LASTHIT_MODO', 'off');
+    try { localStorage.removeItem('BOT_LASTHIT_POR_DATA'); } catch (e) {}
+    logLastHitNoConsole('comando manual — recarregando...');
+    location.reload();
+    return 'off';
+  };
 
   window.botLastHitData = function() {
     localStorage.setItem('BOT_LASTHIT_MODO', 'data');
@@ -554,7 +570,9 @@
       if (e !== null && e !== '') params.set('bot_espera_cacadas', e);
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (ma !== null && ma !== '') params.set('bot_min_ataques_invasor', ma);
-      if (lm === 'data' || lm === 'sorteio' || lm === 'scout') params.set('bot_lasthit_modo', lm);
+      if (lm === 'data' || lm === 'sorteio' || lm === 'scout' || lm === 'off') {
+        params.set('bot_lasthit_modo', lm);
+      }
       if (lsm !== null && lsm !== '') params.set('bot_lasthit_sorteio_min', lsm);
       if (lsx !== null && lsx !== '') params.set('bot_lasthit_sorteio_max', lsx);
     } catch (err) {}
@@ -1247,6 +1265,7 @@
   }
 
   function aoReceberCoordFirebase(coord) {
+    if (lastHitModoOff()) return;
     if (!coordMonitorAtivo(coord)) return;
 
     var entradaNova = !monitorLastHitCoord;
@@ -1316,6 +1335,7 @@
   }
 
   function deveEscutarCoordScout(coord, derrotados) {
+    if (lastHitModoOff()) return false;
     if (checarContaGerenciada()) return false;
     if (coordMonitorAtivo(coord)) return false;
     return derrotados > LIMITE_PLAYERS_DERROTADOS;
@@ -1496,6 +1516,9 @@
     }
 
   function registrarJanelaLastHitSeNecessario(derrotadosAtual) {
+    if (lastHitModoOff()) {
+      return Promise.resolve(null);
+    }
     return fetchCoordInvasor().then(function(coord) {
       if (coordMonitorAtivo(coord)) {
         if (coordEhModoData(coord)) {
@@ -1703,7 +1726,26 @@
       (tempoMs === TEMPO_RELOAD_GERENCIADA ? ' (conta gerenciada)' : '');
   }
 
+  function processarInvasorSoEarly(derrotados, temBotao, temTimer) {
+    console.log('[Invasor] Players derrotados: ' + derrotados +
+      ' (limite early: ' + LIMITE_PLAYERS_DERROTADOS + ', last hit off)');
+
+    if (temBotao && derrotados <= LIMITE_PLAYERS_DERROTADOS) {
+      tentarAtacarLocalmente('Early (<= ' + LIMITE_PLAYERS_DERROTADOS + ' derrotas)');
+    } else if (derrotados > LIMITE_PLAYERS_DERROTADOS) {
+      var tempoPosLimite = resolverTempoReloadInvasor(null);
+      console.log('[Invasor] Pos-limite (last hit off) — sem ataque, reload ' +
+        descreverTempoReload(tempoPosLimite) + '.');
+    }
+
+    return Promise.resolve(resolverTempoReloadInvasor(null));
+  }
+
   function processarCoordInvasor(coord, derrotados, temBotao, temTimer) {
+    if (lastHitModoOff()) {
+      return processarInvasorSoEarly(derrotados, temBotao, temTimer);
+    }
+
     if (coord && coordExpirada(coord)) {
       console.warn('[LastHit] Coord expirada (>45min) — limpando estado.');
       return limparEstadoFirebaseInvasor('coord expirada').then(function() {
@@ -1835,6 +1877,10 @@
       }
 
       // 1) Le Firebase primeiro — contas com cooldown entram no poll 2s assim que scout registrar
+      if (lastHitModoOff()) {
+        return processarInvasorSoEarly(derrotados, temBotao, temTimer);
+      }
+
       return fetchCoordInvasor().then(function(coord) {
         if (coordMonitorAtivo(coord)) {
           return processarCoordInvasor(coord, derrotados, temBotao, temTimer);
