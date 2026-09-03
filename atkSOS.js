@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.52
+// @version      3.53
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.52';
-  var SCRIPT_ATUALIZADO = '03/09/2026 01:30';
+  var SCRIPT_VERSAO = '3.53';
+  var SCRIPT_ATUALIZADO = '03/09/2026 20:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1457,6 +1457,30 @@
     try { location.replace(url); } catch (e) { location.href = url; }
   }
 
+  function encerrarBotDiarioGerenciadaAutomatico() {
+    console.log(
+      '%c[Diario] ROTINA DIARIA FINALIZADA — sequencia completa (' +
+      DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ').',
+      'color:#2ecc71;font-weight:bold'
+    );
+    console.log('[Diario] Encerrando automaticamente: botDiarioReset(), botRotacaoAutomacao(false), botDiarioGerenciada(false)...');
+
+    if (typeof window.botDiarioReset === 'function') {
+      window.botDiarioReset();
+      console.log('[Diario] botDiarioReset() executado.');
+    }
+    if (typeof window.botRotacaoAutomacao === 'function') {
+      window.botRotacaoAutomacao(false);
+      console.log('[Diario] botRotacaoAutomacao(false) executado.');
+    }
+    if (typeof window.botDiarioGerenciada === 'function') {
+      window.botDiarioGerenciada(false);
+      console.log('[Diario] botDiarioGerenciada(false) executado.');
+    }
+
+    console.log('[Diario] Encerramento automatico concluido — rotina diaria e rotacao desligadas.');
+  }
+
   function rotacionarDiarioProximoLoginMesmaAba() {
     var login = obterUsuarioLogin();
     var proximo = obterProximoLoginDiarioSequencia(login);
@@ -1465,6 +1489,7 @@
       marcarDiarioCicloSequenciaConcluido();
       console.log('%c[Diario] Sequencia completa na mesma aba (' +
         DIARIO_LOGINS_SEQUENCIA.join(' -> ') + ').', 'color:#2ecc71;font-weight:bold');
+      encerrarBotDiarioGerenciadaAutomatico();
       return;
     }
 
@@ -7151,7 +7176,7 @@
             if (obterModoAba() !== 'cacadas') return false;
             if (cacadasBloqueadaPorDiarioGerenciada()) {
               if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
-                return true;
+            return true;
               }
               return false;
             }
@@ -7301,8 +7326,8 @@
 
             if (modo === 'firebase_fila' && alvoNome) {
               if (executarCacadaPorNome(alvoNome)) {
-                return true;
-              }
+                  return true;
+                }
               console.warn('[Firebase Fila] Formulario por_nome indisponivel — tentando caçada por nivel...');
             }
 
