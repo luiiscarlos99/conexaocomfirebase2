@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.15
+// @version      7.16
 // @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP minimo (25) via Ichiraku. Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -91,6 +91,33 @@
     var raw = localStorage.getItem('BOT_MIN_ATAQUES_INVASOR');
     if (raw === null || raw === '') return min + ' (padrao)';
     return min + ' (bot_min_ataques_invasor=' + raw + ')';
+  }
+
+  function parseHpMinimoInvasor(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var n = parseInt(String(valor).replace(/\./g, ''), 10);
+    if (isNaN(n) || n < 1) return null;
+    return n;
+  }
+
+  function gravarHpMinimoInvasorParam(valor) {
+    var n = parseHpMinimoInvasor(valor);
+    if (n === null) return false;
+    localStorage.setItem('BOT_HP_MINIMO_INVASOR', String(n));
+    return true;
+  }
+
+  function obterHpMinimoInvasorDefault() {
+    var n = parseHpMinimoInvasor(localStorage.getItem('BOT_HP_MINIMO_INVASOR'));
+    if (n !== null) return n;
+    return HP_MINIMO_INVASOR;
+  }
+
+  function descreverHpMinimoInvasor() {
+    var min = obterHpMinimoInvasorDefault();
+    var raw = localStorage.getItem('BOT_HP_MINIMO_INVASOR');
+    if (raw === null || raw === '') return min + ' (padrao)';
+    return min + ' (bot_hp_minimo_invasor=' + raw + ')';
   }
 
   function parseLastHitPorData(valor) {
@@ -354,10 +381,12 @@
       var lm = params.get('bot_lasthit_modo');
       var lsm = params.get('bot_lasthit_sorteio_min');
       var lsx = params.get('bot_lasthit_sorteio_max');
+      var hpMin = params.get('bot_hp_minimo_invasor');
       if (u) gravarUsuarioLoginParam(u);
       if (p) gravarSenhaLoginParam(p);
       if (l !== null && l !== '') gravarLimiteInvasorParam(l);
       if (ma !== null && ma !== '') gravarMinAtaquesInvasorParam(ma);
+      if (hpMin !== null && hpMin !== '') gravarHpMinimoInvasorParam(hpMin);
       if (lm !== null && lm !== '') gravarLastHitModoParam(lm);
       else if (lh !== null && lh !== '') gravarLastHitPorDataParam(lh);
       if (lsm !== null && lsm !== '') gravarLastHitSorteioMinParam(lsm);
@@ -375,7 +404,7 @@
         aplicarCredenciaisReferrer();
       }
 
-      if ((u || p || l || ma || lh || lm || lsm || lsx || modoVeioDeQuery) &&
+      if ((u || p || l || ma || hpMin || lh || lm || lsm || lsx || modoVeioDeQuery) &&
           window.history && window.history.replaceState) {
         history.replaceState(null, document.title, location.pathname + location.hash);
       }
@@ -426,8 +455,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.15';
-  var SCRIPT_ATUALIZADO = '03/09/2026 00:45';
+  var SCRIPT_VERSAO = '7.16';
+  var SCRIPT_ATUALIZADO = '03/09/2026 01:15';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -1897,7 +1926,7 @@
       var n = parseInt(raw, 10);
       if (!isNaN(n) && n > 0) return n;
     } catch (e) {}
-    return HP_MINIMO_INVASOR;
+    return obterHpMinimoInvasorDefault();
   }
 
   function salvarHpSnapshot(current, max) {
@@ -1922,8 +1951,10 @@
 
   function extrairHpDaPagina() {
     var raizes = [];
-    var col = document.getElementById('col_esquerda');
-    if (col) raizes.push(col);
+    var colEsq = document.getElementById('col_esquerda');
+    var colDir = document.getElementById('col_direita');
+    if (colEsq) raizes.push(colEsq);
+    if (colDir) raizes.push(colDir);
     if (document.body) raizes.push(document.body);
 
     for (var r = 0; r < raizes.length; r++) {
@@ -1967,8 +1998,11 @@
     try {
       sessionStorage.removeItem(BOT_INV_HP_CURAR_KEY);
       sessionStorage.removeItem(BOT_INV_HP_SNAPSHOT_KEY);
-      sessionStorage.removeItem(BOT_INV_HP_META_KEY);
     } catch (e) {}
+  }
+
+  function hpAtendeMetaInvasor(hp) {
+    return !!(hp && hp.ok && hp.current >= obterMetaHpInvasor());
   }
 
   function detectarAvisoEnergiaVitalBaixa() {
@@ -1993,7 +2027,46 @@
       return true;
     }
     var hp = obterStatusHp();
-    return hp.ok && hp.current < obterMetaHpInvasor();
+    return hp.ok && !hpAtendeMetaInvasor(hp);
+  }
+
+  function garantirHpInvasorParaAtacar(contexto) {
+    if (obterModoAba() !== 'invasor') return true;
+
+    var aviso = detectarAvisoEnergiaVitalBaixa();
+    if (aviso) {
+      salvarMetaHpInvasor(aviso);
+      redirecionarParaCurarHpInvasor('aviso energia vital abaixo de ' + aviso + ' (' + contexto + ')');
+      return false;
+    }
+
+    var hp = obterStatusHp();
+    var url = window.location.href || '';
+    var naPaginaStatus = url.indexOf('status') !== -1;
+
+    if (curarHpInvasorAtivo()) {
+      if (naPaginaStatus) return false;
+      if (hpAtendeMetaInvasor(hp)) {
+        limparCurarHpInvasor();
+        return true;
+      }
+      if (hp.ok && !hpAtendeMetaInvasor(hp)) {
+        redirecionarParaCurarHpInvasor('cura pendente (' + contexto + ') — ' + formatarHpLog(hp));
+        return false;
+      }
+      console.warn('[HP Invasor] Flag de cura ativa sem HP legivel — limpando (' + contexto + ')');
+      limparCurarHpInvasor();
+      hp = obterStatusHp();
+    }
+
+    if (!hp.ok) {
+      console.warn('[HP Invasor] HP ilegivel — ' + contexto + ' (seguindo sem bloqueio).');
+      return true;
+    }
+    if (hpAtendeMetaInvasor(hp)) return true;
+
+    redirecionarParaCurarHpInvasor('HP ' + hp.current + ' < ' + obterMetaHpInvasor() + ' (' + contexto + ')');
+    return false;
   }
 
   function redirecionarParaCurarHpInvasor(motivo) {
@@ -2051,7 +2124,7 @@
       return suficientes[0];
     }
 
-    disponiveis.sort(function(a, b) { return a.heal - b.heal; });
+    disponiveis.sort(function(a, b) { return b.heal - a.heal; });
     return disponiveis[0];
   }
 
@@ -2063,7 +2136,7 @@
 
     if (!hp.ok) hp = lerHpSnapshot() || hp;
 
-    if (hp && hp.ok && hp.current >= minimo) {
+    if (hp && hp.ok && hpAtendeMetaInvasor(hp)) {
       console.log('[HP Invasor] Energia vital OK (' + formatarHpLog(hp) +
         ' >= ' + minimo + ') — voltando ao invasor.');
       limparCurarHpInvasor();
@@ -2072,7 +2145,7 @@
     }
 
     if (!hp || !hp.ok) {
-      console.warn('[HP Invasor] /status — HP ilegivel; aguardando snapshot ou reload.');
+      console.warn('[HP Invasor] /status — HP ilegivel; reload em ' + (TEMPO_ESPERA / 1000) + 's.');
       return true;
     }
 
@@ -2103,10 +2176,7 @@
 
   function processarPaginaInvasor() {
     return limparComandoAtacarLegadoSeNecessario().then(function() {
-      var avisoHp = detectarAvisoEnergiaVitalBaixa();
-      if (avisoHp) {
-        salvarMetaHpInvasor(avisoHp);
-        redirecionarParaCurarHpInvasor('aviso energia vital abaixo de ' + avisoHp);
+      if (!garantirHpInvasorParaAtacar('pagina /invasor')) {
         return false;
       }
 
@@ -2314,7 +2384,8 @@
 
   console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL +
     ' | Limite early: ' + descreverLimiteInvasor() +
-    ' | Min ataques last hit: ' + descreverMinAtaquesInvasor());
+    ' | Min ataques last hit: ' + descreverMinAtaquesInvasor() +
+    ' | HP minimo: ' + descreverHpMinimoInvasor());
   logLastHitNoConsole();
 
   setTimeout(function() {
@@ -2411,7 +2482,14 @@
           recuperarModoAbaPosLogin();
         }
         if (obterModoAba() === 'invasor') {
-          if (processarCurarHpNaPaginaStatus()) return;
+          if (processarCurarHpNaPaginaStatus()) {
+            if (curarHpInvasorAtivo()) {
+              console.log('[Script Invasor] Status — cura HP em andamento, reload ' +
+                (TEMPO_ESPERA / 1000) + 's.');
+              agendarReloadInvasor(TEMPO_ESPERA);
+            }
+            return;
+          }
           redirecionarParaInvasor('status');
         }
         return;
