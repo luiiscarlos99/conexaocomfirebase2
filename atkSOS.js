@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.51
+// @version      3.52
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.51';
-  var SCRIPT_ATUALIZADO = '03/09/2026 00:45';
+  var SCRIPT_VERSAO = '3.52';
+  var SCRIPT_ATUALIZADO = '03/09/2026 01:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1991,15 +1991,27 @@
   }
 
   function extrairRyousJogadorSidebar() {
-    var col = document.getElementById('col_esquerda');
-    if (!col) return null;
-    var badge = col.querySelector('.badge-ryous');
-    if (badge) {
-      var n = parseNumeroBr((badge.innerText || badge.textContent || '').trim());
-      if (n !== null) return n;
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var col = raizes[r];
+      if (col === document.body) continue;
+
+      var ryousVal = col.querySelector('.ryous-val');
+      if (ryousVal) {
+        var nVal = parseNumeroBr((ryousVal.innerText || ryousVal.textContent || '').trim());
+        if (nVal !== null) return nVal;
+      }
+
+      var badge = col.querySelector('.badge-ryous');
+      if (badge) {
+        var nBadge = parseNumeroBr((badge.innerText || badge.textContent || '').trim());
+        if (nBadge !== null) return nBadge;
+      }
+
+      var m = (col.innerText || col.textContent || '').match(/Ryous\s*:?\s*([\d.,]+)/i);
+      if (m) return parseNumeroBr(m[1]);
     }
-    var m = (col.innerText || col.textContent || '').match(/Ryous:\s*([\d.,]+)/i);
-    return m ? parseNumeroBr(m[1]) : null;
+    return null;
   }
 
   function extrairValorLinhaTabelaDiario(rotuloParcial) {
@@ -2715,33 +2727,55 @@
   agendarRetentativasLogin();
 
   // --- DETECTA USUÁRIO LOGADO NA SIDEBAR E SINCRONIZA localStorage ---
+  function obterRaizesSidebar() {
+    var raizes = [];
+    var colEsq = document.getElementById('col_esquerda');
+    var colDir = document.getElementById('col_direita');
+    if (colEsq) raizes.push(colEsq);
+    if (colDir) raizes.push(colDir);
+    var sidebars = document.querySelectorAll('.np-sidebar');
+    for (var i = 0; i < sidebars.length; i++) raizes.push(sidebars[i]);
+    if (document.body) raizes.push(document.body);
+    return raizes;
+  }
+
+  function sidebarTemPainelPersonagem(el) {
+    if (!el) return false;
+    if (el.querySelector('.hp-top, .village-badge')) return true;
+    var texto = normalizarTextoCombate(el.innerText || el.textContent || '');
+    return texto.indexOf('vila') !== -1 && texto.indexOf('hp') !== -1;
+  }
+
   function extrairNomeUsuarioLogado() {
     if (document.getElementById('login')) return null;
 
-    var colEsquerda = document.getElementById('col_esquerda');
-    if (!colEsquerda) return null;
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var raiz = raizes[r];
+      if (raiz === document.body) continue;
 
-    var tabelas = colEsquerda.querySelectorAll('table');
-    for (var i = 0; i < tabelas.length; i++) {
-      var tabela = tabelas[i];
-      var info = tabela.querySelector('td.box_preto_cor_central');
-      if (!info) continue;
+      var tabelas = raiz.querySelectorAll('table');
+      if (!tabelas.length) tabelas = [raiz];
 
-      var textoInfo = info.innerText || info.textContent || '';
-      if (textoInfo.indexOf('Vila:') === -1 || textoInfo.indexOf('HP:') === -1) continue;
+      for (var i = 0; i < tabelas.length; i++) {
+        var tabela = tabelas[i];
+        var info = tabela.querySelector('td.box_preto_cor_central, .panel-body');
+        if (!info) continue;
+        if (!sidebarTemPainelPersonagem(info)) continue;
 
-      var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
-      if (!tdNome) {
-        var logo = tabela.querySelector('img[src*="logo_simples"]');
-        if (logo && logo.parentElement) {
-          tdNome = logo.parentElement.nextElementSibling;
+        var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
+        if (!tdNome) {
+          var logo = tabela.querySelector('img[src*="logo_simples"]');
+          if (logo && logo.parentElement) {
+            tdNome = logo.parentElement.nextElementSibling;
+          }
         }
-      }
-      if (!tdNome) continue;
+        if (!tdNome) continue;
 
-      var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
-      if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
-        return nome;
+        var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
+        if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
+          return nome;
+        }
       }
     }
 
@@ -2811,15 +2845,40 @@
     return null;
   }
 
+  function extrairHpSidebarDom(raiz) {
+    if (!raiz || !raiz.querySelector) return null;
+    var hpTop = raiz.querySelector('.hp-top');
+    if (!hpTop) return null;
+
+    var cur = hpTop.querySelector('.cur');
+    var val = hpTop.querySelector('.val');
+    var current = cur ? parseNumeroHp(cur.innerText || cur.textContent) : null;
+    var max = null;
+
+    if (val) {
+      var valText = (val.innerText || val.textContent || '').trim();
+      var m = valText.match(/([\d.,]+)\s*\/\s*([\d.,]+)/);
+      if (m) {
+        if (current === null) current = parseNumeroHp(m[1]);
+        max = parseNumeroHp(m[2]);
+      }
+    }
+
+    if (current === null || max === null || max <= 0) return null;
+    return { ok: true, current: current, max: max, pct: current / max };
+  }
+
   function extrairHpDaPagina() {
-    var raizes = [];
-    var col = document.getElementById('col_esquerda');
-    if (col) raizes.push(col);
-    if (document.body) raizes.push(document.body);
+    var raizes = obterRaizesSidebar();
+
+    for (var d = 0; d < raizes.length; d++) {
+      var dom = extrairHpSidebarDom(raizes[d]);
+      if (dom && dom.ok) return dom;
+    }
 
     for (var r = 0; r < raizes.length; r++) {
       var texto = raizes[r].innerText || raizes[r].textContent || '';
-      var m = texto.match(/HP:\s*([\d.,]+)\s*\/\s*([\d.,]+)/i);
+      var m = texto.match(/HP\s*:?\s*([\d.,]+)\s*\/\s*([\d.,]+)/i);
       if (!m) continue;
       var current = parseNumeroHp(m[1]);
       var max = parseNumeroHp(m[2]);
@@ -3129,22 +3188,36 @@
   }
 
   function extrairDoujutsuSidebar() {
-    var col = document.getElementById('col_esquerda');
-    var raizes = [];
-    if (col) raizes.push(col);
-    if (document.body) raizes.push(document.body);
+    var raizes = obterRaizesSidebar();
+    var colRef = document.getElementById('col_esquerda') ||
+      document.querySelector('.np-sidebar');
 
     for (var r = 0; r < raizes.length; r++) {
       var raiz = raizes[r];
+      var djTop = raiz.querySelector('.doujutsu-top');
+      if (djTop) {
+        var statusEl = djTop.querySelector('.doujutsu-status');
+        var timerEl = raiz.querySelector('.doujutsu-timer');
+        var texto = ((statusEl && (statusEl.innerText || statusEl.textContent)) || '') +
+          ' ' + ((timerEl && (timerEl.innerText || timerEl.textContent)) || '');
+        var estado = interpretarEstadoDoujutsuSidebar(texto.trim(), colRef || raiz);
+        return {
+          encontrado: true,
+          ativo: estado.ativo,
+          expirado: estado.expirado,
+          texto: estado.texto
+        };
+      }
+
       var textoPagina = raiz.innerText || raiz.textContent || '';
-      var m = textoPagina.match(/Doujutsu:\s*([^\n]+)/i);
+      var m = textoPagina.match(/D[oō\u014d]jutsu\s*:?\s*([^\n]+)/i);
       if (!m) continue;
-      var estado = interpretarEstadoDoujutsuSidebar(m[1], col);
+      var estadoLegado = interpretarEstadoDoujutsuSidebar(m[1], colRef || raiz);
       return {
         encontrado: true,
-        ativo: estado.ativo,
-        expirado: estado.expirado,
-        texto: estado.texto
+        ativo: estadoLegado.ativo,
+        expirado: estadoLegado.expirado,
+        texto: estadoLegado.texto
       };
     }
     return { encontrado: false, ativo: false, expirado: false, texto: '' };
@@ -5103,9 +5176,17 @@
 
   function extrairReservaRyousDeDocumento(doc) {
     if (!doc) return null;
-    var col = doc.getElementById ? doc.getElementById('col_esquerda') : null;
-    var reserva = extrairReservaRyousDeTexto(textoElementoReserva(col));
-    if (reserva !== null) return reserva;
+    var raizes = [];
+    if (doc.getElementById) {
+      var col = doc.getElementById('col_esquerda');
+      if (col) raizes.push(col);
+      var sidebars = doc.querySelectorAll('.np-sidebar');
+      for (var i = 0; i < sidebars.length; i++) raizes.push(sidebars[i]);
+    }
+    for (var r = 0; r < raizes.length; r++) {
+      var reserva = extrairReservaRyousDeTexto(textoElementoReserva(raizes[r]));
+      if (reserva !== null) return reserva;
+    }
     return extrairReservaRyousDeTexto(textoElementoReserva(doc.body));
   }
 
@@ -5768,16 +5849,32 @@
   }
 
   function extrairNivelJogadorSidebar() {
-    var col = document.getElementById('col_esquerda');
-    if (!col) return null;
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var col = raizes[r];
+      if (col === document.body) continue;
 
-    var html = col.innerHTML || '';
-    var m = html.match(/N[ií]vel:<\/strong>\s*(\d+)/i);
-    if (m) return parseInt(m[1], 10);
+      var rows = col.querySelectorAll('.stat-row');
+      for (var i = 0; i < rows.length; i++) {
+        var lbl = rows[i].querySelector('.lbl');
+        if (!lbl) continue;
+        var lblNorm = normalizarTextoCombate(lbl.innerText || lbl.textContent || '');
+        if (lblNorm.indexOf('nivel') === -1) continue;
+        var val = rows[i].querySelector('.val');
+        if (!val) continue;
+        var n = parseInt(String(val.innerText || val.textContent || '').replace(/\D/g, ''), 10);
+        if (!isNaN(n) && n > 0) return n;
+      }
 
-    var texto = col.innerText || col.textContent || '';
-    m = texto.match(/N[ií]vel:\s*(\d+)/i);
-    return m ? parseInt(m[1], 10) : null;
+      var html = col.innerHTML || '';
+      var m = html.match(/N[ií]vel:<\/strong>\s*(\d+)/i);
+      if (m) return parseInt(m[1], 10);
+
+      var texto = col.innerText || col.textContent || '';
+      m = texto.match(/N[ií]vel\s*:?\s*(\d+)/i);
+      if (m) return parseInt(m[1], 10);
+    }
+    return null;
   }
 
   function extrairNivelInimigo(textoNivel) {

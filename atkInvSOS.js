@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.16
+// @version      7.17
 // @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP minimo (25) via Ichiraku. Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -455,8 +455,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.16';
-  var SCRIPT_ATUALIZADO = '03/09/2026 01:15';
+  var SCRIPT_VERSAO = '7.17';
+  var SCRIPT_ATUALIZADO = '03/09/2026 01:30';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -706,33 +706,55 @@
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
   // --- DETECTA USUÁRIO LOGADO NA SIDEBAR E SINCRONIZA localStorage ---
+  function obterRaizesSidebar() {
+    var raizes = [];
+    var colEsq = document.getElementById('col_esquerda');
+    var colDir = document.getElementById('col_direita');
+    if (colEsq) raizes.push(colEsq);
+    if (colDir) raizes.push(colDir);
+    var sidebars = document.querySelectorAll('.np-sidebar');
+    for (var i = 0; i < sidebars.length; i++) raizes.push(sidebars[i]);
+    if (document.body) raizes.push(document.body);
+    return raizes;
+  }
+
+  function sidebarTemPainelPersonagem(el) {
+    if (!el) return false;
+    if (el.querySelector('.hp-top, .village-badge')) return true;
+    var texto = normalizarTextoInvasor(el.innerText || el.textContent || '');
+    return texto.indexOf('vila') !== -1 && texto.indexOf('hp') !== -1;
+  }
+
   function extrairNomeUsuarioLogado() {
     if (document.getElementById('login')) return null;
 
-    var colEsquerda = document.getElementById('col_esquerda');
-    if (!colEsquerda) return null;
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var raiz = raizes[r];
+      if (raiz === document.body) continue;
 
-    var tabelas = colEsquerda.querySelectorAll('table');
-    for (var i = 0; i < tabelas.length; i++) {
-      var tabela = tabelas[i];
-      var info = tabela.querySelector('td.box_preto_cor_central');
-      if (!info) continue;
+      var tabelas = raiz.querySelectorAll('table');
+      if (!tabelas.length) tabelas = [raiz];
 
-      var textoInfo = info.innerText || info.textContent || '';
-      if (textoInfo.indexOf('Vila:') === -1 || textoInfo.indexOf('HP:') === -1) continue;
+      for (var i = 0; i < tabelas.length; i++) {
+        var tabela = tabelas[i];
+        var info = tabela.querySelector('td.box_preto_cor_central, .panel-body');
+        if (!info) continue;
+        if (!sidebarTemPainelPersonagem(info)) continue;
 
-      var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
-      if (!tdNome) {
-        var logo = tabela.querySelector('img[src*="logo_simples"]');
-        if (logo && logo.parentElement) {
-          tdNome = logo.parentElement.nextElementSibling;
+        var tdNome = tabela.querySelector('td[style*="max-width:95px"]');
+        if (!tdNome) {
+          var logo = tabela.querySelector('img[src*="logo_simples"]');
+          if (logo && logo.parentElement) {
+            tdNome = logo.parentElement.nextElementSibling;
+          }
         }
-      }
-      if (!tdNome) continue;
+        if (!tdNome) continue;
 
-      var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
-      if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
-        return nome;
+        var nome = (tdNome.innerText || tdNome.textContent || '').split('\n')[0].trim();
+        if (nome && nome !== 'Conta doador' && nome !== 'Contatos') {
+          return nome;
+        }
       }
     }
 
@@ -1949,17 +1971,40 @@
     return null;
   }
 
+  function extrairHpSidebarDom(raiz) {
+    if (!raiz || !raiz.querySelector) return null;
+    var hpTop = raiz.querySelector('.hp-top');
+    if (!hpTop) return null;
+
+    var cur = hpTop.querySelector('.cur');
+    var val = hpTop.querySelector('.val');
+    var current = cur ? parseNumeroHp(cur.innerText || cur.textContent) : null;
+    var max = null;
+
+    if (val) {
+      var valText = (val.innerText || val.textContent || '').trim();
+      var m = valText.match(/([\d.,]+)\s*\/\s*([\d.,]+)/);
+      if (m) {
+        if (current === null) current = parseNumeroHp(m[1]);
+        max = parseNumeroHp(m[2]);
+      }
+    }
+
+    if (current === null || max === null || max <= 0) return null;
+    return { ok: true, current: current, max: max, pct: current / max };
+  }
+
   function extrairHpDaPagina() {
-    var raizes = [];
-    var colEsq = document.getElementById('col_esquerda');
-    var colDir = document.getElementById('col_direita');
-    if (colEsq) raizes.push(colEsq);
-    if (colDir) raizes.push(colDir);
-    if (document.body) raizes.push(document.body);
+    var raizes = obterRaizesSidebar();
+
+    for (var d = 0; d < raizes.length; d++) {
+      var dom = extrairHpSidebarDom(raizes[d]);
+      if (dom && dom.ok) return dom;
+    }
 
     for (var r = 0; r < raizes.length; r++) {
       var texto = raizes[r].innerText || raizes[r].textContent || '';
-      var m = texto.match(/HP:\s*([\d.,]+)\s*\/\s*([\d.,]+)/i);
+      var m = texto.match(/HP\s*:?\s*([\d.,]+)\s*\/\s*([\d.,]+)/i);
       if (!m) continue;
       var current = parseNumeroHp(m[1]);
       var max = parseNumeroHp(m[2]);
