@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.18
-// @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP minimo (25) via Ichiraku. Discord boss morto 1x via Firebase.
+// @version      7.19
+// @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP >25 via Ichiraku (mesma logica da raid). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -455,8 +455,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.18';
-  var SCRIPT_ATUALIZADO = '03/09/2026 16:45';
+  var SCRIPT_VERSAO = '7.19';
+  var SCRIPT_ATUALIZADO = '03/09/2026 16:55';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -594,7 +594,6 @@
   var URL_HOME = 'https://shadowofshinobi.com/';
   var BOT_INV_HP_CURAR_KEY = 'BOT_INV_HP_CURAR';
   var BOT_INV_HP_SNAPSHOT_KEY = 'BOT_INV_HP_SNAPSHOT';
-  var BOT_INV_HP_META_KEY = 'BOT_INV_HP_META';
   var BOT_INV_HP_AGUARDANDO_KEY = 'BOT_INV_HP_AGUARDANDO';
   var HP_MINIMO_INVASOR = 25;
   var DISCORD_WEBHOOK_INVASOR = '';
@@ -1936,45 +1935,16 @@
     return isNaN(n) ? null : Math.round(n);
   }
 
-  function sanitizeMetaHpInvasor(meta, hpMax) {
-    var n = parseInt(meta, 10);
-    if (isNaN(n) || n < 1) n = HP_MINIMO_INVASOR;
-    if (hpMax > 0 && n > hpMax) {
-      if (n > hpMax * 2) return Math.max(HP_MINIMO_INVASOR, obterHpMinimoInvasorDefault());
-      return hpMax;
-    }
-    return n;
-  }
-
-  function parseMetaEnergiaVitalAviso(texto, hpMax) {
-    var m = String(texto || '').match(/abaixo de\s*([\d.,]+)/i);
-    if (!m) return HP_MINIMO_INVASOR;
-    var n = parseNumeroHp(m[1]);
-    if (n === null || n < 1) return HP_MINIMO_INVASOR;
-    return sanitizeMetaHpInvasor(n, hpMax || 0);
-  }
-
-  function salvarMetaHpInvasor(minimo, hpMax) {
-    var n = typeof minimo === 'number'
-      ? sanitizeMetaHpInvasor(minimo, hpMax || 0)
-      : parseMetaEnergiaVitalAviso(String(minimo), hpMax || 0);
-    try { sessionStorage.setItem(BOT_INV_HP_META_KEY, String(n)); } catch (e) {}
-    return n;
-  }
-
-  function obterMetaHpInvasor() {
-    try {
-      var raw = sessionStorage.getItem(BOT_INV_HP_META_KEY);
-      var n = parseInt(raw, 10);
-      if (!isNaN(n) && n > 0) return n;
-    } catch (e) {}
+  function obterMinimoInvasorAbsoluto() {
     return obterHpMinimoInvasorDefault();
   }
 
-  function resolverMetaHpInvasor(hp) {
-    var meta = obterMetaHpInvasor();
-    if (hp && hp.ok && hp.max > 0) meta = sanitizeMetaHpInvasor(meta, hp.max);
-    return meta;
+  function metaHpAbsolutaInvasor() {
+    return obterMinimoInvasorAbsoluto() + 1;
+  }
+
+  function hpAtendeMinimoInvasor(hp) {
+    return !!(hp && hp.ok && hp.current > obterMinimoInvasorAbsoluto());
   }
 
   function salvarHpSnapshot(current, max) {
@@ -2088,6 +2058,7 @@
       sessionStorage.removeItem(BOT_INV_HP_CURAR_KEY);
       sessionStorage.removeItem(BOT_INV_HP_SNAPSHOT_KEY);
       sessionStorage.removeItem(BOT_INV_HP_AGUARDANDO_KEY);
+      sessionStorage.removeItem('BOT_INV_HP_META');
     } catch (e) {}
   }
 
@@ -2106,61 +2077,44 @@
     return false;
   }
 
-  function hpAtendeMetaInvasor(hp) {
-    if (!hp || !hp.ok) return false;
-    return hp.current >= resolverMetaHpInvasor(hp);
-  }
-
-  function detectarAvisoEnergiaVitalBaixa() {
-    var hpHint = extrairHpDaPagina();
-    var hpMax = hpHint.ok ? hpHint.max : 0;
+  function temAvisoEnergiaVitalBaixaInvasor() {
     var avisos = document.querySelectorAll('.avisos_erro');
     for (var i = 0; i < avisos.length; i++) {
       var texto = avisos[i].innerText || avisos[i].textContent || '';
       var norm = normalizarTextoInvasor(texto);
       if (norm.indexOf('energia vital') === -1) continue;
       if (norm.indexOf('abaixo de') === -1 && norm.indexOf('encha') === -1) continue;
-
-      var meta = parseMetaEnergiaVitalAviso(texto, hpMax);
-      if (hpHint.ok && hpHint.current >= meta) return 0;
-
-      return meta;
+      var hp = extrairHpDaPagina();
+      if (hp.ok && hpAtendeMinimoInvasor(hp)) return false;
+      return true;
     }
-    return 0;
+    return false;
   }
 
   function deveCurarAntesDeAtacar() {
+    if (temAvisoEnergiaVitalBaixaInvasor()) return true;
     var hp = obterStatusHp();
-    var aviso = detectarAvisoEnergiaVitalBaixa();
-    if (aviso) {
-      salvarMetaHpInvasor(aviso, hp.ok ? hp.max : 0);
-      return true;
-    }
-    return hp.ok && !hpAtendeMetaInvasor(hp);
+    return hp.ok && !hpAtendeMinimoInvasor(hp);
   }
 
   function garantirHpInvasorParaAtacar(contexto) {
     if (obterModoAba() !== 'invasor') return true;
 
     var hp = obterStatusHp();
-    var aviso = detectarAvisoEnergiaVitalBaixa();
-    if (aviso) {
-      salvarMetaHpInvasor(aviso, hp.ok ? hp.max : 0);
-      redirecionarParaCurarHpInvasor('aviso energia vital abaixo de ' + aviso + ' (' + contexto + ')');
-      return false;
-    }
-
     var url = window.location.href || '';
     var naPaginaStatus = url.indexOf('status') !== -1;
+    var minimo = obterMinimoInvasorAbsoluto();
 
     if (curarHpInvasorAtivo()) {
       if (naPaginaStatus) return false;
-      if (hpAtendeMetaInvasor(hp)) {
+      if (hp.ok && hpAtendeMinimoInvasor(hp)) {
         limparCurarHpInvasor();
         return true;
       }
-      if (hp.ok && !hpAtendeMetaInvasor(hp)) {
-        redirecionarParaCurarHpInvasor('cura pendente (' + contexto + ') — ' + formatarHpLog(hp));
+      if (hp.ok && !hpAtendeMinimoInvasor(hp)) {
+        console.log('[HP Invasor] Cura pendente — retomando /status (' + contexto + ') — ' +
+          formatarHpLog(hp));
+        redirecionarParaCurarHpInvasor('cura pendente (' + contexto + ')');
         return false;
       }
       console.warn('[HP Invasor] Flag de cura ativa sem HP legivel — limpando (' + contexto + ')');
@@ -2168,25 +2122,38 @@
       hp = obterStatusHp();
     }
 
+    if (temAvisoEnergiaVitalBaixaInvasor()) {
+      redirecionarParaCurarHpInvasor('aviso energia vital abaixo de ' + minimo + ' (' + contexto + ')');
+      return false;
+    }
+
     if (!hp.ok) {
-      console.warn('[HP Invasor] HP ilegivel — ' + contexto + ' (seguindo sem bloqueio).');
+      console.warn('[HP Invasor] HP ilegivel — ' + contexto + ' (seguindo).');
       return true;
     }
-    if (hpAtendeMetaInvasor(hp)) return true;
+    if (hpAtendeMinimoInvasor(hp)) return true;
 
-    var meta = resolverMetaHpInvasor(hp);
-    redirecionarParaCurarHpInvasor('HP ' + hp.current + ' < ' + meta + ' (' + contexto + ')');
+    console.log('[HP Invasor] HP ' + hp.current + ' <= ' + minimo +
+      ' (energia vital insuficiente) — curando antes do invasor (' + contexto + ')');
+    redirecionarParaCurarHpInvasor('HP ' + hp.current + ' <= ' + minimo + ' (' + contexto + ')');
     return false;
   }
 
   function redirecionarParaCurarHpInvasor(motivo) {
     var hp = obterStatusHp();
-    var minimo = hp.ok ? resolverMetaHpInvasor(hp) : obterMetaHpInvasor();
     marcarCurarHpInvasor();
     if (hp.ok) salvarHpSnapshot(hp.current, hp.max);
     console.log('[HP Invasor] ' + motivo + ' — ' + formatarHpLog(hp) +
-      ' (meta ' + minimo + ') | indo para /status (Ichiraku)...');
+      ' (minimo > ' + obterMinimoInvasorAbsoluto() + ') | indo para /status (Ichiraku)...');
     window.location.href = URL_STATUS;
+  }
+
+  function finalizarCurarHpPosIchirakuInvasor(motivoLog) {
+    var hp = obterStatusHp();
+    console.log('[HP Invasor] ' + motivoLog + ' — ' + formatarHpLog(hp) + ' | voltando ao invasor...');
+    limparCurarHpInvasor();
+    window.location.href = URL_INVASOR;
+    return true;
   }
 
   function extrairItensIchirakuStatus() {
@@ -2215,7 +2182,10 @@
     return out;
   }
 
-  function escolherItemIchirakuMinimo(itens, current, meta) {
+  function escolherItemIchirakuOptimo(itens, current, max, metaCurrent) {
+    var meta = metaCurrent !== undefined && metaCurrent !== null
+      ? metaCurrent
+      : metaHpAbsolutaInvasor();
     var deficit = Math.ceil(meta - current);
     if (deficit <= 0) return null;
 
@@ -2242,44 +2212,41 @@
     if (!curarHpInvasorAtivo()) return false;
 
     var hp = obterStatusHp();
-    var minimo = hp.ok ? resolverMetaHpInvasor(hp) : obterMetaHpInvasor();
-
-    if (!hp.ok) hp = lerHpSnapshot() || hp;
+    var minimo = obterMinimoInvasorAbsoluto();
 
     if (aguardandoCuraHpPosIchiraku()) {
-      if (hp && hp.ok && hpAtendeMetaInvasor(hp)) {
-        console.log('[HP Invasor] Cura confirmada apos Ichiraku (' + formatarHpLog(hp) +
-          ' >= ' + minimo + ') — voltando ao invasor.');
-        limparCurarHpInvasor();
-        window.location.href = URL_INVASOR;
-        return true;
+      if (hp.ok && hpAtendeMinimoInvasor(hp)) {
+        return finalizarCurarHpPosIchirakuInvasor('Cura confirmada apos Ichiraku');
       }
       console.log('[HP Invasor] Aguardando HP pos-Ichiraku (' + formatarHpLog(hp) +
-        ', meta ' + minimo + ') — reload 3s.');
+        ', minimo > ' + minimo + ') — reload 3s.');
       agendarReloadInvasor(3000);
       return true;
     }
 
-    if (hp && hp.ok && hpAtendeMetaInvasor(hp)) {
-      console.log('[HP Invasor] Energia vital OK (' + formatarHpLog(hp) +
-        ' >= ' + minimo + ') — voltando ao invasor.');
-      limparCurarHpInvasor();
-      window.location.href = URL_INVASOR;
-      return true;
+    if (hp.ok && hpAtendeMinimoInvasor(hp)) {
+      return finalizarCurarHpPosIchirakuInvasor('Vida OK');
     }
 
+    if (!hp.ok) {
+      hp = lerHpSnapshot();
+    }
     if (!hp || !hp.ok) {
       console.warn('[HP Invasor] /status — HP ilegivel; reload 3s.');
       agendarReloadInvasor(3000);
       return true;
     }
 
+    if (hpAtendeMinimoInvasor(hp)) {
+      return finalizarCurarHpPosIchirakuInvasor('Vida recuperada');
+    }
+
     var itens = extrairItensIchirakuStatus();
-    var escolhido = escolherItemIchirakuMinimo(itens, hp.current, minimo);
+    var escolhido = escolherItemIchirakuOptimo(itens, hp.current, hp.max, metaHpAbsolutaInvasor());
 
     if (!escolhido) {
       console.error('[HP Invasor] Sem Ichiraku util em /status — ' + formatarHpLog(hp) +
-        '. Cure manualmente (>= ' + minimo + ').');
+        '. Cure manualmente (> ' + minimo + ').');
       agendarReloadFalha('HP baixo e sem Ichiraku disponivel', 60000);
       return true;
     }
@@ -2289,9 +2256,9 @@
     marcarAguardandoCuraHp();
 
     console.log(
-      '[HP Invasor] Usando "' + escolhido.nome + '" (+' + escolhido.heal +
-      ' HP) — meta (>= ' + minimo + ') — ' +
-      hp.current + '/' + hp.max + ' -> ~' + novoHp + '/' + hp.max
+      '[HP Invasor] Usando "' + escolhido.nome + '" (+' + escolhido.heal + ' HP) — ' +
+      hp.current + '/' + hp.max + ' -> ~' + novoHp + '/' + hp.max +
+      ' (minimo > ' + minimo + ')'
     );
 
     var btn = escolhido.form.querySelector('input[type="submit"], input[name="btn"]');
