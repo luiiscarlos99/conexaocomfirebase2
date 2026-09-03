@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.17
+// @version      7.18
 // @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP minimo (25) via Ichiraku. Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -455,8 +455,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.17';
-  var SCRIPT_ATUALIZADO = '03/09/2026 01:30';
+  var SCRIPT_VERSAO = '7.18';
+  var SCRIPT_ATUALIZADO = '03/09/2026 16:45';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -595,6 +595,7 @@
   var BOT_INV_HP_CURAR_KEY = 'BOT_INV_HP_CURAR';
   var BOT_INV_HP_SNAPSHOT_KEY = 'BOT_INV_HP_SNAPSHOT';
   var BOT_INV_HP_META_KEY = 'BOT_INV_HP_META';
+  var BOT_INV_HP_AGUARDANDO_KEY = 'BOT_INV_HP_AGUARDANDO';
   var HP_MINIMO_INVASOR = 25;
   var DISCORD_WEBHOOK_INVASOR = '';
   var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
@@ -1935,9 +1936,28 @@
     return isNaN(n) ? null : Math.round(n);
   }
 
-  function salvarMetaHpInvasor(minimo) {
-    var n = parseInt(minimo, 10);
+  function sanitizeMetaHpInvasor(meta, hpMax) {
+    var n = parseInt(meta, 10);
     if (isNaN(n) || n < 1) n = HP_MINIMO_INVASOR;
+    if (hpMax > 0 && n > hpMax) {
+      if (n > hpMax * 2) return Math.max(HP_MINIMO_INVASOR, obterHpMinimoInvasorDefault());
+      return hpMax;
+    }
+    return n;
+  }
+
+  function parseMetaEnergiaVitalAviso(texto, hpMax) {
+    var m = String(texto || '').match(/abaixo de\s*([\d.,]+)/i);
+    if (!m) return HP_MINIMO_INVASOR;
+    var n = parseNumeroHp(m[1]);
+    if (n === null || n < 1) return HP_MINIMO_INVASOR;
+    return sanitizeMetaHpInvasor(n, hpMax || 0);
+  }
+
+  function salvarMetaHpInvasor(minimo, hpMax) {
+    var n = typeof minimo === 'number'
+      ? sanitizeMetaHpInvasor(minimo, hpMax || 0)
+      : parseMetaEnergiaVitalAviso(String(minimo), hpMax || 0);
     try { sessionStorage.setItem(BOT_INV_HP_META_KEY, String(n)); } catch (e) {}
     return n;
   }
@@ -1949,6 +1969,12 @@
       if (!isNaN(n) && n > 0) return n;
     } catch (e) {}
     return obterHpMinimoInvasorDefault();
+  }
+
+  function resolverMetaHpInvasor(hp) {
+    var meta = obterMetaHpInvasor();
+    if (hp && hp.ok && hp.max > 0) meta = sanitizeMetaHpInvasor(meta, hp.max);
+    return meta;
   }
 
   function salvarHpSnapshot(current, max) {
@@ -1971,9 +1997,7 @@
     return null;
   }
 
-  function extrairHpSidebarDom(raiz) {
-    if (!raiz || !raiz.querySelector) return null;
-    var hpTop = raiz.querySelector('.hp-top');
+  function extrairHpFromHpTop(hpTop) {
     if (!hpTop) return null;
 
     var cur = hpTop.querySelector('.cur');
@@ -1994,10 +2018,23 @@
     return { ok: true, current: current, max: max, pct: current / max };
   }
 
-  function extrairHpDaPagina() {
-    var raizes = obterRaizesSidebar();
+  function extrairHpSidebarDom(raiz) {
+    if (!raiz || !raiz.querySelector) return null;
+    var hpTop = raiz.querySelector('.hp-top');
+    if (!hpTop) return null;
+    return extrairHpFromHpTop(hpTop);
+  }
 
+  function extrairHpDaPagina() {
+    var hpTopGlobal = document.querySelector('.np-sidebar .hp-top') ||
+      document.querySelector('#col_esquerda .hp-top') ||
+      document.querySelector('.hp-top');
+    var domGlobal = extrairHpFromHpTop(hpTopGlobal);
+    if (domGlobal && domGlobal.ok) return domGlobal;
+
+    var raizes = obterRaizesSidebar();
     for (var d = 0; d < raizes.length; d++) {
+      if (raizes[d] === document.body) continue;
       var dom = extrairHpSidebarDom(raizes[d]);
       if (dom && dom.ok) return dom;
     }
@@ -2016,11 +2053,18 @@
 
   function obterStatusHp() {
     var parsed = extrairHpDaPagina();
+    var snap = lerHpSnapshot();
+
     if (parsed.ok) {
+      if (curarHpInvasorAtivo() && snap && snap.ok) {
+        if (parsed.max === snap.max && parsed.current < snap.current) {
+          console.log('[HP Invasor] DOM atrasado (' + parsed.current + ') — snapshot ' + snap.current);
+          return snap;
+        }
+      }
       salvarHpSnapshot(parsed.current, parsed.max);
       return parsed;
     }
-    var snap = lerHpSnapshot();
     if (snap) return snap;
     return { ok: false };
   }
@@ -2043,49 +2087,69 @@
     try {
       sessionStorage.removeItem(BOT_INV_HP_CURAR_KEY);
       sessionStorage.removeItem(BOT_INV_HP_SNAPSHOT_KEY);
+      sessionStorage.removeItem(BOT_INV_HP_AGUARDANDO_KEY);
     } catch (e) {}
   }
 
+  function marcarAguardandoCuraHp() {
+    try { sessionStorage.setItem(BOT_INV_HP_AGUARDANDO_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  function aguardandoCuraHpPosIchiraku() {
+    try {
+      var raw = sessionStorage.getItem(BOT_INV_HP_AGUARDANDO_KEY);
+      if (!raw) return false;
+      var ts = parseInt(raw, 10);
+      if (isNaN(ts)) return true;
+      return Date.now() - ts < 15000;
+    } catch (e) {}
+    return false;
+  }
+
   function hpAtendeMetaInvasor(hp) {
-    return !!(hp && hp.ok && hp.current >= obterMetaHpInvasor());
+    if (!hp || !hp.ok) return false;
+    return hp.current >= resolverMetaHpInvasor(hp);
   }
 
   function detectarAvisoEnergiaVitalBaixa() {
+    var hpHint = extrairHpDaPagina();
+    var hpMax = hpHint.ok ? hpHint.max : 0;
     var avisos = document.querySelectorAll('.avisos_erro');
     for (var i = 0; i < avisos.length; i++) {
       var texto = avisos[i].innerText || avisos[i].textContent || '';
       var norm = normalizarTextoInvasor(texto);
       if (norm.indexOf('energia vital') === -1) continue;
       if (norm.indexOf('abaixo de') === -1 && norm.indexOf('encha') === -1) continue;
-      var m = texto.match(/abaixo de\s*([\d.]+)/i);
-      var n = m ? parseInt(String(m[1]).replace(/\./g, ''), 10) : HP_MINIMO_INVASOR;
-      if (isNaN(n) || n < 1) n = HP_MINIMO_INVASOR;
-      return n;
+
+      var meta = parseMetaEnergiaVitalAviso(texto, hpMax);
+      if (hpHint.ok && hpHint.current >= meta) return 0;
+
+      return meta;
     }
     return 0;
   }
 
   function deveCurarAntesDeAtacar() {
+    var hp = obterStatusHp();
     var aviso = detectarAvisoEnergiaVitalBaixa();
     if (aviso) {
-      salvarMetaHpInvasor(aviso);
+      salvarMetaHpInvasor(aviso, hp.ok ? hp.max : 0);
       return true;
     }
-    var hp = obterStatusHp();
     return hp.ok && !hpAtendeMetaInvasor(hp);
   }
 
   function garantirHpInvasorParaAtacar(contexto) {
     if (obterModoAba() !== 'invasor') return true;
 
+    var hp = obterStatusHp();
     var aviso = detectarAvisoEnergiaVitalBaixa();
     if (aviso) {
-      salvarMetaHpInvasor(aviso);
+      salvarMetaHpInvasor(aviso, hp.ok ? hp.max : 0);
       redirecionarParaCurarHpInvasor('aviso energia vital abaixo de ' + aviso + ' (' + contexto + ')');
       return false;
     }
 
-    var hp = obterStatusHp();
     var url = window.location.href || '';
     var naPaginaStatus = url.indexOf('status') !== -1;
 
@@ -2110,17 +2174,18 @@
     }
     if (hpAtendeMetaInvasor(hp)) return true;
 
-    redirecionarParaCurarHpInvasor('HP ' + hp.current + ' < ' + obterMetaHpInvasor() + ' (' + contexto + ')');
+    var meta = resolverMetaHpInvasor(hp);
+    redirecionarParaCurarHpInvasor('HP ' + hp.current + ' < ' + meta + ' (' + contexto + ')');
     return false;
   }
 
   function redirecionarParaCurarHpInvasor(motivo) {
     var hp = obterStatusHp();
-    var minimo = obterMetaHpInvasor();
+    var minimo = hp.ok ? resolverMetaHpInvasor(hp) : obterMetaHpInvasor();
     marcarCurarHpInvasor();
     if (hp.ok) salvarHpSnapshot(hp.current, hp.max);
     console.log('[HP Invasor] ' + motivo + ' — ' + formatarHpLog(hp) +
-      ' (minimo ' + minimo + ') | indo para /status (Ichiraku)...');
+      ' (meta ' + minimo + ') | indo para /status (Ichiraku)...');
     window.location.href = URL_STATUS;
   }
 
@@ -2177,9 +2242,23 @@
     if (!curarHpInvasorAtivo()) return false;
 
     var hp = obterStatusHp();
-    var minimo = obterMetaHpInvasor();
+    var minimo = hp.ok ? resolverMetaHpInvasor(hp) : obterMetaHpInvasor();
 
     if (!hp.ok) hp = lerHpSnapshot() || hp;
+
+    if (aguardandoCuraHpPosIchiraku()) {
+      if (hp && hp.ok && hpAtendeMetaInvasor(hp)) {
+        console.log('[HP Invasor] Cura confirmada apos Ichiraku (' + formatarHpLog(hp) +
+          ' >= ' + minimo + ') — voltando ao invasor.');
+        limparCurarHpInvasor();
+        window.location.href = URL_INVASOR;
+        return true;
+      }
+      console.log('[HP Invasor] Aguardando HP pos-Ichiraku (' + formatarHpLog(hp) +
+        ', meta ' + minimo + ') — reload 3s.');
+      agendarReloadInvasor(3000);
+      return true;
+    }
 
     if (hp && hp.ok && hpAtendeMetaInvasor(hp)) {
       console.log('[HP Invasor] Energia vital OK (' + formatarHpLog(hp) +
@@ -2190,7 +2269,8 @@
     }
 
     if (!hp || !hp.ok) {
-      console.warn('[HP Invasor] /status — HP ilegivel; reload em ' + (TEMPO_ESPERA / 1000) + 's.');
+      console.warn('[HP Invasor] /status — HP ilegivel; reload 3s.');
+      agendarReloadInvasor(3000);
       return true;
     }
 
@@ -2206,10 +2286,11 @@
 
     var novoHp = Math.min(hp.current + escolhido.heal, hp.max);
     salvarHpSnapshot(novoHp, hp.max);
+    marcarAguardandoCuraHp();
 
     console.log(
       '[HP Invasor] Usando "' + escolhido.nome + '" (+' + escolhido.heal +
-      ' HP) — minimo para atacar (>= ' + minimo + ') — ' +
+      ' HP) — meta (>= ' + minimo + ') — ' +
       hp.current + '/' + hp.max + ' -> ~' + novoHp + '/' + hp.max
     );
 
@@ -2527,14 +2608,7 @@
           recuperarModoAbaPosLogin();
         }
         if (obterModoAba() === 'invasor') {
-          if (processarCurarHpNaPaginaStatus()) {
-            if (curarHpInvasorAtivo()) {
-              console.log('[Script Invasor] Status — cura HP em andamento, reload ' +
-                (TEMPO_ESPERA / 1000) + 's.');
-              agendarReloadInvasor(TEMPO_ESPERA);
-            }
-            return;
-          }
+          if (processarCurarHpNaPaginaStatus()) return;
           redirecionarParaInvasor('status');
         }
         return;
