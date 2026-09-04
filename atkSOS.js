@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.54
+// @version      3.55
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.54';
-  var SCRIPT_ATUALIZADO = '03/09/2026 21:15';
+  var SCRIPT_VERSAO = '3.55';
+  var SCRIPT_ATUALIZADO = '03/09/2026 23:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1069,6 +1069,7 @@
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
   var RANKING_RYOUS_FILA_FB_PATH = 'ranking_ryous_fila';
   var RANKING_RYOUS_FILA_TTL_MS = 3600000;
+  var ENERGIA_VITAL_BAIXA_RETRY_MS = 10 * 60000;
   var BOT_CACADAS_FB_SKIP_KEY = 'BOT_CACADAS_FB_SKIP';
   var BOT_CACADAS_BL_SKIP_KEY = 'BOT_CACADAS_BL_SKIP';
   var BOT_CACADAS_NOME_FALHAS_KEY = 'BOT_CACADAS_NOME_FALHAS';
@@ -4570,9 +4571,11 @@
     console.warn('[Caçadas] Inimigo com energia vital baixa — ' + nome);
 
     if (cacadaAtualPorNomeFirebase()) {
-      removerAlvoFirebaseFilaConsumido(nome, 'energia vital baixa');
+      marcarEnergiaVitalBaixaFirebaseFila(nome);
       limparEstadoModoCacadas();
-      irParaPortaoRelatorios('Firebase fila — energia vital baixa: ' + nome, { rotacionarAutomacao: true });
+      irParaPortaoRelatorios('Firebase fila — energia vital baixa (retry 10min): ' + nome, {
+        rotacionarAutomacao: true
+      });
       return true;
     }
 
@@ -4865,6 +4868,59 @@
     salvarSkipFirebaseFila(mapa);
   }
 
+  function adicionarSkipFirebaseFilaAte(nome, retryAposTs) {
+    if (!nome || !retryAposTs) return;
+    var mapa = lerSkipFirebaseFila();
+    mapa[normalizarNomeCacadas(nome)] = { ate: retryAposTs };
+    salvarSkipFirebaseFila(mapa);
+  }
+
+  function alvoFirebaseFilaEmEspera(item, skip, norm) {
+    if (item && item.energiaVitalRetryApos && item.energiaVitalRetryApos > Date.now()) return true;
+    var s = skip[norm];
+    if (!s) return false;
+    if (typeof s === 'object' && s.ate) return s.ate > Date.now();
+    if (typeof s === 'number') return true;
+    return false;
+  }
+
+  function marcarEnergiaVitalBaixaFirebaseFila(nome, callback) {
+    if (!nome) {
+      if (callback) callback(false);
+      return;
+    }
+    var chave = normalizarChaveFirebaseRankingFila(nome);
+    if (!chave) {
+      if (callback) callback(false);
+      return;
+    }
+
+    var retryApos = Date.now() + ENERGIA_VITAL_BAIXA_RETRY_MS;
+    adicionarSkipFirebaseFilaAte(nome, retryApos);
+
+    fetch(urlFirebaseRankingFila('/' + chave), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ energiaVitalRetryApos: retryApos })
+    })
+      .then(function(r) {
+        var ok = r.ok || r.status === 404;
+        if (ok) {
+          console.log(
+            '[Firebase Fila] Energia vital baixa — mantido na fila, retry apos ~10min: ' + nome +
+            ' (~' + formatarHorarioLocalBr(retryApos) + ')'
+          );
+        } else {
+          console.warn('[Firebase Fila] Falha ao marcar retry energia vital (' + r.status + '): ' + nome);
+        }
+        if (callback) callback(ok);
+      })
+      .catch(function(err) {
+        console.warn('[Firebase Fila] Falha ao marcar retry energia vital ' + nome + ':', err);
+        if (callback) callback(false);
+      });
+  }
+
   function limparSkipFirebaseFila() {
     try { sessionStorage.removeItem(BOT_CACADAS_FB_SKIP_KEY); } catch (e) {}
   }
@@ -4887,11 +4943,17 @@
 
   function descreverItemFirebaseFila(item) {
     if (!item) return '?';
+    var base;
     if (item.tipoSuspeito === 'vit_sem_ryous') {
-      return 'vit+' + (item.deltaVitorias || '?') + ' sem ryous (vit ' +
+      base = 'vit+' + (item.deltaVitorias || '?') + ' sem ryous (vit ' +
         (item.vitoriasAntes != null ? item.vitoriasAntes : '?') + '->' + item.vitorias + ')';
+    } else {
+      base = '+' + formatarNumeroBr(item.deltaRyous || 0) + ' ryous';
     }
-    return '+' + formatarNumeroBr(item.deltaRyous || 0) + ' ryous';
+    if (item.energiaVitalRetryApos && item.energiaVitalRetryApos > Date.now()) {
+      base += ' [energia vital — retry ~' + formatarHorarioLocalBr(item.energiaVitalRetryApos) + ']';
+    }
+    return base;
   }
 
   function buscarFilaFirebaseRyous(callback) {
@@ -4953,7 +5015,7 @@
       if (!item || !item.nome) continue;
       var norm = normalizarNomeCacadas(item.nome);
       if (mapa[norm]) continue;
-      if (skip[norm]) continue;
+      if (alvoFirebaseFilaEmEspera(item, skip, norm)) continue;
       console.warn('[Firebase Fila] Proximo alvo: ' + item.nome + ' — ' + descreverItemFirebaseFila(item));
       return item.nome;
     }

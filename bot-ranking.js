@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.27
+// @version      1.28
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -1062,6 +1062,9 @@
                 } else if ((existing.deltaRyous || 0) >= (payload.deltaRyous || 0)) {
                   return { ok: false, motivo: 'delta ryous menor ou igual' };
                 }
+              }
+              if (existing.energiaVitalRetryApos > Date.now()) {
+                payload.energiaVitalRetryApos = existing.energiaVitalRetryApos;
               }
             }
             return fetch(urlFirebaseRankingFila('/' + chave), {
