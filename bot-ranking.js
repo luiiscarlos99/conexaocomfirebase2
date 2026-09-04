@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.28
-// @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit sem ryous faturados). Script separado.
+// @version      1.29
+// @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit+2+ sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
 // ==/UserScript==
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.27';
+      var SCRIPT_VERSAO = '1.29';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -57,6 +57,7 @@
         intervaloMs: 600000,
         discordCooldownMin: 30,
         compareDeltaVitorias: true,
+        minDeltaVitorias: 2,
         vila: 'geral',
         view: 'personagens'
       };
@@ -794,6 +795,7 @@
           minNivel: DEFAULTS_WATCH.minNivel,
           intervaloMs: DEFAULTS_WATCH.intervaloMs,
           compareDeltaVitorias: DEFAULTS_WATCH.compareDeltaVitorias,
+          minDeltaVitorias: DEFAULTS_WATCH.minDeltaVitorias,
           vila: DEFAULTS_WATCH.vila,
           view: DEFAULTS_WATCH.view
         };
@@ -810,6 +812,10 @@
             if (saved.compareDeltaVitorias != null) {
               base.compareDeltaVitorias = parseBoolRankingParam(saved.compareDeltaVitorias, true);
             }
+            if (saved.minDeltaVitorias != null) {
+              var mdv = parseInt(String(saved.minDeltaVitorias).replace(/\./g, ''), 10);
+              if (!isNaN(mdv) && mdv >= 1) base.minDeltaVitorias = mdv;
+            }
             if (saved.vila) base.vila = saved.vila;
             if (saved.view) base.view = saved.view;
           }
@@ -824,6 +830,11 @@
           var cdv = rp.get('bot_ranking_compare_delta_vitorias');
           if (cdv !== null && cdv !== '') {
             base.compareDeltaVitorias = parseBoolRankingParam(cdv, true);
+          }
+          var mdvUrl = rp.get('bot_ranking_min_delta_vitorias');
+          if (mdvUrl !== null && mdvUrl !== '') {
+            var nmdv = parseInt(String(mdvUrl).replace(/\./g, ''), 10);
+            if (!isNaN(nmdv) && nmdv >= 1) base.minDeltaVitorias = nmdv;
           }
         } catch (e) {}
         if (!extra || typeof extra !== 'object') return base;
@@ -857,6 +868,10 @@
         }
         if (extra.compareDeltaVitorias != null) {
           base.compareDeltaVitorias = parseBoolRankingParam(extra.compareDeltaVitorias, true);
+        }
+        if (extra.minDeltaVitorias != null) {
+          var mdvExtra = parseInt(String(extra.minDeltaVitorias).replace(/\./g, ''), 10);
+          if (!isNaN(mdvExtra) && mdvExtra >= 1) base.minDeltaVitorias = mdvExtra;
         }
         if (extra.vila) base.vila = String(extra.vila);
         if (extra.view) base.view = String(extra.view);
@@ -1177,7 +1192,8 @@
           }, baseEv);
         }
 
-        if (params.compareDeltaVitorias !== false && deltaVit > 0 && delta <= 0) {
+        var minDeltaVit = params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias;
+        if (params.compareDeltaVitorias !== false && deltaVit >= minDeltaVit && delta <= 0) {
           return Object.assign({
             status: 'suspeito',
             motivo: 'vit subiu sem ryous faturados',
@@ -1545,7 +1561,9 @@
           var fim = offset + PASSO_RANKING - 1;
           var linhas = [
             '⚠️ **Ranking Watch — alerta ryous/vit** (pos ' + offset + '–' + fim + ')',
-            'Regras: +>=' + formatarNumeroBr(params.minDeltaRyous) + ' ryous sem vit/der | vit+ sem ryous faturados',
+            'Regras: +>=' + formatarNumeroBr(params.minDeltaRyous) + ' ryous sem vit/der | vit+>=' +
+              (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias) +
+              ' sem ryous faturados',
             'Filtro: lvl>=' + params.minNivel + ' | max ' + formatarNumeroBr(params.maxRyous)
           ];
           for (var i = 0; i < suspeitos.length; i++) {
@@ -1601,6 +1619,7 @@
         console.log('[Bot Ranking Watch] ranking=' + offset + ' | modo=' + estado.modo +
           ' | snapshot=' + qtdSnap + ' jogadores | lvl>=' + params.minNivel +
           ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
+          ' | minDeltaVit>=' + (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous) +
           (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
           (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
@@ -1759,7 +1778,8 @@
         console.log('[Bot Ranking Watch] maxRyous=' + formatarNumeroBr(params.maxRyous) +
           ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | minNivel=' + params.minNivel +
-          ' | compareDeltaVitorias=' + (params.compareDeltaVitorias !== false ? 'sim' : 'nao'));
+          ' | compareDeltaVitorias=' + (params.compareDeltaVitorias !== false ? 'sim' : 'nao') +
+          ' | minDeltaVitorias=' + (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias));
         iniciarCicloWatchScan('baseline');
         atualizarPainelRanking();
         return true;
@@ -1842,6 +1862,7 @@
         console.log('  botRankingWatchRyous({maxRyous:100000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
         console.log('  botRankingWatchRyous({minDeltaDivergencia:50000,discordCooldownMin:30})');
         console.log('  botRankingWatchRyous({compareDeltaVitorias:false}) — desliga regra vit+ sem ryous');
+        console.log('  botRankingWatchRyous({minDeltaVitorias:2}) — min vit+ para suspeito (padrao: 2)');
         console.log('  botRankingWatchParar()          — cancela watch ryous');
         console.log('  botRankingWatchStatus()         — status watch ryous');
         console.log('  botRankingDebugPagina(true)        — debug ON (log player a player + 2min/pagina)');
@@ -1850,6 +1871,7 @@
         console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_compare_delta_vitorias=0|1 (padrao: 1)');
+        console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_min_delta_vitorias=2 (padrao: 2; ignora vit+1)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
         console.log('[Bot Ranking Watch] Caçadas: botCacadasFirebaseFila(1) no script de caçadas.');
         console.log('[Bot Ranking] Exemplo URL:');
