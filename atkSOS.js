@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.59
+// @version      3.60
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -733,8 +733,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.59';
-  var SCRIPT_ATUALIZADO = '04/09/2026 16:15';
+  var SCRIPT_VERSAO = '3.60';
+  var SCRIPT_ATUALIZADO = '04/09/2026 16:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1034,6 +1034,7 @@
   var BOT_DIARIO_ANIMAL_IDX_KEY = 'BOT_DIARIO_ANIMAL_IDX';
   var BOT_DIARIO_ANIMAL_BS_KEY = 'BOT_DIARIO_ANIMAL_BS';
   var BOT_DIARIO_RAID_COMBATE_KEY = 'BOT_DIARIO_RAID_COMBATE';
+  var BOT_DIARIO_RAID_DERROTA_KEY = 'BOT_DIARIO_RAID_DERROTA';
   var BOT_HP_CURAR_ATIVO_KEY = 'BOT_HP_CURAR_ATIVO';
   var BOT_HP_CURAR_RAID_KEY = 'BOT_HP_CURAR_RAID';
   var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
@@ -1885,6 +1886,7 @@
     if (url.indexOf('automacao') !== -1) return false;
 
     if (url.indexOf('status') !== -1 && obterFaseDiario() === 'raid') {
+      if (diarioRaidDerrotaAtiva()) return false;
       var hpStatus = obterStatusHp();
       if (hpStatus.ok && !hpAtendeMinimoRaid(hpStatus)) return false;
     }
@@ -1962,6 +1964,7 @@
       sessionStorage.removeItem(BOT_DIARIO_ANIMAL_IDX_KEY);
       sessionStorage.removeItem(BOT_DIARIO_ANIMAL_BS_KEY);
       sessionStorage.removeItem(BOT_DIARIO_RAID_COMBATE_KEY);
+      sessionStorage.removeItem(BOT_DIARIO_RAID_DERROTA_KEY);
       try { localStorage.removeItem(diarioProgLocalKey('FASE')); } catch (e2) {}
     } catch (e) {}
   }
@@ -2155,9 +2158,43 @@
 
   function concluirRaidsDiarioIrAnimal() {
     console.log('[Diario] Todas raids disponiveis concluidas (cooldown/nivel) — indo para animal.');
+    limparDiarioRaidDerrota();
+    limparCurarHpAtivo();
     avancarFaseDiario('animal', 'raids esgotadas');
     try { sessionStorage.setItem(BOT_DIARIO_ANIMAL_SUB_KEY, 'meus'); } catch (e) {}
     window.location.href = URL_ANIMAL_MEUS;
+  }
+
+  function marcarDiarioRaidDerrota() {
+    try { sessionStorage.setItem(BOT_DIARIO_RAID_DERROTA_KEY, '1'); } catch (e) {}
+  }
+
+  function limparDiarioRaidDerrota() {
+    try { sessionStorage.removeItem(BOT_DIARIO_RAID_DERROTA_KEY); } catch (e) {}
+  }
+
+  function diarioRaidDerrotaAtiva() {
+    try { return sessionStorage.getItem(BOT_DIARIO_RAID_DERROTA_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function finalizarDiarioRaidPosCombate(parsed) {
+    consumirDiarioRaidEmCombate();
+    if (parsed && parsed.resultado === 'derrota') {
+      console.log('[Diario] Raid perdida — parando demais raids (HP zerado), indo para animal.');
+      limparCurarHpAtivo();
+      marcarDiarioRaidDerrota();
+      setTimeout(function() {
+        concluirRaidsDiarioIrAnimal();
+      }, 2000);
+      return true;
+    }
+    console.log('[Diario] Raid combate — ' + (parsed ? parsed.resultado + ': ' + parsed.texto : 'concluido') +
+      ' — verificando proximas raids...');
+    setTimeout(function() {
+      window.location.href = URL_RAID;
+    }, 2000);
+    return true;
   }
 
   function extrairNivelMinimoRaid(bloco) {
@@ -2205,6 +2242,10 @@
 
   function processarDiarioRaidLista() {
     if (obterFaseDiario() !== 'raid') return false;
+    if (diarioRaidDerrotaAtiva()) {
+      concluirRaidsDiarioIrAnimal();
+      return true;
+    }
     if (!garantirHpParaRaidDiario('raid lista')) return true;
 
     var form = encontrarFormRaidDisponivel();
@@ -2236,6 +2277,10 @@
 
   function processarDiarioRaidCombatePagina() {
     if (obterFaseDiario() !== 'raid') return false;
+    if (diarioRaidDerrotaAtiva()) {
+      concluirRaidsDiarioIrAnimal();
+      return true;
+    }
     if (!garantirHpParaRaidDiario('raid combate')) return true;
 
     var btnAtacar = document.querySelector(
@@ -2495,11 +2540,7 @@
   function processarDiarioPosCombateRaid() {
     if (obterFaseDiario() !== 'raid') return false;
     if (!consumirDiarioRaidEmCombate()) return false;
-    console.log('[Diario] Combate de raid finalizado — verificando proximas raids...');
-    setTimeout(function() {
-      window.location.href = URL_RAID;
-    }, 2000);
-    return true;
+    return finalizarDiarioRaidPosCombate(null);
   }
 
   function paginaCacadasBloqueadaPorMissao() {
@@ -3166,6 +3207,7 @@
 
   function garantirHpParaRaidDiario(contexto) {
     if (!diarioDeveRodar() || obterFaseDiario() !== 'raid') return true;
+    if (diarioRaidDerrotaAtiva()) return true;
 
     var hp = obterStatusHp();
     var url = window.location.href || '';
@@ -3307,8 +3349,16 @@
   function processarCurarHpNaPaginaStatus() {
     if (obterModoAba() !== 'cacadas') return false;
 
+    if (diarioDeveRodar() && diarioRaidDerrotaAtiva()) {
+      console.log('[Diario] Raid perdida — ignorando cura de HP, indo para animal.');
+      limparCurarHpAtivo();
+      concluirRaidsDiarioIrAnimal();
+      return true;
+    }
+
     var hp = obterStatusHp();
     var precisaCurarRaid = diarioDeveRodar() && obterFaseDiario() === 'raid' &&
+      !diarioRaidDerrotaAtiva() &&
       hp.ok && !hpAtendeMinimoRaid(hp);
     var precisaCurar = hp.ok && !hpAtendeMetaParaCurar(hp);
 
@@ -6740,12 +6790,7 @@
     if (diarioDeveRodar() && obterFaseDiario() === 'raid') {
       var parsedDiario = classificarResultadoCombate();
       if (parsedDiario) {
-        console.log('[Diario] Raid combate — ' + parsedDiario.resultado + ': ' + parsedDiario.texto);
-        consumirDiarioRaidEmCombate();
-        setTimeout(function() {
-          window.location.href = URL_RAID;
-        }, 2000);
-        return true;
+        return finalizarDiarioRaidPosCombate(parsedDiario);
       }
       if (processarDiarioPosCombateRaid()) return true;
       console.log('[Diario] Raid combate — aguardando resultado...');
