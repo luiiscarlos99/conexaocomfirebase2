@@ -26,7 +26,7 @@
   } catch (e) {}
 
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,shizuo,sora,shiroe';
-  var WHITELIST_CLA_CACADAS_DEFAULT = 'Tropa do NP';
+  var WHITELIST_CLA_CACADAS_DEFAULT = 'Tropa do NP,23cmMole';
   var WHITELIST_FIREBASE_FILA_DEFAULT =
     'KILLER,BARDO,MARIO,CRUELL,CRUELA,BlackFire,Stark,Targaryen,Lannister,Baratheon,' +
     'MIRANHA,TOBINHO,MARUKO,PAINKILLER,lula13,Madeira,Ferro,Papel,Pedra,Tesoura,Lepo,LepoLepo,' +
