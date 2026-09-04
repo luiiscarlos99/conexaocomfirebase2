@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.61
+// @version      3.62
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -733,8 +733,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.61';
-  var SCRIPT_ATUALIZADO = '04/09/2026 18:20';
+  var SCRIPT_VERSAO = '3.62';
+  var SCRIPT_ATUALIZADO = '04/09/2026 18:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2129,11 +2129,71 @@
     var col = document.getElementById('col_direita');
     if (!col) return false;
     var norm = normalizarTextoCombate(col.innerText || col.textContent || '');
-    return norm.indexOf('resultado final') !== -1;
+    if (norm.indexOf('resultado final') !== -1) return true;
+    return !!col.querySelector('tr.box_preto_tarja td');
+  }
+
+  function avisoRaidIgnorarClassificacao(norm) {
+    if (!norm) return true;
+    if (norm.indexOf('nivel insuficiente') !== -1) return true;
+    if (norm.indexOf('disponivel em') !== -1 && norm.indexOf('faltam') !== -1) return true;
+    return false;
+  }
+
+  function classificarTextoResultadoRaid(texto) {
+    if (!texto) return null;
+    var norm = normalizarTextoCombate(texto);
+    if (avisoRaidIgnorarClassificacao(norm)) return null;
+
+    if (norm.indexOf('foi derrotado') !== -1 || norm.indexOf('voce foi derrotado') !== -1) {
+      return { resultado: 'derrota', texto: texto };
+    }
+
+    if (norm.indexOf('voce derrotou') !== -1 ||
+        norm.indexOf('voce venceu') !== -1 ||
+        norm.indexOf('venceu a raid') !== -1 ||
+        norm.indexOf('parabens') !== -1 ||
+        (norm.indexOf('faturou') !== -1 && norm.indexOf('ryous') !== -1)) {
+      return { resultado: 'vitoria', texto: texto };
+    }
+
+    return null;
+  }
+
+  function obterAvisoResultadoFinalRaid() {
+    var col = document.getElementById('col_direita');
+    if (!col) return null;
+
+    var tarjas = col.querySelectorAll('tr.box_preto_tarja');
+    for (var t = 0; t < tarjas.length; t++) {
+      var tarjaNorm = normalizarTextoCombate(tarjas[t].innerText || tarjas[t].textContent || '');
+      if (tarjaNorm.indexOf('danos causados') === -1) continue;
+
+      var bloco = tarjas[t].closest('table');
+      if (!bloco) continue;
+      var pai = bloco.parentElement;
+      for (var i = 0; i < 6 && pai; i++) {
+        var avisos = pai.querySelectorAll('.avisos_erro');
+        for (var j = 0; j < avisos.length; j++) {
+          var texto = (avisos[j].innerText || avisos[j].textContent || '').replace(/\s+/g, ' ').trim();
+          if (!texto || avisoRaidIgnorarClassificacao(normalizarTextoCombate(texto))) continue;
+          return texto;
+        }
+        pai = pai.parentElement;
+      }
+    }
+
+    return null;
   }
 
   function classificarResultadoRaidCombate() {
     if (!ehPaginaResultadoFinalRaid()) return null;
+
+    var avisoResultado = obterAvisoResultadoFinalRaid();
+    if (avisoResultado) {
+      var parsedDireto = classificarTextoResultadoRaid(avisoResultado);
+      if (parsedDireto) return parsedDireto;
+    }
 
     var parsed = classificarResultadoCombate();
     if (parsed) return parsed;
@@ -2142,13 +2202,8 @@
     var avisos = col.querySelectorAll('.avisos_erro');
     for (var i = 0; i < avisos.length; i++) {
       var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
-      if (!texto) continue;
-      var norm = normalizarTextoCombate(texto);
-      if (norm.indexOf('nivel insuficiente') !== -1) continue;
-      if (norm.indexOf('voce venceu') !== -1 || norm.indexOf('voce derrotou') !== -1 ||
-          norm.indexOf('venceu a raid') !== -1 || norm.indexOf('parabens') !== -1) {
-        return { resultado: 'vitoria', texto: texto };
-      }
+      var parsedAviso = classificarTextoResultadoRaid(texto);
+      if (parsedAviso) return parsedAviso;
     }
     return null;
   }
