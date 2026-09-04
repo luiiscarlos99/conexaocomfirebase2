@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Caçadas Timer Som - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Toca som quando cronômetro de caçadas/penalidade chega a zero. Sem bot_modo — roda direto na aba.
 // @match        https://shadowofshinobi.com/cacadas*
 // @match        https://shadowofshinobi.com/combate*
@@ -16,7 +16,7 @@
   if (window.__BOT_CACADAS_TIMER_SOM__) return;
   window.__BOT_CACADAS_TIMER_SOM__ = true;
 
-  var SCRIPT_VERSAO = '1.0';
+  var SCRIPT_VERSAO = '1.1';
   var INTERVALO_MS = 400;
   var TIMER_IDS = ['caca_cd_timer', 'missao_timer', 'mn_timer'];
   var estadoTimers = {};
@@ -65,23 +65,27 @@
   }
 
   function tocarSomZero() {
+    // Mesmo estilo do alerta antigo do captcha (880Hz x3), um pouco mais alto e longo.
     try {
       var AudioContext = window.AudioContext || window.webkitAudioContext;
       if (!AudioContext) return;
       var ctx = new AudioContext();
-      var notas = [523.25, 659.25, 783.99, 1046.5];
-      notas.forEach(function(freq, i) {
-        var delay = i * 0.22;
+      var freq = 880;
+      var duracaoNota = 0.28;
+      var ganho = 0.15;
+      var delays = [0, 0.3, 0.6, 1.05, 1.35, 1.65];
+
+      delays.forEach(function(delay) {
         var osc = ctx.createOscillator();
         var gain = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
-        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + delay + 0.25);
+        gain.gain.setValueAtTime(ganho, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + delay + duracaoNota);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(ctx.currentTime + delay);
-        osc.stop(ctx.currentTime + delay + 0.25);
+        osc.stop(ctx.currentTime + delay + duracaoNota);
       });
     } catch (e) {}
   }
