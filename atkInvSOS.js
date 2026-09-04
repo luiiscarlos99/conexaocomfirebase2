@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Invasor - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      7.19
+// @version      7.20
 // @description  Automação do Invasor: last hit off (padrao, so early), scout, sorteio ou data (+3min). Cura HP >25 via Ichiraku (mesma logica da raid). Discord boss morto 1x via Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -455,8 +455,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '7.19';
-  var SCRIPT_ATUALIZADO = '03/09/2026 16:55';
+  var SCRIPT_VERSAO = '7.20';
+  var SCRIPT_ATUALIZADO = '04/09/2026 16:15';
   var INVASOR_MORTO_AVISO_FB_PATH = 'invasor_morto_aviso';
 
   if (!window.__BOT_CONTROLE__) {
@@ -541,14 +541,16 @@
     var ehCombate = url.indexOf('invasor-combate') !== -1;
     var ehInvasor = url.indexOf('invasor') !== -1 && !ehCombate;
     var ehStatus = url.indexOf('/status') !== -1;
+    var ehMercado = url.indexOf('mercado') !== -1;
     var ehCaptcha = url.indexOf('captcha_seguranca') !== -1;
 
     return {
       ehCombate: ehCombate,
       ehInvasor: ehInvasor,
       ehStatus: ehStatus,
+      ehMercado: ehMercado,
       ehCaptcha: ehCaptcha,
-      noEscopo: ehCombate || ehInvasor || ehStatus || ehCaptcha
+      noEscopo: ehCombate || ehInvasor || ehStatus || ehMercado || ehCaptcha
     };
   }
 
@@ -591,10 +593,14 @@
 
   var URL_INVASOR = 'https://shadowofshinobi.com/invasor';
   var URL_STATUS = 'https://shadowofshinobi.com/status';
+  var URL_MERCADO_ICHIRAKU = 'https://shadowofshinobi.com/mercado?aba=loja&secao=itens';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var BOT_INV_HP_CURAR_KEY = 'BOT_INV_HP_CURAR';
   var BOT_INV_HP_SNAPSHOT_KEY = 'BOT_INV_HP_SNAPSHOT';
   var BOT_INV_HP_AGUARDANDO_KEY = 'BOT_INV_HP_AGUARDANDO';
+  var BOT_HP_COMPRAR_MERCADO_KEY = 'BOT_HP_COMPRAR_MERCADO';
+  var BOT_HP_COMPRAR_AVISADO_KEY = 'BOT_HP_COMPRAR_AVISADO';
+  var ICHIRAKU_COMPRA_QTD_ALVO = 30;
   var HP_MINIMO_INVASOR = 25;
   var DISCORD_WEBHOOK_INVASOR = '';
   var FIREBASE_WEBHOOKS_PATH = 'config/discordWebhooks';
@@ -699,9 +705,39 @@
 
   garantirWebhooksDiscord();
 
+  function enviarDiscordTextoInvasor(mensagem, silencioso) {
+    return garantirWebhooksDiscord().then(function() {
+      if (!DISCORD_WEBHOOK_INVASOR) {
+        console.warn('[Discord] Webhook invasor ausente no Firebase (' + FIREBASE_WEBHOOKS_PATH + ').');
+        return false;
+      }
+      var payload = {
+        username: 'Bot Shadow of Shinobi',
+        content: mensagem
+      };
+      if (silencioso) payload.flags = 4096;
+      return fetch(DISCORD_WEBHOOK_INVASOR, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(r) {
+        if (r.ok) {
+          console.log('[Discord] Aviso invasor enviado.' + (silencioso ? ' (silencioso)' : ''));
+          return true;
+        }
+        console.warn('[Discord] Falha ao enviar aviso invasor:', r.status);
+        return false;
+      }).catch(function(e) {
+        console.error('[Discord] Erro ao enviar aviso invasor:', e);
+        return false;
+      });
+    });
+  }
+
   // Credenciais do Usuário
   var USUARIO_DEFAULT = 'Shiroe';
   var USUARIO_FINAL = lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
+  var USUARIO_EXIBICAO = USUARIO_FINAL;
   var SENHA_DEFAULT = 'lulacarlos';
   var SENHA_FINAL = localStorage.getItem('BOT_SENHA') || SENHA_DEFAULT;
 
@@ -761,8 +797,42 @@
     return null;
   }
 
+  function estaEmContaGerenciada() {
+    return checarContaGerenciada();
+  }
+
+  function obterUsuarioLogin() {
+    return lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
+  }
+
+  function obterUsuarioExibicao() {
+    if (USUARIO_EXIBICAO && USUARIO_EXIBICAO !== obterUsuarioLogin()) {
+      return USUARIO_EXIBICAO;
+    }
+    var nomeSidebar = extrairNomeUsuarioLogado();
+    if (nomeSidebar && estaEmContaGerenciada()) return nomeSidebar;
+    return obterUsuarioLogin();
+  }
+
+  function montarRotuloUsuarioDiscord() {
+    sincronizarUsuarioLocalStorage();
+    var login = obterUsuarioLogin();
+    var ativo = obterUsuarioExibicao();
+    var linhas = ['**Usuário:** `' + ativo + '`'];
+    if (login !== ativo) linhas.push('**Login:** `' + login + '`');
+    if (estaEmContaGerenciada() && ativo !== login) {
+      linhas.push('**Gerenciada:** `' + ativo + '`');
+    }
+    return linhas.join('\n');
+  }
+
   function sincronizarUsuarioLocalStorage() {
     USUARIO_FINAL = lerUsuarioLoginArmazenado() || USUARIO_DEFAULT;
+    var nomeLogado = extrairNomeUsuarioLogado();
+    USUARIO_EXIBICAO = nomeLogado || USUARIO_FINAL;
+    if (nomeLogado && nomeLogado !== USUARIO_FINAL && estaEmContaGerenciada()) {
+      console.log('[Invasor] Conta ativa: ' + nomeLogado + ' | Login: ' + USUARIO_FINAL);
+    }
   }
 
   // --- CHECA SESSÃO EXPIRADA OU REQUISICÃO INVÁLIDA ---
@@ -982,7 +1052,7 @@
         if (derrotados !== null && derrotados !== undefined && !isNaN(derrotados)) {
           linhas.push('Players derrotados: **' + formatarNumeroInvasor(derrotados) + '**');
         }
-        linhas.push('Detectado por: `' + USUARIO_FINAL + '`');
+        linhas.push('Detectado por: `' + obterUsuarioExibicao() + '`');
 
         fetch(DISCORD_WEBHOOK_INVASOR, {
           method: 'POST',
@@ -1137,7 +1207,7 @@
         }
 
         var payload = {
-          content: '🚨 **Invasor Detectado / Visão Inferior!**\n**Gatilho:** `' + motivo + '`\n**Usuário:** `' + USUARIO_FINAL + '`'
+          content: '🚨 **Invasor Detectado / Visão Inferior!**\n**Gatilho:** `' + motivo + '`\n' + montarRotuloUsuarioDiscord()
         };
 
         if (silencioso) {
@@ -1332,7 +1402,7 @@
     } else {
       motivoAtaque = 'Last hit ' + origem + ' (+' + lh.delta + ' derrotados)';
     }
-    console.warn('[LastHit] Pronto (' + origem + ')! Disparando ataque (' + USUARIO_FINAL + ')...');
+    console.warn('[LastHit] Pronto (' + origem + ')! Disparando ataque (' + obterUsuarioExibicao() + ')...');
 
     return marcarCoordAtacando(coord).then(function() {
       tentarAtacarLocalmente(motivoAtaque);
@@ -2059,7 +2129,208 @@
       sessionStorage.removeItem(BOT_INV_HP_SNAPSHOT_KEY);
       sessionStorage.removeItem(BOT_INV_HP_AGUARDANDO_KEY);
       sessionStorage.removeItem('BOT_INV_HP_META');
+      sessionStorage.removeItem(BOT_HP_COMPRAR_MERCADO_KEY);
+      sessionStorage.removeItem(BOT_HP_COMPRAR_AVISADO_KEY);
     } catch (e) {}
+  }
+
+  function parseNumeroBr(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var s = String(valor).replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
+    var n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+
+  function formatarNumeroBr(n) {
+    if (n === null || n === undefined || isNaN(n)) return '?';
+    try {
+      return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    } catch (e) {
+      return String(n);
+    }
+  }
+
+  function extrairRyousJogadorSidebar() {
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var col = raizes[r];
+      if (col === document.body) continue;
+      var ryousVal = col.querySelector('.ryous-val');
+      if (ryousVal) {
+        var nVal = parseNumeroBr((ryousVal.innerText || ryousVal.textContent || '').trim());
+        if (nVal !== null) return nVal;
+      }
+      var m = (col.innerText || col.textContent || '').match(/Ryous\s*:?\s*([\d.,]+)/i);
+      if (m) return parseNumeroBr(m[1]);
+    }
+    return null;
+  }
+
+  function extrairReservaRyous() {
+    var raizes = obterRaizesSidebar();
+    for (var r = 0; r < raizes.length; r++) {
+      var texto = raizes[r].innerText || raizes[r].textContent || '';
+      var patterns = [
+        /Reserva(?:\s+de\s+[Rr]yous)?:\s*([\d.,]+)/i,
+        /Ryous\s+reserva:\s*([\d.,]+)/i
+      ];
+      for (var i = 0; i < patterns.length; i++) {
+        var m = texto.match(patterns[i]);
+        if (m) return parseNumeroBr(m[1]);
+      }
+    }
+    return null;
+  }
+
+  function mercadoCompraPendente() {
+    try { return sessionStorage.getItem(BOT_HP_COMPRAR_MERCADO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarMercadoCompraPendente() {
+    try { sessionStorage.setItem(BOT_HP_COMPRAR_MERCADO_KEY, '1'); } catch (e) {}
+  }
+
+  function limparMercadoCompraPendente() {
+    try { sessionStorage.removeItem(BOT_HP_COMPRAR_MERCADO_KEY); } catch (e) {}
+  }
+
+  function extrairItensIchirakuMercado() {
+    var out = [];
+    var rows = document.querySelectorAll('tr.mitem-row[data-mcat="ichiraku"]');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var comprarInput = row.querySelector('form[action="mercado"] input[name="comprar_loja"]');
+      var form = comprarInput ? comprarInput.closest('form') : null;
+      if (!form) continue;
+
+      var itemIdInput = form.querySelector('input[name="item_id"]');
+      var qtdInput = form.querySelector('input[name="comprar_qtd"]');
+      if (!itemIdInput) continue;
+
+      var titleEl = row.querySelector('.mkt-box-title');
+      var nome = titleEl ? (titleEl.innerText || titleEl.textContent || '').trim() : '';
+
+      var priceRow = row.querySelector('.mkt-price-row .price');
+      var priceText = priceRow ? (priceRow.innerText || priceRow.textContent || '') : '';
+      if (!/ryous/i.test(priceText) || /kage/i.test(priceText)) continue;
+
+      var precoUnit = null;
+      var oninput = qtdInput ? qtdInput.getAttribute('oninput') : '';
+      var mIn = oninput && oninput.match(/mktQtyPrice\s*\(\s*this\s*,\s*([\d.]+)/);
+      if (mIn) precoUnit = parseNumeroHp(mIn[1]);
+      if (precoUnit === null) {
+        var live = document.getElementById('mkt_price_' + itemIdInput.value);
+        if (live) precoUnit = parseNumeroBr((live.innerText || live.textContent || '').trim());
+      }
+      if (precoUnit === null || precoUnit <= 0) continue;
+
+      out.push({
+        nome: nome,
+        precoUnit: precoUnit,
+        itemId: itemIdInput.value,
+        form: form,
+        qtdInput: qtdInput
+      });
+    }
+    return out;
+  }
+
+  function escolherIchirakuMaisBaratoMercado(itens) {
+    if (!itens.length) return null;
+    var sorted = itens.slice().sort(function(a, b) { return a.precoUnit - b.precoUnit; });
+    return sorted[0];
+  }
+
+  function obterRyousParaCompraIchiraku() {
+    var ryous = extrairRyousJogadorSidebar();
+    if (ryous !== null) return ryous;
+    return extrairReservaRyous();
+  }
+
+  function calcularQtdCompraIchiraku(precoUnit, ryousDisponiveis) {
+    if (!precoUnit || precoUnit <= 0) return 0;
+    if (ryousDisponiveis === null || ryousDisponiveis < precoUnit) return 0;
+    return Math.min(ICHIRAKU_COMPRA_QTD_ALVO, Math.floor(ryousDisponiveis / precoUnit));
+  }
+
+  function montarMensagemDiscordSemIchirakuMercado(hp) {
+    sincronizarUsuarioLocalStorage();
+    var login = obterUsuarioLogin();
+    var ativo = extrairNomeUsuarioLogado() || login;
+    var linhas = [
+      '⚠️ **Sem Ichiraku — compra no mercado impossível**',
+      'Login: `' + login + '`',
+      'Conta ativa: `' + ativo + '`'
+    ];
+    if (estaEmContaGerenciada() && ativo !== login) {
+      linhas.push('Gerenciada: `' + ativo + '`');
+    }
+    if (hp && hp.ok) linhas.push('HP: ' + formatarHpLog(hp));
+    var ryous = obterRyousParaCompraIchiraku();
+    linhas.push('Ryous disponíveis: ' + (ryous !== null ? formatarNumeroBr(ryous) : '?'));
+    return linhas.join('\n');
+  }
+
+  function avisarDiscordSemIchirakuMercado(hp) {
+    try {
+      if (sessionStorage.getItem(BOT_HP_COMPRAR_AVISADO_KEY) === '1') return;
+      sessionStorage.setItem(BOT_HP_COMPRAR_AVISADO_KEY, '1');
+    } catch (e) {}
+    enviarDiscordTextoInvasor(montarMensagemDiscordSemIchirakuMercado(hp), false);
+  }
+
+  function redirecionarParaMercadoIchirakuInvasor(motivo) {
+    marcarMercadoCompraPendente();
+    console.log('[HP Invasor] ' + motivo + ' — sem Ichiraku em /status, indo ao mercado...');
+    window.location.href = URL_MERCADO_ICHIRAKU;
+  }
+
+  function processarCompraIchirakuMercadoInvasor() {
+    if (!curarHpInvasorAtivo()) return false;
+    if ((window.location.href || '').indexOf('mercado') === -1) return false;
+
+    var hp = obterStatusHp();
+    if (!hp.ok) hp = lerHpSnapshot();
+
+    if (!mercadoCompraPendente()) {
+      console.log('[HP Invasor] Mercado — compra concluida, voltando ao /status...');
+      window.location.href = URL_STATUS;
+      return true;
+    }
+
+    var itens = extrairItensIchirakuMercado();
+    var escolhido = escolherIchirakuMaisBaratoMercado(itens);
+    var ryous = obterRyousParaCompraIchiraku();
+
+    if (!escolhido) {
+      console.error('[HP Invasor] Mercado — nenhum item Ichiraku (ryous) encontrado.');
+      avisarDiscordSemIchirakuMercado(hp);
+      agendarReloadFalha('Mercado sem Ichiraku compravel', 60000);
+      return true;
+    }
+
+    var qtd = calcularQtdCompraIchiraku(escolhido.precoUnit, ryous);
+    if (qtd < 1) {
+      console.error('[HP Invasor] Mercado — ryous insuficientes para Ichiraku (' +
+        (ryous !== null ? formatarNumeroBr(ryous) : '?') + ' < ' +
+        formatarNumeroBr(escolhido.precoUnit) + ').');
+      avisarDiscordSemIchirakuMercado(hp);
+      agendarReloadFalha('Ryous insuficientes para Ichiraku', 60000);
+      return true;
+    }
+
+    console.log('[HP Invasor] Mercado — comprando ' + qtd + 'x "' + escolhido.nome + '" (' +
+      formatarNumeroBr(escolhido.precoUnit) + ' ryous/un, total ~' +
+      formatarNumeroBr(escolhido.precoUnit * qtd) + ')...');
+
+    if (escolhido.qtdInput) escolhido.qtdInput.value = String(qtd);
+    limparMercadoCompraPendente();
+
+    var link = escolhido.form.querySelector('a.acao');
+    if (link) link.click();
+    else escolhido.form.submit();
+    return true;
   }
 
   function marcarAguardandoCuraHp() {
@@ -2245,8 +2516,21 @@
     var escolhido = escolherItemIchirakuOptimo(itens, hp.current, hp.max, metaHpAbsolutaInvasor());
 
     if (!escolhido) {
+      try {
+        if (sessionStorage.getItem(BOT_HP_COMPRAR_AVISADO_KEY) === '1') {
+          console.error('[HP Invasor] Sem Ichiraku apos tentativa no mercado — ' + formatarHpLog(hp) +
+            ' (> ' + minimo + ').');
+          agendarReloadFalha('HP baixo e sem Ichiraku disponivel', 60000);
+          return true;
+        }
+      } catch (e) {}
+      if (!mercadoCompraPendente()) {
+        redirecionarParaMercadoIchirakuInvasor(formatarHpLog(hp));
+        return true;
+      }
       console.error('[HP Invasor] Sem Ichiraku util em /status — ' + formatarHpLog(hp) +
         '. Cure manualmente (> ' + minimo + ').');
+      avisarDiscordSemIchirakuMercado(hp);
       agendarReloadFalha('HP baixo e sem Ichiraku disponivel', 60000);
       return true;
     }
@@ -2475,7 +2759,7 @@
     window.location.href = URL_INVASOR;
   }
 
-  console.log('[Script Invasor] Usuário: ' + USUARIO_FINAL +
+  console.log('[Script Invasor] Login: ' + obterUsuarioLogin() + ' | Ativo: ' + obterUsuarioExibicao() +
     ' | Limite early: ' + descreverLimiteInvasor() +
     ' | Min ataques last hit: ' + descreverMinAtaquesInvasor() +
     ' | HP minimo: ' + descreverHpMinimoInvasor());
@@ -2569,7 +2853,13 @@
         return;
       }
 
-      // 4. STATUS → redireciona para invasor (recupera modo da aba se necessario)
+      // 4. MERCADO → compra Ichiraku quando cura HP pendente
+      if (pagina.ehMercado) {
+        if (processarCompraIchirakuMercadoInvasor()) return;
+        return;
+      }
+
+      // 5. STATUS → redireciona para invasor (recupera modo da aba se necessario)
       if (pagina.ehStatus) {
         if (!obterModoAba() && ehReferrerPosLogin()) {
           recuperarModoAbaPosLogin();
