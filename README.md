@@ -9,6 +9,7 @@ Automação para [Shadow of Shinobi](https://shadowofshinobi.com/) via **Inject 
 | Arquivo | Descrição |
 |---|---|
 | `bot-ranking.js` | **Script novo** — scan ranking mult (inject separado, so /ranking) |
+| `bot-cacadas-timer-som.js` | Som quando cronômetro de caçadas/penalidade zera (sem `bot_modo`) |
 | `bot-recovery.js` | Recuperação em erro 500 / `chrome-error://` via `window.name` |
 | `bot-bootstrap.js` | Bootstrap cedo — grava modo/credenciais + URL de recuperação |
 | `atkSOS.js` | Bot **Caçadas** — login, caçadas, captcha, atacar |
@@ -33,11 +34,12 @@ Injetar **nesta ordem** (auto-run ON em todos):
 | 3 | Caçadas | `.../atkSOS.js` |
 | 4 | Invasor | `.../atkInvSOS.js` |
 
-**Ranking (script separado — nao entra na ordem acima):**
+**Scripts separados — nao entram na ordem acima:**
 
 | Script | Quando injectar |
 |---|---|
 | `bot-ranking.js` | So na aba de ranking, ou `@match` ranking — **nao** mistura com caçadas/invasor |
+| `bot-cacadas-timer-som.js` | Caçadas/combate — roda **direto**, sem `?bot_modo=`; som so no **zero** do timer |
 
 - Abra o ranking em **aba manual** (sem `?bot_modo=`) — ou use os scripts caçadas/invasor/bootstrap que **nao agem** em `/ranking` (so aviso no console/painel).
 
