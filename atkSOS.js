@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.60
+// @version      3.61
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -733,8 +733,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.60';
-  var SCRIPT_ATUALIZADO = '04/09/2026 16:20';
+  var SCRIPT_VERSAO = '3.61';
+  var SCRIPT_ATUALIZADO = '04/09/2026 18:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2116,6 +2116,7 @@
   function paginaRaidCombateAtivo(url) {
     url = url || window.location.href || '';
     if (estaNaPaginaCombateCacadas(url)) return true;
+    if (ehPaginaResultadoFinalRaid()) return false;
     return !!document.querySelector(
       'form[action="atacar"] input[type="submit"], ' +
       'form[action*="raid-combate"] input[type="submit"], ' +
@@ -2124,10 +2125,39 @@
     );
   }
 
+  function ehPaginaResultadoFinalRaid() {
+    var col = document.getElementById('col_direita');
+    if (!col) return false;
+    var norm = normalizarTextoCombate(col.innerText || col.textContent || '');
+    return norm.indexOf('resultado final') !== -1;
+  }
+
+  function classificarResultadoRaidCombate() {
+    if (!ehPaginaResultadoFinalRaid()) return null;
+
+    var parsed = classificarResultadoCombate();
+    if (parsed) return parsed;
+
+    var col = document.getElementById('col_direita') || document.body || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('nivel insuficiente') !== -1) continue;
+      if (norm.indexOf('voce venceu') !== -1 || norm.indexOf('voce derrotou') !== -1 ||
+          norm.indexOf('venceu a raid') !== -1 || norm.indexOf('parabens') !== -1) {
+        return { resultado: 'vitoria', texto: texto };
+      }
+    }
+    return null;
+  }
+
   function ehPaginaListaRaids(url) {
     url = url || window.location.href || '';
     if (url.indexOf('/raid') === -1 && url.indexOf('raid-combate') === -1) return false;
     if (estaNaPaginaCombateCacadas(url)) return false;
+    if (ehPaginaResultadoFinalRaid()) return false;
     if (paginaRaidCombateAtivo(url)) return false;
 
     var col = document.getElementById('col_direita');
@@ -2281,6 +2311,12 @@
       concluirRaidsDiarioIrAnimal();
       return true;
     }
+
+    var parsedResultado = classificarResultadoRaidCombate();
+    if (parsedResultado) {
+      return finalizarDiarioRaidPosCombate(parsedResultado);
+    }
+
     if (!garantirHpParaRaidDiario('raid combate')) return true;
 
     var btnAtacar = document.querySelector(
@@ -2302,6 +2338,11 @@
 
     if (estaNaPaginaCombateCacadas()) {
       return false;
+    }
+
+    if (ehPaginaResultadoFinalRaid()) {
+      console.log('[Diario] Raid — Resultado final sem classificacao; aguardando...');
+      return true;
     }
 
     console.log('[Diario] Raid combate sem botao Atacar — voltando a lista /raid...');
@@ -6677,7 +6718,7 @@
 
       var norm = normalizarTextoCombate(texto);
 
-      if (norm.indexOf('foi derrotado') !== -1) {
+      if (norm.indexOf('foi derrotado') !== -1 || norm.indexOf('voce foi derrotado') !== -1) {
         return { resultado: 'derrota', texto: texto };
       }
 
