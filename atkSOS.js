@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.53
+// @version      3.54
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.53';
-  var SCRIPT_ATUALIZADO = '03/09/2026 20:55';
+  var SCRIPT_VERSAO = '3.54';
+  var SCRIPT_ATUALIZADO = '03/09/2026 21:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3266,12 +3266,33 @@
     return null;
   }
 
+  function obterRyousParaDoujutsu() {
+    var ryous = extrairRyousJogadorSidebar();
+    if (ryous !== null) return ryous;
+    return extrairReservaRyous();
+  }
+
+  function ryousSuficienteParaDoujutsu() {
+    var ryous = obterRyousParaDoujutsu();
+    if (ryous === null) return { ok: false, ryous: null };
+    return { ok: ryous >= DOUJUTSU_CUSTO_RYOUS, ryous: ryous };
+  }
+
+  function logDoujutsuRyousInsuficiente(contexto, ryous) {
+    console.log(
+      '[Doujutsu] Ryous ' + formatarNumeroBr(ryous) + ' < ' + formatarNumeroBr(DOUJUTSU_CUSTO_RYOUS) +
+      ' — sem ativar (' + (contexto || '?') + ').'
+    );
+  }
+
+  function logDoujutsuRyousIlegivel(contexto) {
+    console.warn('[Doujutsu] Ryous ilegivel — sem ativar (' + (contexto || '?') + ').');
+  }
+
   function precisaAtivarDoujutsuAgora() {
     if (!doujutsuDesejado()) return false;
     if (doujutsuEstaAtivo()) return false;
-    var reserva = extrairReservaRyous();
-    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) return false;
-    return true;
+    return ryousSuficienteParaDoujutsu().ok;
   }
 
   function tentarAtivarDoujutsuAposHpOk(contexto) {
@@ -3291,9 +3312,10 @@
       return false;
     }
 
-    var reserva = extrairReservaRyous();
-    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) {
-      console.warn('[Doujutsu] Reserva ' + formatarNumeroBr(reserva) + ' < 10k — impossivel ativar.');
+    var chkRyous = ryousSuficienteParaDoujutsu();
+    if (!chkRyous.ok) {
+      if (chkRyous.ryous === null) logDoujutsuRyousIlegivel(contexto);
+      else logDoujutsuRyousInsuficiente(contexto, chkRyous.ryous);
       limparDoujutsuAtivarPendente();
       return false;
     }
@@ -3317,6 +3339,13 @@
     if (!doujutsuDesejado()) return true;
 
     if (doujutsuAtivarPendente()) {
+      var chkPendente = ryousSuficienteParaDoujutsu();
+      if (!chkPendente.ok) {
+        if (chkPendente.ryous === null) logDoujutsuRyousIlegivel(contexto);
+        else logDoujutsuRyousInsuficiente(contexto, chkPendente.ryous);
+        limparDoujutsuAtivarPendente();
+        return true;
+      }
       if ((window.location.href || '').indexOf('status') === -1) {
         console.log('[Doujutsu] Ativacao pendente — indo para /status...');
         consumirGateCacadas();
@@ -3327,16 +3356,10 @@
 
     if (doujutsuEstaAtivo()) return true;
 
-    var reserva = extrairReservaRyous();
-    if (reserva !== null && reserva < DOUJUTSU_CUSTO_RYOUS) {
-      console.log(
-        '[Doujutsu] Reserva ' + formatarNumeroBr(reserva) + ' < 10k — seguindo sem ativar (' +
-        (contexto || '?') + ').'
-      );
-      return true;
-    }
-    if (reserva === null) {
-      console.warn('[Doujutsu] Reserva ilegivel — seguindo sem ativar (' + (contexto || '?') + ').');
+    var chk = ryousSuficienteParaDoujutsu();
+    if (!chk.ok) {
+      if (chk.ryous === null) logDoujutsuRyousIlegivel(contexto);
+      else logDoujutsuRyousInsuficiente(contexto, chk.ryous);
       return true;
     }
 
