@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.56
+// @version      3.57
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -27,6 +27,10 @@
 
   var WHITELIST_CACADAS_DEFAULT = 'yoruhime,shizuo,sora,shiroe';
   var WHITELIST_CLA_CACADAS_DEFAULT = 'Tropa do NP';
+  var WHITELIST_FIREBASE_FILA_DEFAULT =
+    'KILLER,BARDO,MARIO,CRUELL,CRUELA,BlackFire,Stark,Targaryen,Lannister,Baratheon,' +
+    'MIRANHA,TOBINHO,MARUKO,PAINKILLER,lula13,Madeira,Ferro,Papel,Pedra,Tesoura,Lepo,LepoLepo,' +
+    'Marginal,SaoMateus,cORINGAUM,TIMAO,TIMAUM,CORINGUDO,APT,BRUNINHO';
 
   function parseEsperaCacadasMinutos(valor) {
     if (valor === null || valor === undefined || valor === '') return null;
@@ -86,6 +90,17 @@
   function gravarWhitelistClaCacadasParam(valor) {
     if (valor === null || valor === undefined || String(valor).trim() === '') return false;
     localStorage.setItem('BOT_WHITELIST_CLA_CACADAS', String(valor).trim());
+    return true;
+  }
+
+  function gravarWhitelistFirebaseFilaParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim();
+    if (s === '') {
+      try { localStorage.removeItem('BOT_WHITELIST_FIREBASE_FILA'); } catch (e) {}
+      return true;
+    }
+    localStorage.setItem('BOT_WHITELIST_FIREBASE_FILA', s);
     return true;
   }
 
@@ -462,6 +477,7 @@
     if (!rp) return;
     var w = rp.get('bot_whitelist_cacadas');
     var wc = rp.get('bot_whitelist_cla_cacadas');
+    var wff = rp.get('bot_whitelist_firebase_fila');
     var bl = rp.get('bot_blacklist_cacadas');
     var ra = rp.get('bot_rotacao_automacao');
     var r = rp.get('bot_max_ryous_cacadas');
@@ -476,6 +492,7 @@
     var dgs = rp.get('bot_diario_sem_cacadas');
     if (w !== null && w !== '') gravarWhitelistCacadasParam(w);
     if (wc !== null && wc !== '') gravarWhitelistClaCacadasParam(wc);
+    if (wff !== null) gravarWhitelistFirebaseFilaParam(wff);
     if (bl !== null) gravarBlacklistCacadasParam(bl);
     if (ra !== null) gravarRotacaoAutomacaoParam(ra);
     if (r !== null && r !== '') gravarMaxRyousCacadasParam(r);
@@ -616,7 +633,8 @@
       }
 
       if ((u || p || n || e || l || params.get('bot_whitelist_cacadas') ||
-          params.get('bot_whitelist_cla_cacadas') || params.get('bot_blacklist_cacadas') ||
+          params.get('bot_whitelist_cla_cacadas') || params.get('bot_whitelist_firebase_fila') ||
+          params.get('bot_blacklist_cacadas') ||
           params.get('bot_rotacao_automacao') ||
           params.get('bot_max_ryous_cacadas') || params.get('bot_diff_nivel_cacadas') ||
           params.get('bot_min_ryous_vitoria_cacadas') ||
@@ -715,8 +733,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.56';
-  var SCRIPT_ATUALIZADO = '04/09/2026 10:30';
+  var SCRIPT_VERSAO = '3.57';
+  var SCRIPT_ATUALIZADO = '04/09/2026 15:40';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -739,6 +757,7 @@
       var l = localStorage.getItem('BOT_LIMITE_INVASOR');
       var w = localStorage.getItem('BOT_WHITELIST_CACADAS');
       var wc = localStorage.getItem('BOT_WHITELIST_CLA_CACADAS');
+      var wff = localStorage.getItem('BOT_WHITELIST_FIREBASE_FILA');
       var bl = localStorage.getItem('BOT_BLACKLIST_CACADAS');
       var ra = localStorage.getItem('BOT_ROTACAO_AUTOMACAO');
       var r = localStorage.getItem('BOT_MAX_RYOUS_CACADAS');
@@ -758,6 +777,7 @@
       if (l !== null && l !== '') params.set('bot_limite_invasor', l);
       if (w !== null && w !== '') params.set('bot_whitelist_cacadas', w);
       if (wc !== null && wc !== '') params.set('bot_whitelist_cla_cacadas', wc);
+      if (wff !== null && wff !== '') params.set('bot_whitelist_firebase_fila', wff);
       if (bl !== null && bl !== '') params.set('bot_blacklist_cacadas', bl);
       if (ra === '1') params.set('bot_rotacao_automacao', '1');
       if (r !== null && r !== '') params.set('bot_max_ryous_cacadas', r);
@@ -4098,6 +4118,32 @@
     return 'nao atacar: ' + lista.join(', ') + sufixo;
   }
 
+  function obterWhitelistFirebaseFila() {
+    var raw = localStorage.getItem('BOT_WHITELIST_FIREBASE_FILA');
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      raw = WHITELIST_FIREBASE_FILA_DEFAULT;
+    }
+    return String(raw).split(',').map(function(s) { return normalizarNomeCacadas(s); }).filter(Boolean);
+  }
+
+  function descreverWhitelistFirebaseFila() {
+    var lista = obterWhitelistFirebaseFila();
+    var sufixo = localStorage.getItem('BOT_WHITELIST_FIREBASE_FILA')
+      ? ' (bot_whitelist_firebase_fila)'
+      : ' (padrao)';
+    return lista.length + ' nomes' + sufixo;
+  }
+
+  function nomeBloqueadoPorWhitelistFirebaseFila(nome) {
+    var norm = normalizarNomeCacadas(nome);
+    if (!norm) return false;
+    var lista = obterWhitelistFirebaseFila();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
   function obterBlacklistCacadas() {
     var raw = localStorage.getItem('BOT_BLACKLIST_CACADAS');
     if (!raw || !String(raw).trim()) return [];
@@ -4697,6 +4743,46 @@
     proximo();
   }
 
+  function purgarFirebaseFilaWhitelist(fila, callback) {
+    if (!fila.length) {
+      callback(fila);
+      return;
+    }
+
+    var restantes = [];
+    var removidos = [];
+
+    for (var i = 0; i < fila.length; i++) {
+      var item = fila[i];
+      if (!item || !item.nome) continue;
+      if (nomeBloqueadoPorWhitelistFirebaseFila(item.nome)) {
+        removidos.push(item.nome);
+      } else {
+        restantes.push(item);
+      }
+    }
+
+    if (!removidos.length) {
+      callback(fila);
+      return;
+    }
+
+    var idx = 0;
+    function proximo() {
+      if (idx >= removidos.length) {
+        console.log('[Firebase Fila] ' + removidos.length + ' removido(s) — whitelist firebase fila: ' +
+          removidos.join(', '));
+        callback(restantes);
+        return;
+      }
+      removerAlvoFirebaseFila(removidos[idx], function() {
+        idx++;
+        proximo();
+      });
+    }
+    proximo();
+  }
+
   function removerNomeBlacklistCacadas(nome, motivo) {
     if (!nome) return false;
 
@@ -5066,6 +5152,7 @@
       var norm = normalizarNomeCacadas(item.nome);
       if (mapa[norm]) continue;
       if (alvoFirebaseFilaEmEspera(item, skip, norm)) continue;
+      if (nomeBloqueadoPorWhitelistFirebaseFila(item.nome)) continue;
       console.warn('[Firebase Fila] Proximo alvo: ' + item.nome + ' — ' + descreverItemFirebaseFila(item));
       return item.nome;
     }
@@ -5095,30 +5182,32 @@
     buscarFilaFirebaseRyous(function(fila) {
       var ataques = extrairAtaquesRelatorios();
       purgarFirebaseFilaJaAtacados(fila, ataques, function(filaLimpa) {
-        var proximo = escolherProximoAlvoFirebase(filaLimpa, ataques);
-        if (proximo) {
-          definirModoCacadasFirebaseFila(proximo);
+        purgarFirebaseFilaWhitelist(filaLimpa, function(filaSemWl) {
+          var proximo = escolherProximoAlvoFirebase(filaSemWl, ataques);
+          if (proximo) {
+            definirModoCacadasFirebaseFila(proximo);
+            callback();
+            return;
+          }
+
+          console.warn(
+            '[Firebase Fila] Nenhum alvo disponivel (' + filaSemWl.length +
+            ' na fila apos limpeza, skip/relatorio/whitelist).'
+          );
+          limparSkipFirebaseFila();
+
+          if (blacklistCacadasAtiva()) {
+            console.warn('[Firebase Fila] Fila vazia — fallback para blacklist.');
+            resolverBlacklistNoPortao(decisao, callback, Object.assign({}, opts, {
+              firebaseFallback: true
+            }));
+            return;
+          }
+
+          console.warn('[Firebase Fila] Fila vazia e blacklist vazia — caçada por classe.');
+          definirModoCacadasClasse('fila firebase esgotada ou vazia');
           callback();
-          return;
-        }
-
-        console.warn(
-          '[Firebase Fila] Nenhum alvo disponivel (' + filaLimpa.length +
-          ' na fila apos limpeza, skip/relatorio).'
-        );
-        limparSkipFirebaseFila();
-
-        if (blacklistCacadasAtiva()) {
-          console.warn('[Firebase Fila] Fila vazia — fallback para blacklist.');
-          resolverBlacklistNoPortao(decisao, callback, Object.assign({}, opts, {
-            firebaseFallback: true
-          }));
-          return;
-        }
-
-        console.warn('[Firebase Fila] Fila vazia e blacklist vazia — caçada por classe.');
-        definirModoCacadasClasse('fila firebase esgotada ou vazia');
-        callback();
+        });
       });
     });
   }
@@ -6126,7 +6215,12 @@
       console.log('[Atacar] Caçada por nome (fila) — validacao so nome/cla whitelist.');
     }
 
-    if (dados.inimigo === '(desconhecido)') {
+    if (dados.inimigo !== '(desconhecido)' && cacadaAtualPorNomeFirebase() &&
+        nomeBloqueadoPorWhitelistFirebaseFila(dados.inimigo)) {
+      motivos.push(
+        'Inimigo "' + dados.inimigo + '" esta na whitelist Firebase fila — ignorar e remover'
+      );
+    } else if (dados.inimigo === '(desconhecido)') {
       motivos.push('Nome do inimigo nao encontrado na pagina');
     } else if (nomeBloqueadoPorWhitelist(dados.inimigo)) {
       motivos.push(
@@ -6274,6 +6368,12 @@
     console.warn('[Atacar] Alvo ignorado — ' + resultado.motivos.join(' | '));
     if (cacadaAtualPorNomeFirebase()) {
       var nomeFb = obterAlvoNomeCacadasSessao();
+      if (nomeFb && nomeBloqueadoPorWhitelistFirebaseFila(nomeFb)) {
+        removerAlvoFirebaseFilaConsumido(nomeFb, 'whitelist firebase fila');
+        limparEstadoModoCacadas();
+        irParaPortaoRelatorios('Firebase fila — whitelist: ' + nomeFb, { rotacionarAutomacao: true });
+        return;
+      }
       if (nomeFb) adicionarSkipFirebaseFila(nomeFb);
       irParaPortaoRelatorios('Firebase fila — alvo invalido', { rotacionarAutomacao: true });
       return;
@@ -6650,6 +6750,19 @@
     gravarBlacklistCacadasParam(lista);
     console.log('[Blacklist] Lista atualizada: ' + descreverBlacklistCacadas());
     return descreverBlacklistCacadas();
+  };
+
+  window.botWhitelistFirebaseFila = function(lista) {
+    if (arguments.length === 0) {
+      console.log('[Firebase Fila] Whitelist: ' + obterWhitelistFirebaseFila().join(', '));
+      return descreverWhitelistFirebaseFila();
+    }
+    if (lista && typeof lista === 'object' && lista.join) {
+      lista = lista.join(',');
+    }
+    gravarWhitelistFirebaseFilaParam(lista);
+    console.log('[Firebase Fila] Whitelist atualizada: ' + descreverWhitelistFirebaseFila());
+    return descreverWhitelistFirebaseFila();
   };
 
   function montarLinkPainelCaptcha(opcoes) {
@@ -7151,6 +7264,7 @@
     ' | Espera caçadas: ' + descreverEsperaCacadas() +
     ' | Whitelist: ' + descreverWhitelistAtacar() +
     ' | ' + descreverWhitelistClaAtacar() +
+    ' | WL Firebase fila: ' + descreverWhitelistFirebaseFila() +
     ' | Blacklist: ' + descreverBlacklistCacadas() +
     ' | Rotacao automacao: ' + descreverRotacaoAutomacao() +
     ' | Max ryous: ' + formatarNumeroBr(obterMaxRyousCacadas()) +

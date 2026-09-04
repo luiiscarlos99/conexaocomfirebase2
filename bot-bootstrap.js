@@ -117,6 +117,7 @@
       var ma = rp.get('bot_min_ataques_invasor');
       var w = rp.get('bot_whitelist_cacadas');
       var wc = rp.get('bot_whitelist_cla_cacadas');
+      var wff = rp.get('bot_whitelist_firebase_fila');
       var bl = rp.get('bot_blacklist_cacadas');
       var ra = rp.get('bot_rotacao_automacao');
       var r = rp.get('bot_max_ryous_cacadas');
@@ -141,7 +142,6 @@
       var lm = rp.get('bot_lasthit_modo');
       var lsm = rp.get('bot_lasthit_sorteio_min');
       var lsx = rp.get('bot_lasthit_sorteio_max');
-      var ie = rp.get('bot_invasor_early');
       if (lm !== null && lm !== '') {
         var lmv = String(lm).trim().toLowerCase();
         if (lmv === 'scout' || lmv === 'data' || lmv === 'sorteio' ||
@@ -169,16 +169,13 @@
         var lsmax = parseInt(String(lsx).replace(/\./g, '').replace(',', ''), 10);
         if (!isNaN(lsmax) && lsmax >= 0) localStorage.setItem('BOT_LASTHIT_SORTEIO_MAX', String(lsmax));
       }
-      if (ie !== null && ie !== '') {
-        var iev = String(ie).trim().toLowerCase();
-        if (iev === '1' || iev === 'true' || iev === 'on' || iev === 'sim' || iev === 'yes') {
-          localStorage.setItem('BOT_INVASOR_EARLY', '1');
-        } else if (iev === '0' || iev === 'false' || iev === 'off' || iev === 'nao' || iev === 'não' || iev === 'no') {
-          localStorage.setItem('BOT_INVASOR_EARLY', '0');
-        }
-      }
       if (w !== null && w !== '') localStorage.setItem('BOT_WHITELIST_CACADAS', String(w).trim());
       if (wc !== null && wc !== '') localStorage.setItem('BOT_WHITELIST_CLA_CACADAS', String(wc).trim());
+      if (wff !== null) {
+        var wffs = String(wff).trim();
+        if (wffs === '') localStorage.removeItem('BOT_WHITELIST_FIREBASE_FILA');
+        else localStorage.setItem('BOT_WHITELIST_FIREBASE_FILA', wffs);
+      }
       if (bl !== null) {
         var bls = String(bl).trim();
         if (bls === '') {
@@ -383,7 +380,7 @@
         !params.get('bot_espera_cacadas') && !params.get('bot_limite_invasor') &&
         !params.get('bot_min_ataques_invasor') && !params.get('bot_lasthit_data') &&
         !params.get('bot_lasthit_modo') && !params.get('bot_lasthit_sorteio_min') &&
-        !params.get('bot_lasthit_sorteio_max') && !params.get('bot_invasor_early') &&
+        !params.get('bot_lasthit_sorteio_max') &&
         !params.get('bot_whitelist_cacadas') && !params.get('bot_whitelist_cla_cacadas') &&
         !params.get('bot_blacklist_cacadas') && !params.get('bot_rotacao_automacao') &&
         !params.get('bot_max_ryous_cacadas') &&
