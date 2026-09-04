@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.55
+// @version      3.56
 // @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -715,8 +715,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.55';
-  var SCRIPT_ATUALIZADO = '03/09/2026 23:45';
+  var SCRIPT_VERSAO = '3.56';
+  var SCRIPT_ATUALIZADO = '04/09/2026 10:30';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3639,6 +3639,32 @@
     return dt.getTime();
   }
 
+  function extrairNomeVitimaCelulaRelatorio(celula) {
+    if (!celula) return null;
+
+    var link = celula.querySelector('a[href*="jogador"]');
+    if (link) {
+      var href = link.getAttribute('href') || '';
+      var m = href.match(/[?&]u=([^&#]+)/i);
+      if (m) {
+        try {
+          return decodeURIComponent(m[1].replace(/\+/g, ' ')).trim();
+        } catch (e) {
+          return m[1].trim();
+        }
+      }
+      var nomeLink = (link.innerText || link.textContent || '').replace(/\s+/g, ' ').trim();
+      if (nomeLink) return nomeLink;
+    }
+
+    var texto = textoCelulaRelatorio(celula);
+    return texto || null;
+  }
+
+  function ehCabecalhoColunaAtacado(textoNorm) {
+    return textoNorm === 'atacado' || textoNorm === 'atacante';
+  }
+
   function obterTabelaRelatoriosAtaque() {
     var col = document.getElementById('col_direita') || document;
     var linhas = col.querySelectorAll('tr');
@@ -3647,15 +3673,15 @@
       var celulas = linhas[i].cells;
       if (!celulas || celulas.length < 2) continue;
 
-      var idxAtacante = -1;
+      var idxAtacado = -1;
       var idxData = -1;
       for (var c = 0; c < celulas.length; c++) {
         var t = normalizarTextoCombate(textoCelulaRelatorio(celulas[c]));
-        if (t === 'atacante') idxAtacante = c;
+        if (ehCabecalhoColunaAtacado(t)) idxAtacado = c;
         if (t === 'data') idxData = c;
       }
 
-      if (idxAtacante === -1 || idxData === -1) continue;
+      if (idxAtacado === -1 || idxData === -1) continue;
 
       var tabela = linhas[i].closest ? linhas[i].closest('table') : linhas[i].parentNode;
       if (tabela && tabela.tagName && tabela.tagName.toLowerCase() !== 'table') {
@@ -3663,7 +3689,7 @@
       }
       if (!tabela || !tabela.rows) continue;
 
-      return { tabela: tabela, idxData: idxData, idxAtacante: idxAtacante };
+      return { tabela: tabela, idxData: idxData, idxAtacado: idxAtacado };
     }
 
     return null;
@@ -3690,7 +3716,7 @@
       for (var r = 0; r < rows.length; r++) {
         var celulas = rows[r].cells;
         if (!celulas || celulas.length <= infoTabela.idxData) continue;
-        if (normalizarTextoCombate(textoCelulaRelatorio(celulas[infoTabela.idxAtacante])) === 'atacante') {
+        if (ehCabecalhoColunaAtacado(normalizarTextoCombate(textoCelulaRelatorio(celulas[infoTabela.idxAtacado])))) {
           continue;
         }
 
@@ -3700,13 +3726,37 @@
 
         var ts = parseDataHoraRelatorioAtaque(dataTexto);
         var resumo = textoCelulaRelatorio(rows[r]);
+        var vitima = extrairNomeVitimaCelulaRelatorio(celulas[infoTabela.idxAtacado]);
+        if (!vitima) vitima = extrairVitimaDoRelatorioAtaque(resumo);
         adicionar({
           ts: ts,
           dataTexto: dataTexto,
-          vitima: extrairVitimaDoRelatorioAtaque(resumo),
+          vitima: vitima,
           resumo: resumo
         });
       }
+    }
+
+    var linksJogador = col.querySelectorAll('a[href*="jogador"]');
+    for (var j = 0; j < linksJogador.length; j++) {
+      var rowJ = linksJogador[j].closest ? linksJogador[j].closest('tr') : null;
+      if (!rowJ || !rowJ.cells || rowJ.cells.length < 3) continue;
+
+      var vitimaJ = extrairNomeVitimaCelulaRelatorio(rowJ.cells[0]);
+      if (!vitimaJ) continue;
+
+      var dataTextoJ = null;
+      for (var cj = rowJ.cells.length - 1; cj >= 0; cj--) {
+        dataTextoJ = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rowJ.cells[cj]));
+        if (dataTextoJ) break;
+      }
+
+      adicionar({
+        ts: dataTextoJ ? parseDataHoraRelatorioAtaque(dataTextoJ) : null,
+        dataTexto: dataTextoJ,
+        vitima: vitimaJ,
+        resumo: textoCelulaRelatorio(rowJ)
+      });
     }
 
     var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
