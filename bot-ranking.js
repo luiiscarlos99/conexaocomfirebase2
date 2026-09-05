@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.30
+// @version      1.31
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit+2+ sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.30';
+      var SCRIPT_VERSAO = '1.31';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -48,12 +48,13 @@
       var RANKING_RYOUS_FILA_FB_PATH = 'ranking_ryous_fila';
       var RANKING_RYOUS_FILA_TTL_MS = 3600000;
 
-      var DEFAULTS = { maxRyous: 1000000, minNivel: 55, vila: 'geral', view: 'personagens' };
+      var DEFAULTS = { maxRyous: 1000000, minNivel: 55, maxNivel: 999999, vila: 'geral', view: 'personagens' };
       var DEFAULTS_WATCH = {
         maxRyous: 100000000,
         minDeltaRyous: 100000,
         minDeltaDivergencia: 50000,
         minNivel: 74,
+        maxNivel: 999999,
         intervaloMs: 600000,
         discordCooldownMin: 30,
         compareDeltaVitorias: true,
@@ -106,6 +107,7 @@
         var p = {
           maxRyous: DEFAULTS.maxRyous,
           minNivel: DEFAULTS.minNivel,
+          maxNivel: DEFAULTS.maxNivel,
           vila: DEFAULTS.vila,
           view: DEFAULTS.view
         };
@@ -113,6 +115,7 @@
           var rp = new URLSearchParams(window.location.search);
           var mr = rp.get('bot_ranking_max_ryous');
           var mn = rp.get('bot_ranking_min_nivel');
+          var mx = rp.get('bot_ranking_max_nivel');
           if (mr !== null && mr !== '') {
             var nmr = parseNumeroRanking(mr);
             if (nmr !== null && nmr > 0) p.maxRyous = nmr;
@@ -120,6 +123,10 @@
           if (mn !== null && mn !== '') {
             var nmn = parseInt(String(mn).replace(/\./g, ''), 10);
             if (!isNaN(nmn)) p.minNivel = nmn;
+          }
+          if (mx !== null && mx !== '') {
+            var nmx = parseInt(String(mx).replace(/\./g, ''), 10);
+            if (!isNaN(nmx) && nmx > 0) p.maxNivel = nmx;
           }
           if (rp.get('bot_ranking_vila')) p.vila = rp.get('bot_ranking_vila');
           if (rp.get('bot_ranking_view')) p.view = rp.get('bot_ranking_view');
@@ -137,6 +144,10 @@
         if (extra.minNivel != null) {
           var mn = parseInt(String(extra.minNivel).replace(/\./g, ''), 10);
           if (!isNaN(mn)) base.minNivel = mn;
+        }
+        if (extra.maxNivel != null) {
+          var mx = parseInt(String(extra.maxNivel).replace(/\./g, ''), 10);
+          if (!isNaN(mx) && mx > 0) base.maxNivel = mx;
         }
         if (extra.vila) base.vila = String(extra.vila);
         if (extra.view) base.view = String(extra.view);
@@ -173,6 +184,7 @@
         qs.set('ranking', String(typeof offset === 'number' ? offset : 0));
         qs.set('bot_ranking_max_ryous', String(p.maxRyous));
         qs.set('bot_ranking_min_nivel', String(p.minNivel));
+        qs.set('bot_ranking_max_nivel', String(p.maxNivel != null ? p.maxNivel : DEFAULTS.maxNivel));
         return 'https://shadowofshinobi.com/ranking?' + qs.toString();
       }
 
@@ -498,8 +510,10 @@
         });
       }
 
-      function passaFiltroLvlRanking(j, minNivel, scanMode) {
+      function passaFiltroLvlRanking(j, minNivel, scanMode, maxNivel) {
         if (!j || j.nivel === null || isNaN(j.nivel)) return false;
+        var max = maxNivel != null ? maxNivel : DEFAULTS.maxNivel;
+        if (j.nivel > max) return false;
         if (scanMode) return j.nivel > minNivel;
         return j.nivel >= minNivel;
       }
@@ -597,12 +611,12 @@
         return false;
       }
 
-      function enriquecerJogadoresComPerfil(jogadores, minNivel, scanMode, callback) {
+      function enriquecerJogadoresComPerfil(jogadores, minNivel, scanMode, maxNivel, callback) {
         var fila = [];
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
           if (!j || !j.urlJogador) continue;
-          if (!passaFiltroLvlRanking(j, minNivel, scanMode)) continue;
+          if (!passaFiltroLvlRanking(j, minNivel, scanMode, maxNivel)) continue;
           fila.push(j);
         }
 
@@ -641,14 +655,14 @@
         proximo();
       }
 
-      function prepararJogadoresPagina(processarFn, minNivel, scanMode) {
+      function prepararJogadoresPagina(processarFn, minNivel, scanMode, maxNivel) {
         aguardarJogadores(function(jogadores) {
           for (var i = 0; i < jogadores.length; i++) migrarJogadorLegado(jogadores[i]);
           if (!rankingPerfilAtivo()) {
             processarFn(jogadores);
             return;
           }
-          enriquecerJogadoresComPerfil(jogadores, minNivel, !!scanMode, processarFn);
+          enriquecerJogadoresComPerfil(jogadores, minNivel, !!scanMode, maxNivel, processarFn);
         });
       }
 
@@ -699,13 +713,19 @@
         } catch (e) {}
       }
 
+      function maxNivelRanking(params) {
+        if (params && params.maxNivel != null) return params.maxNivel;
+        return DEFAULTS.maxNivel;
+      }
+
       function filtrarMult(jogadores, params) {
+        var maxNivel = maxNivelRanking(params);
         var out = [];
         for (var i = 0; i < jogadores.length; i++) {
           var j = migrarJogadorLegado(jogadores[i]);
           var ry = ryousParaScanMult(j);
           if (ry === null || ry <= 0) continue;
-          if (j.nivel > params.minNivel && ry < params.maxRyous) {
+          if (j.nivel > params.minNivel && j.nivel <= maxNivel && ry < params.maxRyous) {
             var copia = {};
             for (var p in j) {
               if (Object.prototype.hasOwnProperty.call(j, p)) copia[p] = j[p];
@@ -793,6 +813,7 @@
           maxRyous: DEFAULTS_WATCH.maxRyous,
           minDeltaRyous: DEFAULTS_WATCH.minDeltaRyous,
           minNivel: DEFAULTS_WATCH.minNivel,
+          maxNivel: DEFAULTS_WATCH.maxNivel,
           intervaloMs: DEFAULTS_WATCH.intervaloMs,
           compareDeltaVitorias: DEFAULTS_WATCH.compareDeltaVitorias,
           minDeltaVitorias: DEFAULTS_WATCH.minDeltaVitorias,
@@ -807,6 +828,7 @@
             if (saved.minDeltaRyous != null) base.minDeltaRyous = saved.minDeltaRyous;
             if (saved.minDeltaDivergencia != null) base.minDeltaDivergencia = saved.minDeltaDivergencia;
             if (saved.minNivel != null) base.minNivel = saved.minNivel;
+            if (saved.maxNivel != null) base.maxNivel = saved.maxNivel;
             if (saved.intervaloMs != null) base.intervaloMs = saved.intervaloMs;
             if (saved.discordCooldownMin != null) base.discordCooldownMin = saved.discordCooldownMin;
             if (saved.compareDeltaVitorias != null) {
@@ -826,6 +848,11 @@
           if (mnWatch !== null && mnWatch !== '') {
             var nmnWatch = parseInt(String(mnWatch).replace(/\./g, ''), 10);
             if (!isNaN(nmnWatch)) base.minNivel = nmnWatch;
+          }
+          var mxWatch = rp.get('bot_ranking_watch_max_nivel');
+          if (mxWatch !== null && mxWatch !== '') {
+            var nmxWatch = parseInt(String(mxWatch).replace(/\./g, ''), 10);
+            if (!isNaN(nmxWatch) && nmxWatch > 0) base.maxNivel = nmxWatch;
           }
           var cdv = rp.get('bot_ranking_compare_delta_vitorias');
           if (cdv !== null && cdv !== '') {
@@ -853,6 +880,10 @@
         if (extra.minNivel != null) {
           var mn = parseInt(String(extra.minNivel).replace(/\./g, ''), 10);
           if (!isNaN(mn)) base.minNivel = mn;
+        }
+        if (extra.maxNivel != null) {
+          var mxExtra = parseInt(String(extra.maxNivel).replace(/\./g, ''), 10);
+          if (!isNaN(mxExtra) && mxExtra > 0) base.maxNivel = mxExtra;
         }
         if (extra.intervaloMs != null) {
           var iv = parseInt(String(extra.intervaloMs).replace(/\./g, ''), 10);
@@ -994,6 +1025,7 @@
         qs.set('vila', p.vila || 'geral');
         qs.set('ranking', String(typeof offset === 'number' ? offset : 0));
         if (p.minNivel != null) qs.set('bot_ranking_watch_min_nivel', String(p.minNivel));
+        if (p.maxNivel != null) qs.set('bot_ranking_watch_max_nivel', String(p.maxNivel));
         return 'https://shadowofshinobi.com/ranking?' + qs.toString();
       }
 
@@ -1150,6 +1182,13 @@
           return {
             status: 'descartado', motivo: 'nivel abaixo do min',
             nivel: j.nivel, minNivel: params.minNivel, fonteCompare: fonte
+          };
+        }
+        var maxNivelWatch = params.maxNivel != null ? params.maxNivel : DEFAULTS_WATCH.maxNivel;
+        if (j.nivel > maxNivelWatch) {
+          return {
+            status: 'descartado', motivo: 'nivel acima do max',
+            nivel: j.nivel, maxNivel: maxNivelWatch, fonteCompare: fonte
           };
         }
         if (!prev || ryousPrev === null) {
@@ -1363,12 +1402,14 @@
 
       function motivoScanMultDescarte(j, params) {
         j = migrarJogadorLegado(j);
+        var maxNivel = maxNivelRanking(params);
         if (j && j.erroPerfil && rankingPerfilAtivo()) return 'perfil: ' + j.erroPerfil;
         var ry = ryousParaScanMult(j);
         if (!j || ry === null || ry <= 0) {
           return rankingPerfilAtivo() ? 'ryous perfil/ranking invalido' : 'ryous invalido';
         }
         if (j.nivel === null || j.nivel <= params.minNivel) return 'lvl <= ' + params.minNivel;
+        if (j.nivel > maxNivel) return 'lvl > ' + maxNivel;
         if (ry >= params.maxRyous) return 'ryous >= max (' + formatarNumeroBr(params.maxRyous) + ')';
         return 'nao mult';
       }
@@ -1395,14 +1436,14 @@
         }
       }
 
-      function paginaRankingAbaixoMinNivel(jogadores, minNivel, scanMode) {
+      function paginaRankingAbaixoMinNivel(jogadores, minNivel, scanMode, maxNivel) {
         var comNivel = 0;
         var algumNoMinimo = false;
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
           if (!j || j.nivel === null || isNaN(j.nivel)) continue;
           comNivel++;
-          if (passaFiltroLvlRanking(j, minNivel, scanMode)) algumNoMinimo = true;
+          if (passaFiltroLvlRanking(j, minNivel, scanMode, maxNivel)) algumNoMinimo = true;
         }
         if (!comNivel) return false;
         return !algumNoMinimo;
@@ -1564,7 +1605,8 @@
             'Regras: +>=' + formatarNumeroBr(params.minDeltaRyous) + ' ryous sem vit/der | vit+>=' +
               (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias) +
               ' sem ryous faturados',
-            'Filtro: lvl>=' + params.minNivel + ' | max ' + formatarNumeroBr(params.maxRyous)
+            'Filtro: lvl>=' + params.minNivel + ' | lvl<=' + params.maxNivel +
+              ' | max ' + formatarNumeroBr(params.maxRyous)
           ];
           for (var i = 0; i < suspeitos.length; i++) {
             var s = suspeitos[i];
@@ -1618,6 +1660,7 @@
         console.log('%c[Bot Ranking Watch] v' + SCRIPT_VERSAO + ' — scan em andamento', 'color:#e67e22;font-weight:bold');
         console.log('[Bot Ranking Watch] ranking=' + offset + ' | modo=' + estado.modo +
           ' | snapshot=' + qtdSnap + ' jogadores | lvl>=' + params.minNivel +
+          ' | lvl<=' + params.maxNivel +
           ' | delta>=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | minDeltaVit>=' + (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias) +
           ' | maxRyous=' + formatarNumeroBr(params.maxRyous) +
@@ -1718,7 +1761,7 @@
             ' jogadores (baseline).');
         }
 
-        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, false)) {
+        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, false, params.maxNivel)) {
           console.log('%c[Bot Ranking Watch] ranking=' + offset +
             ' — todos abaixo do lvl min (' + params.minNivel + '). Encerrando ciclo cedo.',
             'color:#e67e22;font-weight:bold');
@@ -1732,7 +1775,7 @@
 
       function processarPaginaWatch() {
         var params = lerParamsWatch();
-        prepararJogadoresPagina(processarPaginaWatchComJogadores, params.minNivel, false);
+        prepararJogadoresPagina(processarPaginaWatchComJogadores, params.minNivel, false, params.maxNivel);
       }
 
       function iniciarCicloWatchScan(modo) {
@@ -1778,6 +1821,7 @@
         console.log('[Bot Ranking Watch] maxRyous=' + formatarNumeroBr(params.maxRyous) +
           ' | minDelta=' + formatarNumeroBr(params.minDeltaRyous) +
           ' | minNivel=' + params.minNivel +
+          ' | maxNivel=' + params.maxNivel +
           ' | compareDeltaVitorias=' + (params.compareDeltaVitorias !== false ? 'sim' : 'nao') +
           ' | minDeltaVitorias=' + (params.minDeltaVitorias != null ? params.minDeltaVitorias : DEFAULTS_WATCH.minDeltaVitorias));
         iniciarCicloWatchScan('baseline');
@@ -1848,18 +1892,20 @@
         var p = params || lerParamsUrl();
         console.log('%c[Bot Ranking] v' + SCRIPT_VERSAO + ' — contexto pagina OK', 'color:#9b59b6;font-weight:bold;font-size:13px');
         console.log('[Bot Ranking] Caçadas/Invasor ficam inativos aqui. So este script age (quando voce chamar).');
-        console.log('[Bot Ranking] Filtro atual: lvl > ' + p.minNivel + ' e ryous < ' + p.maxRyous.toLocaleString('pt-BR'));
+        console.log('[Bot Ranking] Filtro atual: lvl > ' + p.minNivel + ' | lvl <= ' + p.maxNivel +
+          ' | ryous < ' + p.maxRyous.toLocaleString('pt-BR'));
         console.log('[Bot Ranking] Parametros URL (opcional):');
         console.log('  bot_ranking_max_ryous=' + p.maxRyous + '   (padrao: 1M — pega 999,9k ou menos)');
         console.log('  bot_ranking_min_nivel=' + p.minNivel + '        (padrao: 55 — lvl tem que ser MAIOR que este valor)');
+        console.log('  bot_ranking_max_nivel=' + p.maxNivel + '       (padrao: 999999 — lvl tem que ser MENOR OU IGUAL)');
         console.log('  bot_ranking_vila=' + (p.vila || 'geral') + '          (padrao: geral)');
         console.log('[Bot Ranking] Comandos console:');
         console.log('  botRankingScan()                — scan mult (lvl alto, ryous baixo)');
-        console.log('  botRankingScan({maxRyous:999000,minNivel:56})');
+        console.log('  botRankingScan({maxRyous:999000,minNivel:56,maxNivel:120})');
         console.log('  botRankingParar()               — cancela scan mult');
         console.log('  botRankingStatus()              — status scan mult');
         console.log('  botRankingWatchRyous()          — watch ryous (+100k sem vit/der, a cada 10min)');
-        console.log('  botRankingWatchRyous({maxRyous:100000000,minDeltaRyous:100000,minNivel:74,intervaloMin:10})');
+        console.log('  botRankingWatchRyous({maxRyous:100000000,minDeltaRyous:100000,minNivel:74,maxNivel:999999,intervaloMin:10})');
         console.log('  botRankingWatchRyous({minDeltaDivergencia:50000,discordCooldownMin:30})');
         console.log('  botRankingWatchRyous({compareDeltaVitorias:false}) — desliga regra vit+ sem ryous');
         console.log('  botRankingWatchRyous({minDeltaVitorias:2}) — min vit+ para suspeito (padrao: 2)');
@@ -1870,6 +1916,7 @@
         console.log('  botRankingPerfilRyous(true)        — ryous/vit/der do perfil (lvl no ranking)');
         console.log('  botRankingPerfilRyous(false)       — perfil OFF (ryous do ranking)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_min_nivel=74 (padrao: 74)');
+        console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_watch_max_nivel=999999 (padrao: 999999)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_compare_delta_vitorias=0|1 (padrao: 1)');
         console.log('[Bot Ranking Watch] Parametro URL: bot_ranking_min_delta_vitorias=2 (padrao: 2; ignora vit+1)');
         console.log('[Bot Ranking Watch] Suspeitos vao para Discord + Firebase ranking_ryous_fila (TTL 1h).');
@@ -1883,7 +1930,8 @@
         var offset = offsetRankingAtual();
         var acum = lerResultadosAcumulados().length;
         console.log('%c[Bot Ranking] v' + SCRIPT_VERSAO + ' — scan em andamento', 'color:#9b59b6;font-weight:bold');
-        console.log('[Bot Ranking] ranking=' + offset + ' | acumulado=' + acum + ' mult | lvl > ' + params.minNivel + ' | ryous < ' + params.maxRyous.toLocaleString('pt-BR') +
+        console.log('[Bot Ranking] ranking=' + offset + ' | acumulado=' + acum + ' mult | lvl > ' + params.minNivel +
+          ' | lvl <= ' + params.maxNivel + ' | ryous < ' + params.maxRyous.toLocaleString('pt-BR') +
           (rankingDebugAtivo() ? ' | DEBUG ON (2min/pagina)' : '') +
           (rankingPerfilAtivo() ? ' | PERFIL ON' : ''));
         console.log('[Bot Ranking] botRankingParar() — cancelar | botRankingStatus() — status');
@@ -1893,7 +1941,8 @@
         console.log('');
         console.log('%c[Ranking Mult] FIM — ' + resultados.length + ' jogador(es)', 'color:#e74c3c;font-weight:bold;font-size:13px');
         if (!resultados.length) {
-          console.log('[Ranking Mult] Nenhum jogador com lvl > ' + params.minNivel + ' e ryous < ' + params.maxRyous.toLocaleString('pt-BR'));
+          console.log('[Ranking Mult] Nenhum jogador com lvl > ' + params.minNivel + ' | lvl <= ' + params.maxNivel +
+            ' e ryous < ' + params.maxRyous.toLocaleString('pt-BR'));
           return;
         }
         console.log('%c[Ranking Mult] LOG 1 — detalhado', 'color:#3498db;font-weight:bold');
@@ -1944,7 +1993,7 @@
         console.log('[Bot Ranking] ranking=' + offset + ': ' + jogadores.length + ' jogadores, ' +
           mult.length + ' mult, ' + acumulado.length + ' acumulado.');
 
-        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, true)) {
+        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, true, params.maxNivel)) {
           console.log('%c[Bot Ranking] ranking=' + offset +
             ' — todos com lvl <= min (' + params.minNivel + '). Encerrando scan cedo.',
             'color:#9b59b6;font-weight:bold');
@@ -1959,7 +2008,7 @@
 
       function processarPaginaScan() {
         var params = lerParamsSalvos();
-        prepararJogadoresPagina(processarPaginaScanComJogadores, params.minNivel, true);
+        prepararJogadoresPagina(processarPaginaScanComJogadores, params.minNivel, true, params.maxNivel);
       }
 
       function iniciarScan(extraParams) {
