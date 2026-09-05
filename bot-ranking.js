@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Ranking Mult - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      1.29
+// @version      1.30
 // @description  Scan ranking mult + watch ryous (aumento sem vit/der ou vit+2+ sem ryous faturados). Script separado.
 // @match        https://shadowofshinobi.com/ranking*
 // @grant        none
@@ -19,7 +19,7 @@
     el.textContent = '(' + function botRankingCore() {
       if (window.__BOT_RANKING_OK__) return;
 
-      var SCRIPT_VERSAO = '1.29';
+      var SCRIPT_VERSAO = '1.30';
       var SCAN_KEY = 'BOT_RANKING_SCAN_ATIVO';
       var DEBUG_KEY = 'BOT_RANKING_DEBUG_ATIVO';
       var PERFIL_KEY = 'BOT_RANKING_PERFIL_ATIVO';
@@ -1395,14 +1395,14 @@
         }
       }
 
-      function paginaWatchAbaixoMinNivel(jogadores, minNivel) {
+      function paginaRankingAbaixoMinNivel(jogadores, minNivel, scanMode) {
         var comNivel = 0;
         var algumNoMinimo = false;
         for (var i = 0; i < jogadores.length; i++) {
           var j = jogadores[i];
           if (!j || j.nivel === null || isNaN(j.nivel)) continue;
           comNivel++;
-          if (j.nivel >= minNivel) algumNoMinimo = true;
+          if (passaFiltroLvlRanking(j, minNivel, scanMode)) algumNoMinimo = true;
         }
         if (!comNivel) return false;
         return !algumNoMinimo;
@@ -1718,7 +1718,7 @@
             ' jogadores (baseline).');
         }
 
-        if (paginaWatchAbaixoMinNivel(jogadores, params.minNivel)) {
+        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, false)) {
           console.log('%c[Bot Ranking Watch] ranking=' + offset +
             ' — todos abaixo do lvl min (' + params.minNivel + '). Encerrando ciclo cedo.',
             'color:#e67e22;font-weight:bold');
@@ -1943,6 +1943,14 @@
 
         console.log('[Bot Ranking] ranking=' + offset + ': ' + jogadores.length + ' jogadores, ' +
           mult.length + ' mult, ' + acumulado.length + ' acumulado.');
+
+        if (paginaRankingAbaixoMinNivel(jogadores, params.minNivel, true)) {
+          console.log('%c[Bot Ranking] ranking=' + offset +
+            ' — todos com lvl <= min (' + params.minNivel + '). Encerrando scan cedo.',
+            'color:#9b59b6;font-weight:bold');
+          finalizarScan(params);
+          return;
+        }
 
         var proximo = offset + PASSO_RANKING;
         console.log('[Bot Ranking] Proxima faixa: ranking=' + proximo);
