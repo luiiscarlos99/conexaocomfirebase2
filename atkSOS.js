@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.70
+// @version      3.71
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.70';
-  var SCRIPT_ATUALIZADO = '08/09/2026 01:15';
+  var SCRIPT_VERSAO = '3.71';
+  var SCRIPT_ATUALIZADO = '08/09/2026 01:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1060,6 +1060,7 @@
   var BOT_MISSAO_NOVO_RANKING_OFF_KEY = 'BOT_MISSAO_NOVO_RANKING_OFF';
   var BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY = 'BOT_MISSAO_NOVO_RANKING_ULTIMO';
   var BOT_MISSAO_NOVO_POSICAO_KEY = 'BOT_MISSAO_NOVO_POSICAO';
+  var BOT_MISSAO_NOVO_ATACADOS_KEY = 'BOT_MISSAO_NOVO_ATACADOS';
   var BOT_MISSAO_NOVO_RANK_SCAN_KEY = 'BOT_MISSAO_NOVO_RANK_SCAN';
   var BOT_MISSAO_NOVO_SCAN_INICIAL_KEY = 'BOT_MISSAO_NOVO_SCAN_INICIAL';
   var BOT_MISSAO_NOVO_RETRY_TS_KEY = 'BOT_MISSAO_NOVO_RETRY_TS';
@@ -2910,7 +2911,63 @@
       sessionStorage.removeItem(BOT_MISSAO_NOVO_RETRY_TS_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE1_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE2_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ATACADOS_KEY);
     } catch (e) {}
+  }
+
+  function lerAtacadosMissaoNovo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_MISSAO_NOVO_ATACADOS_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  function salvarAtacadosMissaoNovo(mapa) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_ATACADOS_KEY, JSON.stringify(mapa || {})); } catch (e) {}
+  }
+
+  function ehAtaqueRelatorioHojeMissaoNovo(ts) {
+    if (ts === null || ts === undefined || isNaN(ts)) return true;
+    var d = new Date(ts);
+    var hoje = new Date();
+    return d.getDate() === hoje.getDate() &&
+      d.getMonth() === hoje.getMonth() &&
+      d.getFullYear() === hoje.getFullYear();
+  }
+
+  function coletarAtacadosRelatorioParaMissaoNovo() {
+    var ataques = extrairAtaquesRelatorios();
+    var mapa = {};
+    var hoje = 0;
+    for (var i = 0; i < ataques.length; i++) {
+      var a = ataques[i];
+      if (!a || !a.vitima) continue;
+      if (!ehAtaqueRelatorioHojeMissaoNovo(a.ts)) continue;
+      hoje++;
+      mapa[a.vitimaNorm || normalizarNomeCacadas(a.vitima)] = a.vitima;
+    }
+    salvarAtacadosMissaoNovo(mapa);
+    return { mapa: mapa, total: Object.keys(mapa).length, relatorio: ataques.length, hoje: hoje };
+  }
+
+  function adicionarAtacadoMissaoNovo(nome) {
+    if (!nome) return;
+    var mapa = lerAtacadosMissaoNovo();
+    mapa[normalizarNomeCacadas(nome)] = nome;
+    salvarAtacadosMissaoNovo(mapa);
+  }
+
+  function missaoNovoJaAtacou(nome) {
+    if (!nome) return false;
+    return !!lerAtacadosMissaoNovo()[normalizarNomeCacadas(nome)];
+  }
+
+  function montarUrlRelatorioMissaoNovoColetar() {
+    return URL_RELATORIOS_ATAQUE + '&bot_missao_novo_coletar=1&bot_modo=cacadas';
   }
 
   function marcarAtaqueMissaoNovoFeito(slot) {
@@ -3399,6 +3456,7 @@
     if (j.ryous > params.maxRyous) return false;
     var meuLogin = normalizarNomeCacadas(obterUsuarioExibicao());
     if (meuLogin && normalizarNomeCacadas(j.nome) === meuLogin) return false;
+    if (missaoNovoJaAtacou(j.nome)) return false;
     return true;
   }
 
@@ -3530,9 +3588,23 @@
     limparAlvoMissaoNovo();
     console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
       params.diffAlvo + '->' + params.minDiff + ' lvl abaixo, maxRyous ' +
-      formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial + ' (' + resolved.origem + '))',
+      formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial + ' (' + resolved.origem +
+      ') — coletando relatorio de ataques antes...)',
       'color:#e67e22;font-weight:bold');
-    window.location.href = montarUrlRankingMissao(offInicial);
+    window.location.href = montarUrlRelatorioMissaoNovoColetar();
+  }
+
+  function processarMissaoNovoRelatorioColetar() {
+    var coleta = coletarAtacadosRelatorioParaMissaoNovo();
+    var off = lerRankingOffMissaoNovo();
+    console.log('%c[Missao Novo] Relatorio: ' + coleta.total + ' ninja(s) ja atacado(s) hoje' +
+      ' (' + coleta.relatorio + ' entradas no relatorio) — indo ao ranking=' + off + '.',
+      'color:#3498db;font-weight:bold');
+    salvarCandidatosMissaoNovo([]);
+    salvarCandIdxMissaoNovo(0);
+    limparAlvoMissaoNovo();
+    window.location.href = montarUrlRankingMissao(off);
+    return true;
   }
 
   function concluirAtaqueMissaoNovoSemAlvo(slot) {
@@ -3545,6 +3617,7 @@
   }
 
   function concluirAtaqueMissaoNovoSucesso(slot, alvo) {
+    if (alvo) adicionarAtacadoMissaoNovo(alvo);
     salvarRankingUltimoMissaoNovo(lerRankingOffMissaoNovo());
     limparScanRankingMissaoNovo();
     try { sessionStorage.removeItem(BOT_MISSAO_NOVO_RETRY_TS_KEY); } catch (e) {}
@@ -3565,6 +3638,10 @@
     var idx = lerCandIdxMissaoNovo();
     var alvo = lerAlvoMissaoNovo();
     console.warn('[Missao Novo] Falha vs ' + alvo + ': ' + motivo + ' — proximo candidato...');
+
+    if (alvo && (motivo === 'ja atacou hoje' || String(motivo).indexOf('ja atacou') !== -1)) {
+      adicionarAtacadoMissaoNovo(alvo);
+    }
 
     idx++;
     if (idx < candidatos.length) {
@@ -3911,7 +3988,8 @@
       ataque1: ataqueMissaoNovoFeito(1),
       ataque2: ataqueMissaoNovoFeito(2),
       aguardandoRetry: missaoNovoAguardandoRetentativaRanking(),
-      retrySeg: segundosRestantesRetentativaRankingMissaoNovo()
+      retrySeg: segundosRestantesRetentativaRankingMissaoNovo(),
+      atacadosHoje: Object.keys(lerAtacadosMissaoNovo()).length
     };
     console.log('%c[Missao Novo] Status', 'color:#e67e22;font-weight:bold', out);
     console.log('[Missao Novo] Ranking persistente: localStorage.' + BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY +
@@ -9015,6 +9093,20 @@
             agendarTimersCaptcha();
 
             return true; 
+          }
+        },
+        {
+          id: 'missao_novo_relatorio_coletar',
+          checar: function() {
+            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+            if (urlAtual.indexOf('relatorios_ataque') === -1) return false;
+            try {
+              return new URLSearchParams(window.location.search).get('bot_missao_novo_coletar') === '1';
+            } catch (e) {}
+            return false;
+          },
+          executar: function() {
+            return processarMissaoNovoRelatorioColetar();
           }
         },
         {
