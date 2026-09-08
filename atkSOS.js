@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.71
+// @version      3.72
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.71';
-  var SCRIPT_ATUALIZADO = '08/09/2026 01:25';
+  var SCRIPT_VERSAO = '3.72';
+  var SCRIPT_ATUALIZADO = '08/09/2026 01:35';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1061,6 +1061,7 @@
   var BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY = 'BOT_MISSAO_NOVO_RANKING_ULTIMO';
   var BOT_MISSAO_NOVO_POSICAO_KEY = 'BOT_MISSAO_NOVO_POSICAO';
   var BOT_MISSAO_NOVO_ATACADOS_KEY = 'BOT_MISSAO_NOVO_ATACADOS';
+  var BOT_MISSAO_NOVO_HP_RETORNO_KEY = 'BOT_MISSAO_NOVO_HP_RETORNO';
   var BOT_MISSAO_NOVO_RANK_SCAN_KEY = 'BOT_MISSAO_NOVO_RANK_SCAN';
   var BOT_MISSAO_NOVO_SCAN_INICIAL_KEY = 'BOT_MISSAO_NOVO_SCAN_INICIAL';
   var BOT_MISSAO_NOVO_RETRY_TS_KEY = 'BOT_MISSAO_NOVO_RETRY_TS';
@@ -2970,6 +2971,45 @@
     return URL_RELATORIOS_ATAQUE + '&bot_missao_novo_coletar=1&bot_modo=cacadas';
   }
 
+  function salvarRetornoHpMissaoNovo(url) {
+    if (!url) return;
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_HP_RETORNO_KEY, String(url)); } catch (e) {}
+  }
+
+  function lerRetornoHpMissaoNovo() {
+    try { return sessionStorage.getItem(BOT_MISSAO_NOVO_HP_RETORNO_KEY) || ''; } catch (e) {}
+    return '';
+  }
+
+  function limparRetornoHpMissaoNovo() {
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_HP_RETORNO_KEY); } catch (e) {}
+  }
+
+  function urlPosCurarHpMissaoNovo() {
+    var retorno = lerRetornoHpMissaoNovo();
+    if (retorno) {
+      limparRetornoHpMissaoNovo();
+      return retorno;
+    }
+    return URL_MISSOES;
+  }
+
+  function garantirModoCacadasMissaoNovo() {
+    if (missaoNovoAtivo() && obterModoAba() !== 'cacadas') gravarModoAba('cacadas');
+  }
+
+  function prepararCuraHpMissaoNovo(contexto) {
+    garantirModoCacadasMissaoNovo();
+    marcarCurarHpMissaoNovo();
+    if (emFluxoAtaqueMissaoNovo()) {
+      var urlAtual = window.location.href || '';
+      if (urlAtual.indexOf('status') === -1 && urlAtual.indexOf('mercado') === -1) {
+        salvarRetornoHpMissaoNovo(urlAtual);
+      }
+    }
+    redirecionarParaCurarHp('missao novo (' + contexto + ')');
+  }
+
   function marcarAtaqueMissaoNovoFeito(slot) {
     try {
       if (slot === 2) sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE2_KEY, '1');
@@ -3595,6 +3635,8 @@
   }
 
   function processarMissaoNovoRelatorioColetar() {
+    if (!garantirHpParaMissaoNovoAtacar('relatorio ataques')) return true;
+
     var coleta = coletarAtacadosRelatorioParaMissaoNovo();
     var off = lerRankingOffMissaoNovo();
     console.log('%c[Missao Novo] Relatorio: ' + coleta.total + ' ninja(s) ja atacado(s) hoje' +
@@ -4487,15 +4529,17 @@
   }
 
   function processarCompraIchirakuMercado() {
-    if (obterModoAba() !== 'cacadas') return false;
+    if (obterModoAba() !== 'cacadas' && !missaoNovoAtivo()) return false;
     if (!curarHpAtivo()) return false;
     if ((window.location.href || '').indexOf('mercado') === -1) return false;
+
+    var ctxMissao = curarHpParaMissaoNovo() ? 'missao novo' : 'cacadas';
 
     var hp = obterStatusHp();
     if (!hp.ok) hp = lerHpSnapshot();
 
     if (!mercadoCompraPendente()) {
-      console.log('[HP] Mercado — compra concluida, voltando ao /status...');
+      console.log('[HP] Mercado (' + ctxMissao + ') — compra concluida, voltando ao /status...');
       window.location.href = URL_STATUS;
       return true;
     }
@@ -4521,7 +4565,7 @@
       return true;
     }
 
-    console.log('[HP] Mercado — comprando ' + qtd + 'x "' + escolhido.nome + '" (' +
+    console.log('[HP] Mercado (' + ctxMissao + ') — comprando ' + qtd + 'x "' + escolhido.nome + '" (' +
       formatarNumeroBr(escolhido.precoUnit) + ' ryous/un, total ~' +
       formatarNumeroBr(escolhido.precoUnit * qtd) + ')...');
 
@@ -4579,7 +4623,7 @@
   }
 
   function urlPosCurarHp() {
-    if (curarHpParaMissaoNovo()) return URL_MISSOES;
+    if (curarHpParaMissaoNovo()) return urlPosCurarHpMissaoNovo();
     if (curarHpParaRaidDiario()) return URL_RAID;
     return URL_RELATORIOS_ATAQUE;
   }
@@ -4588,12 +4632,13 @@
     var voltarMissao = curarHpParaMissaoNovo();
     var voltarRaid = curarHpParaRaidDiario();
     var hp = obterStatusHp();
+    var destinoMissao = voltarMissao ? urlPosCurarHpMissaoNovo() : '';
     console.log('[HP] ' + motivoLog + ' — ' + formatarHpLog(hp) +
-      (voltarMissao ? ' | voltando para missao...' :
+      (voltarMissao ? ' | voltando missao novo (' + (destinoMissao.indexOf('missoes') !== -1 ? '/missoes' : 'fluxo ataque') + ')...' :
         (voltarRaid ? ' | voltando para raids...' : ' | voltando ao portao...')));
     limparCurarHpAtivo();
     if (voltarMissao) {
-      window.location.href = URL_MISSOES;
+      window.location.href = destinoMissao;
       return true;
     }
     if (voltarRaid) {
@@ -4651,7 +4696,7 @@
   }
 
   function redirecionarParaCurarHp(motivo) {
-    if (obterModoAba() !== 'cacadas') return;
+    if (obterModoAba() !== 'cacadas' && !missaoNovoAtivo()) return;
     var hp = obterStatusHp();
     marcarCurarHpAtivo();
     if (hp.ok) salvarHpSnapshot(hp.current, hp.max);
@@ -4662,6 +4707,8 @@
 
   function garantirHpParaMissaoNovoAtacar(contexto) {
     if (!missaoNovoAtivo()) return true;
+
+    garantirModoCacadasMissaoNovo();
 
     var hp = obterStatusHp();
     var url = window.location.href || '';
@@ -4691,9 +4738,8 @@
     if (hpAtendeMinimoMissaoNovo(hp)) return true;
 
     console.log('[Missao Novo] HP abaixo de ' + Math.round(HP_MINIMO_MISSAO_NOVO_RATIO * 100) +
-      '% — ' + formatarHpLog(hp) + ' | curando antes de atacar (' + contexto + ')');
-    marcarCurarHpMissaoNovo();
-    redirecionarParaCurarHp('missao novo (' + contexto + ')');
+      '% — ' + formatarHpLog(hp) + ' | curando (Ichiraku/mercado se preciso) antes de atacar (' + contexto + ')');
+    prepararCuraHpMissaoNovo(contexto);
     return false;
   }
 
@@ -4784,7 +4830,7 @@
   }
 
   function processarCurarHpNaPaginaStatus() {
-    if (obterModoAba() !== 'cacadas') return false;
+    if (obterModoAba() !== 'cacadas' && !missaoNovoAtivo()) return false;
 
     if (diarioDeveRodar() && diarioRaidDerrotaAtiva()) {
       console.log('[Diario] Raid perdida — ignorando cura de HP, indo para animal.');
@@ -4834,6 +4880,9 @@
         }
       } catch (e) {}
       if (!mercadoCompraPendente()) {
+        if (curarHpParaMissaoNovo()) {
+          console.log('[Missao Novo] Sem Ichiraku em /status — indo ao mercado comprar...');
+        }
         redirecionarParaMercadoIchiraku(formatarHpLog(hp));
         return true;
       }
@@ -9012,8 +9061,10 @@
           if (missaoNovoPausaRotinaCacadas()) {
             if (processarCurarHpNaPaginaStatus()) return;
             if (curarHpAtivo()) return;
-            console.log('[Missao Novo] Status — voltando para /missoes...');
-            window.location.href = URL_MISSOES;
+            var retornoMnHp = urlPosCurarHpMissaoNovo();
+            console.log('[Missao Novo] Status pos-cura — retomando (' +
+              (retornoMnHp.indexOf('missoes') !== -1 ? '/missoes' : 'fluxo ataque') + ')...');
+            window.location.href = retornoMnHp;
             return;
           }
           if (consumirDiarioRetomarPosLogin() && diarioGerenciadaAtivo()) {
@@ -9053,7 +9104,8 @@
       }
 
       // /mercado → compra Ichiraku quando cura HP pendente
-      if (urlAtual.indexOf('mercado') !== -1 && obterModoAba() === 'cacadas') {
+      if (urlAtual.indexOf('mercado') !== -1 &&
+          (obterModoAba() === 'cacadas' || missaoNovoAtivo())) {
         if (processarCompraIchirakuMercado()) return;
       }
 
