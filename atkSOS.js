@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.62
-// @description  Automação do Caçadas/Atacar com portão via relatórios, blacklist por nome, cancelamento de missão, OCR auto captcha (3/5 tent.) e Firebase (captcha).
+// @version      3.63
+// @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -505,6 +505,18 @@
     if (ct29 !== null && ct29 !== '') gravarCacadasPortaoTeto29Param(ct29);
     if (dg !== null && dg !== '') gravarDiarioGerenciadaParam(dg);
     if (dgs !== null && dgs !== '') gravarDiarioSemCacadasParam(dgs);
+    var mn = rp.get('bot_missao_novo');
+    if (mn !== null && mn !== '') gravarMissaoNovoParam(mn);
+    var mnh = rp.get('bot_missao_novo_horas');
+    if (mnh !== null && mnh !== '') gravarMissaoNovoHorasParam(mnh);
+    var mnd = rp.get('bot_missao_novo_diff');
+    if (mnd !== null && mnd !== '') gravarMissaoNovoDiffParam(mnd);
+    var mnm = rp.get('bot_missao_novo_min_diff');
+    if (mnm !== null && mnm !== '') gravarMissaoNovoMinDiffParam(mnm);
+    var mnr = rp.get('bot_missao_novo_max_ryous');
+    if (mnr !== null && mnr !== '') gravarMissaoNovoMaxRyousParam(mnr);
+    var mnl = rp.get('bot_missao_novo_limite_min');
+    if (mnl !== null && mnl !== '') gravarMissaoNovoLimiteMinParam(mnl);
   }
 
   function gravarMinRyousVitoriaCacadasParam(valor) {
@@ -734,7 +746,7 @@
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
   var SCRIPT_VERSAO = '3.62';
-  var SCRIPT_ATUALIZADO = '04/09/2026 18:25';
+  var SCRIPT_ATUALIZADO = '07/09/2026 23:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -961,8 +973,15 @@
     } catch (e) {}
     return false;
   })()) {
-    console.log('[Script Caçadas] Pagina /ranking — sem acao (use bot-ranking.js + botRankingScan()).');
-    return;
+    var missaoNovoRanking = false;
+    try {
+      missaoNovoRanking = localStorage.getItem('BOT_MISSAO_NOVO_ATIVO') === '1' &&
+        !!sessionStorage.getItem('BOT_MISSAO_NOVO_SLOT_KEY');
+    } catch (e) {}
+    if (!missaoNovoRanking) {
+      console.log('[Script Caçadas] Pagina /ranking — sem acao (use bot-ranking.js + botRankingScan()).');
+      return;
+    }
   }
 
   window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
@@ -993,9 +1012,16 @@
       gravarModoAba('cacadas');
       modoInicial = 'cacadas';
     } else {
-      logDiagnosticoModo('cacadas');
-      console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
-      return;
+      var missaoNovoOn = false;
+      try { missaoNovoOn = localStorage.getItem('BOT_MISSAO_NOVO_ATIVO') === '1'; } catch (e) {}
+      if (missaoNovoOn) {
+        console.log('[Missao Novo] Modo missao ativo — script segue sem bot_modo=cacadas.');
+        modoInicial = 'cacadas';
+      } else {
+        logDiagnosticoModo('cacadas');
+        console.log('[Script Caçadas] Sem BOT_MODO_ABA — sem acao (modo atual: vazio). Use /mensagens?tab=relatorios_ataque&bot_modo=cacadas ou /invasor?bot_modo=invasor.');
+        return;
+      }
     }
   }
 
@@ -1022,6 +1048,26 @@
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var URL_STATUS = 'https://shadowofshinobi.com/status';
   var URL_MISSOES = 'https://shadowofshinobi.com/missoes';
+  var URL_RANKING_MISSAO = 'https://shadowofshinobi.com/ranking?view=personagens&vila=geral&ranking=0';
+  var BOT_MISSAO_NOVO_KEY = 'BOT_MISSAO_NOVO_ATIVO';
+  var BOT_MISSAO_NOVO_ESTADO_KEY = 'BOT_MISSAO_NOVO_ESTADO';
+  var BOT_MISSAO_NOVO_PARAMS_KEY = 'BOT_MISSAO_NOVO_PARAMS';
+  var BOT_MISSAO_NOVO_SLOT_KEY = 'BOT_MISSAO_NOVO_SLOT';
+  var BOT_MISSAO_NOVO_TS_ATAQUE_KEY = 'BOT_MISSAO_NOVO_TS_ATAQUE';
+  var BOT_MISSAO_NOVO_ALVO_KEY = 'BOT_MISSAO_NOVO_ALVO';
+  var BOT_MISSAO_NOVO_CANDIDATOS_KEY = 'BOT_MISSAO_NOVO_CANDIDATOS';
+  var BOT_MISSAO_NOVO_CAND_IDX_KEY = 'BOT_MISSAO_NOVO_CAND_IDX';
+  var BOT_MISSAO_NOVO_RANKING_OFF_KEY = 'BOT_MISSAO_NOVO_RANKING_OFF';
+  var BOT_MISSAO_NOVO_ATAQUE1_KEY = 'BOT_MISSAO_NOVO_ATAQUE1';
+  var BOT_MISSAO_NOVO_ATAQUE2_KEY = 'BOT_MISSAO_NOVO_ATAQUE2';
+  var MISSAO_NOVO_DEFAULTS = {
+    horas: 1,
+    diffAlvo: 19,
+    minDiff: 5,
+    maxRyous: 200000000,
+    limiteMinSegundoAtaque: 30
+  };
+  var MISSAO_NOVO_PASSO_RANKING = 50;
   var URL_AUTOMACAO = 'https://shadowofshinobi.com/automacao';
   var URL_EVENTOS = 'https://shadowofshinobi.com/eventos';
   var URL_RAID = 'https://shadowofshinobi.com/raid';
@@ -1818,6 +1864,14 @@
       var t = normalizarTextoCombate(msg);
       if (t.indexOf('cancelar a miss') !== -1) {
         console.log('[Missao] confirm() auto-OK — ' + msg);
+        return true;
+      }
+      if (t.indexOf('aceitar') !== -1 && t.indexOf('miss') !== -1) {
+        console.log('[Missao] confirm() auto-OK aceitar — ' + msg);
+        return true;
+      }
+      if (t.indexOf('tem certeza') !== -1 && t.indexOf('miss') !== -1) {
+        console.log('[Missao] confirm() auto-OK missao — ' + msg);
         return true;
       }
       if (t.indexOf('treino investido') !== -1 ||
@@ -2737,7 +2791,818 @@
     return true;
   }
 
+  // --- Missão Novo: 1h + 2 ataques via ranking (sem acessar caçadas) ---
+  function gravarMissaoNovoParam(valor) {
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem(BOT_MISSAO_NOVO_KEY); } catch (e) {}
+      limparEstadoMissaoNovo();
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem(BOT_MISSAO_NOVO_KEY, '1');
+      return true;
+    }
+    return false;
+  }
+
+  function gravarMissaoNovoHorasParam(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return false;
+    var p = lerParamsMissaoNovo();
+    p.horas = n;
+    salvarParamsMissaoNovo(p);
+    return true;
+  }
+
+  function gravarMissaoNovoDiffParam(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return false;
+    var p = lerParamsMissaoNovo();
+    p.diffAlvo = n;
+    salvarParamsMissaoNovo(p);
+    return true;
+  }
+
+  function gravarMissaoNovoMinDiffParam(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return false;
+    var p = lerParamsMissaoNovo();
+    p.minDiff = n;
+    salvarParamsMissaoNovo(p);
+    return true;
+  }
+
+  function gravarMissaoNovoMaxRyousParam(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 0) return false;
+    var p = lerParamsMissaoNovo();
+    p.maxRyous = n;
+    salvarParamsMissaoNovo(p);
+    return true;
+  }
+
+  function gravarMissaoNovoLimiteMinParam(valor) {
+    var n = parseNumeroInteiro(valor);
+    if (n === null || n < 1) return false;
+    var p = lerParamsMissaoNovo();
+    p.limiteMinSegundoAtaque = n;
+    salvarParamsMissaoNovo(p);
+    return true;
+  }
+
+  function lerParamsMissaoNovo() {
+    var base = {};
+    for (var k in MISSAO_NOVO_DEFAULTS) {
+      if (Object.prototype.hasOwnProperty.call(MISSAO_NOVO_DEFAULTS, k)) {
+        base[k] = MISSAO_NOVO_DEFAULTS[k];
+      }
+    }
+    try {
+      var raw = localStorage.getItem(BOT_MISSAO_NOVO_PARAMS_KEY);
+      if (raw) {
+        var saved = JSON.parse(raw);
+        for (var sk in saved) {
+          if (Object.prototype.hasOwnProperty.call(saved, sk)) base[sk] = saved[sk];
+        }
+      }
+    } catch (e) {}
+    return base;
+  }
+
+  function salvarParamsMissaoNovo(params) {
+    try { localStorage.setItem(BOT_MISSAO_NOVO_PARAMS_KEY, JSON.stringify(params)); } catch (e) {}
+  }
+
+  function missaoNovoAtivo() {
+    try { return localStorage.getItem(BOT_MISSAO_NOVO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function missaoNovoPausaRotinaCacadas() {
+    return missaoNovoAtivo();
+  }
+
+  function limparEstadoMissaoNovo() {
+    try {
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_SLOT_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_TS_ATAQUE_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ALVO_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_CANDIDATOS_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_CAND_IDX_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_RANKING_OFF_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE1_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE2_KEY);
+    } catch (e) {}
+  }
+
+  function marcarAtaqueMissaoNovoFeito(slot) {
+    try {
+      if (slot === 2) sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE2_KEY, '1');
+      else sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE1_KEY, '1');
+    } catch (e) {}
+  }
+
+  function ataqueMissaoNovoFeito(slot) {
+    try {
+      if (slot === 2) return sessionStorage.getItem(BOT_MISSAO_NOVO_ATAQUE2_KEY) === '1';
+      return sessionStorage.getItem(BOT_MISSAO_NOVO_ATAQUE1_KEY) === '1';
+    } catch (e) {}
+    return false;
+  }
+
+  function definirSlotAtaqueMissaoNovo(slot) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_SLOT_KEY, String(slot)); } catch (e) {}
+  }
+
+  function obterSlotAtaqueMissaoNovo() {
+    try {
+      var s = sessionStorage.getItem(BOT_MISSAO_NOVO_SLOT_KEY);
+      if (s === '2') return 2;
+    } catch (e) {}
+    return 1;
+  }
+
+  function emFluxoAtaqueMissaoNovo() {
+    try { return !!sessionStorage.getItem(BOT_MISSAO_NOVO_SLOT_KEY); } catch (e) {}
+    return false;
+  }
+
+  function salvarAlvoMissaoNovo(nome) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_ALVO_KEY, String(nome || '')); } catch (e) {}
+  }
+
+  function lerAlvoMissaoNovo() {
+    try { return sessionStorage.getItem(BOT_MISSAO_NOVO_ALVO_KEY) || ''; } catch (e) {}
+    return '';
+  }
+
+  function limparAlvoMissaoNovo() {
+    try {
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ALVO_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_TS_ATAQUE_KEY);
+    } catch (e) {}
+  }
+
+  function salvarTsAntesAtaqueMissaoNovo() {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_TS_ATAQUE_KEY, String(Date.now() - 3000)); } catch (e) {}
+  }
+
+  function lerTsAntesAtaqueMissaoNovo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_MISSAO_NOVO_TS_ATAQUE_KEY);
+      if (raw) return parseInt(raw, 10);
+    } catch (e) {}
+    return null;
+  }
+
+  function salvarCandidatosMissaoNovo(lista) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_CANDIDATOS_KEY, JSON.stringify(lista || [])); } catch (e) {}
+  }
+
+  function lerCandidatosMissaoNovo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_MISSAO_NOVO_CANDIDATOS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return [];
+  }
+
+  function salvarCandIdxMissaoNovo(idx) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_CAND_IDX_KEY, String(idx)); } catch (e) {}
+  }
+
+  function lerCandIdxMissaoNovo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_MISSAO_NOVO_CAND_IDX_KEY);
+      if (raw !== null && raw !== '') return parseInt(raw, 10) || 0;
+    } catch (e) {}
+    return 0;
+  }
+
+  function salvarRankingOffMissaoNovo(off) {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_RANKING_OFF_KEY, String(off)); } catch (e) {}
+  }
+
+  function lerRankingOffMissaoNovo() {
+    try {
+      var raw = sessionStorage.getItem(BOT_MISSAO_NOVO_RANKING_OFF_KEY);
+      if (raw !== null && raw !== '') return parseInt(raw, 10) || 0;
+    } catch (e) {}
+    return 0;
+  }
+
+  function parseNivelReqMissao(texto) {
+    if (!texto) return 0;
+    var t = normalizarTextoCombate(texto);
+    if (t.indexOf('qualquer') !== -1) return 0;
+    var m = String(texto).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 999999;
+  }
+
+  function parseRyousMissaoHora(texto) {
+    if (!texto) return 0;
+    var s = String(texto).replace(/\./g, '').replace(',', '.');
+    var n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function extrairMissoesDisponiveisPagina() {
+    var out = [];
+    var rows = document.querySelectorAll('table.box_largura_100 tr');
+    for (var i = 0; i < rows.length; i++) {
+      var tr = rows[i];
+      var form = tr.querySelector('form[action*="missoes"] input[name="missao_id"]');
+      if (!form) continue;
+      var formEl = form.closest('form');
+      if (!formEl) continue;
+      var selectHoras = formEl.querySelector('select[name="horas"]');
+      if (!selectHoras) continue;
+      var tem1h = false;
+      for (var h = 0; h < selectHoras.options.length; h++) {
+        if (String(selectHoras.options[h].value) === '1') { tem1h = true; break; }
+      }
+      if (!tem1h) continue;
+      var tds = tr.querySelectorAll('td');
+      if (tds.length < 5) continue;
+      var nome = (tds[1].innerText || tds[1].textContent || '').replace(/\s+/g, ' ').trim();
+      var ryousHora = parseRyousMissaoHora((tds[3].innerText || tds[3].textContent || ''));
+      var nivelReqTxt = (tds[4].innerText || tds[4].textContent || '').trim();
+      out.push({
+        form: formEl,
+        missaoId: form.value,
+        nome: nome,
+        ryousHora: ryousHora,
+        nivelReq: parseNivelReqMissao(nivelReqTxt),
+        nivelReqTexto: nivelReqTxt
+      });
+    }
+    return out;
+  }
+
+  function escolherMelhorMissao1h(meuNivel) {
+    var missoes = extrairMissoesDisponiveisPagina();
+    var melhor = null;
+    for (var i = 0; i < missoes.length; i++) {
+      var m = missoes[i];
+      if (meuNivel !== null && m.nivelReq > meuNivel) continue;
+      if (!melhor || m.ryousHora > melhor.ryousHora) melhor = m;
+    }
+    return melhor;
+  }
+
+  function obterFimMissaoTimestamp() {
+    var scripts = document.querySelectorAll('script');
+    for (var i = 0; i < scripts.length; i++) {
+      var txt = scripts[i].textContent || '';
+      if (txt.indexOf('missao_timer_mis') === -1) continue;
+      var m = txt.match(/var\s+fim\s*=\s*(\d+)/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return null;
+  }
+
+  function obterSegundosRestantesMissao() {
+    var fim = obterFimMissaoTimestamp();
+    if (!fim) return null;
+    var scripts = document.querySelectorAll('script');
+    var clockOffset = 0;
+    for (var i = 0; i < scripts.length; i++) {
+      var txt = scripts[i].textContent || '';
+      if (txt.indexOf('clockOffset') === -1) continue;
+      var m = txt.match(/clockOffset\s*=\s*\((\d+)\s*\*\s*1000\)\s*-\s*Date\.now\(\)/);
+      if (m) {
+        clockOffset = (parseInt(m[1], 10) * 1000) - Date.now();
+        break;
+      }
+    }
+    return Math.max(0, fim - Math.floor((Date.now() + clockOffset) / 1000));
+  }
+
+  function formatarTempoMissao(seg) {
+    if (seg === null || seg === undefined) return '?';
+    var h = Math.floor(seg / 3600);
+    var m = Math.floor((seg % 3600) / 60);
+    var s = seg % 60;
+    return (h > 0 ? h + 'h ' : '') + (m > 0 ? m + 'm ' : '') + s + 's';
+  }
+
+  function usuarioEmPenalidadeMissao() {
+    var raizes = typeof obterRaizesSidebar === 'function' ? obterRaizesSidebar() : [document.getElementById('col_esquerda')];
+    for (var r = 0; r < raizes.length; r++) {
+      var col = raizes[r];
+      if (!col) continue;
+      var texto = normalizarTextoCombate(col.innerText || col.textContent || '');
+      if (texto.indexOf('penal') !== -1 && texto.indexOf('atac') !== -1) return true;
+      if (texto.indexOf('penalidade') !== -1) return true;
+    }
+    var colD = document.getElementById('col_direita');
+    if (colD) {
+      var t2 = normalizarTextoCombate(colD.innerText || colD.textContent || '');
+      if (t2.indexOf('penal') !== -1 && t2.indexOf('atac') !== -1) return true;
+    }
+    return false;
+  }
+
+  function parseNumeroRankingMissao(valor) {
+    if (valor === null || valor === undefined || valor === '') return null;
+    var s = String(valor).trim().replace(/^\|\s*/, '');
+    if (!s) return null;
+    var lower = s.toLowerCase();
+    if (/m$/.test(lower)) {
+      var m = parseFloat(lower.replace(/[^\d,.-]/g, '').replace(',', '.'));
+      return isNaN(m) ? null : Math.round(m * 1000000);
+    }
+    if (/k$/.test(lower)) {
+      var k = parseFloat(lower.replace(/[^\d,.-]/g, '').replace(',', '.'));
+      return isNaN(k) ? null : Math.round(k * 1000);
+    }
+    var n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+    return isNaN(n) ? null : Math.round(n);
+  }
+
+  function textoCelulaRankingMissao(td) {
+    return (td && td.textContent ? td.textContent : '').replace(/^\|\s*/, '').trim();
+  }
+
+  function parseLinhaRankingMissao(tr) {
+    if (!tr) return null;
+    var tds = tr.querySelectorAll('td');
+    if (tds.length < 4) return null;
+    var link = null;
+    var linkIdx = -1;
+    for (var i = 0; i < tds.length; i++) {
+      link = tds[i].querySelector('a[href*="jogador"]');
+      if (link) { linkIdx = i; break; }
+    }
+    if (!link) return null;
+    var nome = (link.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!nome) {
+      try { nome = new URL(link.href, window.location.origin).searchParams.get('u') || ''; } catch (e) {}
+    }
+    if (!nome) return null;
+    var nivel = null;
+    var vitorias = null;
+    var ryousTexto = textoCelulaRankingMissao(tds[tds.length - 1]);
+    var ryous = parseNumeroRankingMissao(ryousTexto);
+    if (tds.length >= 7) {
+      nivel = parseInt(String(textoCelulaRankingMissao(tds[3])).replace(/\D/g, ''), 10);
+      vitorias = parseInt(String(textoCelulaRankingMissao(tds[4])).replace(/\D/g, ''), 10);
+      ryousTexto = textoCelulaRankingMissao(tds[6]);
+      ryous = parseNumeroRankingMissao(ryousTexto);
+    } else if (linkIdx + 1 < tds.length) {
+      nivel = parseInt(String(textoCelulaRankingMissao(tds[linkIdx + 1])).replace(/\D/g, ''), 10);
+      if (linkIdx + 2 < tds.length) {
+        vitorias = parseInt(String(textoCelulaRankingMissao(tds[linkIdx + 2])).replace(/\D/g, ''), 10);
+      }
+    }
+    if (nivel === null || isNaN(nivel)) return null;
+    var urlJogador = '';
+    try { urlJogador = new URL(link.href, window.location.origin).href; } catch (e) {
+      urlJogador = link.href || '';
+    }
+    return {
+      nome: nome,
+      nivel: nivel,
+      vitorias: isNaN(vitorias) ? 0 : vitorias,
+      ryous: ryous != null ? ryous : 0,
+      ryousTexto: ryousTexto,
+      urlJogador: urlJogador
+    };
+  }
+
+  function extrairJogadoresRankingMissao() {
+    var out = [];
+    var vistos = {};
+    var tabelas = document.querySelectorAll('table.box_largura_100, table');
+    for (var t = 0; t < tabelas.length; t++) {
+      var tb = tabelas[t];
+      var header = tb.querySelector('tr.box_preto_tarja');
+      if (!header) continue;
+      var ht = (header.textContent || '').toLowerCase();
+      if (ht.indexOf('player') === -1) continue;
+      var rows = tb.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var j = parseLinhaRankingMissao(rows[r]);
+        if (!j || !j.nome) continue;
+        var k = j.nome.toLowerCase();
+        if (vistos[k]) continue;
+        vistos[k] = true;
+        out.push(j);
+      }
+    }
+    return out;
+  }
+
+  function candidatoValidoMissaoNovo(j, meuNivel, params) {
+    if (!j || meuNivel === null) return false;
+    var diff = meuNivel - j.nivel;
+    if (diff < params.minDiff || diff > params.diffAlvo) return false;
+    if (j.ryous > params.maxRyous) return false;
+    var meuLogin = normalizarNomeCacadas(obterUsuarioExibicao());
+    if (meuLogin && normalizarNomeCacadas(j.nome) === meuLogin) return false;
+    return true;
+  }
+
+  function ordenarCandidatosMissaoNovo(lista) {
+    lista.sort(function(a, b) {
+      if (a.nivel !== b.nivel) return a.nivel - b.nivel;
+      if (a.ryous !== b.ryous) return a.ryous - b.ryous;
+      return a.vitorias - b.vitorias;
+    });
+    return lista;
+  }
+
+  function coletarCandidatosRankingMissao(meuNivel, params) {
+    var jogadores = extrairJogadoresRankingMissao();
+    var out = [];
+    for (var i = 0; i < jogadores.length; i++) {
+      if (candidatoValidoMissaoNovo(jogadores[i], meuNivel, params)) out.push(jogadores[i]);
+    }
+    return ordenarCandidatosMissaoNovo(out);
+  }
+
+  function montarUrlRankingMissao(offset) {
+    return 'https://shadowofshinobi.com/ranking?view=personagens&vila=geral&ranking=' +
+      String(typeof offset === 'number' ? offset : 0);
+  }
+
+  function paginaRankingSemCandidatosPossivel(jogadores, meuNivel, params) {
+    if (!jogadores.length) return false;
+    var comNivel = 0;
+    for (var i = 0; i < jogadores.length; i++) {
+      var j = jogadores[i];
+      if (!j || j.nivel === null) continue;
+      comNivel++;
+      if (j.nivel >= meuNivel - params.diffAlvo) return false;
+    }
+    return comNivel > 0;
+  }
+
+  function iniciarFluxoAtaqueMissaoNovo(slot) {
+    var params = lerParamsMissaoNovo();
+    definirSlotAtaqueMissaoNovo(slot);
+    salvarCandidatosMissaoNovo([]);
+    salvarCandIdxMissaoNovo(0);
+    salvarRankingOffMissaoNovo(0);
+    limparAlvoMissaoNovo();
+    console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
+      params.minDiff + '-' + params.diffAlvo + ', maxRyous ' + formatarNumeroBr(params.maxRyous) + ')',
+      'color:#e67e22;font-weight:bold');
+    window.location.href = montarUrlRankingMissao(0);
+  }
+
+  function concluirAtaqueMissaoNovoSemAlvo(slot) {
+    console.warn('[Missao Novo] Ataque ' + slot + ' — nenhum alvo disponivel no ranking. Voltando a missao.');
+    marcarAtaqueMissaoNovoFeito(slot);
+    limparAlvoMissaoNovo();
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_SLOT_KEY); } catch (e) {}
+    salvarCandidatosMissaoNovo([]);
+    window.location.href = URL_MISSOES;
+  }
+
+  function concluirAtaqueMissaoNovoSucesso(slot, alvo) {
+    console.log('%c[Missao Novo] Ataque ' + slot + ' confirmado vs ' + (alvo || '?') + ' — voltando a missao.',
+      'color:#2ecc71;font-weight:bold');
+    marcarAtaqueMissaoNovoFeito(slot);
+    limparAlvoMissaoNovo();
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_SLOT_KEY); } catch (e) {}
+    salvarCandidatosMissaoNovo([]);
+    window.location.href = URL_MISSOES;
+  }
+
+  function falhaAtaqueMissaoNovoTentarProximo(motivo) {
+    var params = lerParamsMissaoNovo();
+    var meuNivel = extrairNivelJogadorSidebar();
+    var candidatos = lerCandidatosMissaoNovo();
+    var idx = lerCandIdxMissaoNovo();
+    var alvo = lerAlvoMissaoNovo();
+    console.warn('[Missao Novo] Falha vs ' + alvo + ': ' + motivo + ' — proximo candidato...');
+
+    idx++;
+    if (idx < candidatos.length) {
+      salvarCandIdxMissaoNovo(idx);
+      limparAlvoMissaoNovo();
+      var prox = candidatos[idx];
+      salvarAlvoMissaoNovo(prox.nome);
+      window.location.href = prox.urlJogador;
+      return true;
+    }
+
+    var offset = lerRankingOffMissaoNovo() + MISSAO_NOVO_PASSO_RANKING;
+    var jogadores = extrairJogadoresRankingMissao();
+    if (paginaRankingSemCandidatosPossivel(jogadores, meuNivel, params)) {
+      concluirAtaqueMissaoNovoSemAlvo(obterSlotAtaqueMissaoNovo());
+      return true;
+    }
+
+    salvarRankingOffMissaoNovo(offset);
+    salvarCandIdxMissaoNovo(0);
+    salvarCandidatosMissaoNovo([]);
+    limparAlvoMissaoNovo();
+    window.location.href = montarUrlRankingMissao(offset);
+    return true;
+  }
+
+  function processarMissaoNovoRanking() {
+    var params = lerParamsMissaoNovo();
+    var meuNivel = extrairNivelJogadorSidebar();
+    if (meuNivel === null) {
+      console.warn('[Missao Novo] Nivel do jogador nao encontrado na sidebar.');
+      concluirAtaqueMissaoNovoSemAlvo(obterSlotAtaqueMissaoNovo());
+      return true;
+    }
+
+    var candidatos = lerCandidatosMissaoNovo();
+    if (!candidatos.length) {
+      candidatos = coletarCandidatosRankingMissao(meuNivel, params);
+      salvarCandidatosMissaoNovo(candidatos);
+      salvarCandIdxMissaoNovo(0);
+    }
+
+    if (!candidatos.length) {
+      var offsetAtual = lerRankingOffMissaoNovo();
+      var jogadores = extrairJogadoresRankingMissao();
+      if (paginaRankingSemCandidatosPossivel(jogadores, meuNivel, params)) {
+        concluirAtaqueMissaoNovoSemAlvo(obterSlotAtaqueMissaoNovo());
+        return true;
+      }
+      var proxOff = offsetAtual + MISSAO_NOVO_PASSO_RANKING;
+      console.log('[Missao Novo] ranking=' + offsetAtual + ': 0 candidatos — proxima faixa ' + proxOff);
+      salvarRankingOffMissaoNovo(proxOff);
+      window.location.href = montarUrlRankingMissao(proxOff);
+      return true;
+    }
+
+    var idx = lerCandIdxMissaoNovo();
+    if (idx >= candidatos.length) idx = 0;
+    var alvo = candidatos[idx];
+    console.log('[Missao Novo] Alvo #' + (idx + 1) + '/' + candidatos.length + ': ' + alvo.nome +
+      ' (lvl ' + alvo.nivel + ', vit ' + alvo.vitorias + ', ryous ' + alvo.ryousTexto + ')');
+    salvarAlvoMissaoNovo(alvo.nome);
+    window.location.href = alvo.urlJogador;
+    return true;
+  }
+
+  function processarMissaoNovoJogador() {
+    var alvo = lerAlvoMissaoNovo();
+    if (!alvo) {
+      window.location.href = URL_MISSOES;
+      return true;
+    }
+    var form = document.querySelector('form[action*="cacadas"] input[name="atacar"]');
+    if (!form) form = document.querySelector('form input[name="atacar"][value="1"]');
+    var formEl = form ? form.closest('form') : null;
+    if (!formEl) {
+      var btn = document.querySelector('input[value="Atacar"], input[name="vender_animal"][value="Atacar"]');
+      formEl = btn ? btn.closest('form') : null;
+    }
+    if (!formEl) {
+      falhaAtaqueMissaoNovoTentarProximo('botao Atacar nao encontrado no perfil');
+      return true;
+    }
+    console.log('[Missao Novo] Perfil de ' + alvo + ' — clicando Atacar...');
+    salvarTsAntesAtaqueMissaoNovo();
+    var btnAtacar = formEl.querySelector('input[type="submit"]');
+    if (btnAtacar) btnAtacar.click();
+    else formEl.submit();
+    return true;
+  }
+
+  function validarAlvoMissaoNovoAtacar() {
+    var params = lerParamsMissaoNovo();
+    var dados = extrairDadosAlvoAtacar();
+    var alvoEsperado = lerAlvoMissaoNovo();
+    var motivos = [];
+    if (alvoEsperado && dados.inimigo !== '(desconhecido)' &&
+        normalizarNomeCacadas(dados.inimigo) !== normalizarNomeCacadas(alvoEsperado)) {
+      motivos.push('inimigo diverge (' + dados.inimigo + ' != ' + alvoEsperado + ')');
+    }
+    if (dados.meuNivel === null) {
+      motivos.push('nivel do jogador nao encontrado');
+    } else if (dados.nivel === null) {
+      motivos.push('nivel do inimigo nao encontrado');
+    } else {
+      var diff = dados.meuNivel - dados.nivel;
+      dados.diffNivel = diff;
+      if (diff < params.minDiff || diff > params.diffAlvo) {
+        motivos.push('diff nivel ' + diff + ' fora de ' + params.minDiff + '-' + params.diffAlvo);
+      }
+    }
+    if (dados.ryous === null) {
+      motivos.push('ryous faturados nao encontrados');
+    } else if (dados.ryous > params.maxRyous) {
+      motivos.push('ryous ' + formatarNumeroBr(dados.ryous) + ' > max ' + formatarNumeroBr(params.maxRyous));
+    }
+    return { ok: motivos.length === 0, motivos: motivos, dados: dados };
+  }
+
+  function detectarFalhaAtaqueMissaoNovoPagina() {
+    if (detectarAvisoEnergiaVitalBaixaCacadas()) return 'energia vital baixa';
+    if (extrairJaAtacouHojeCacadas()) return 'ja atacou hoje';
+    if (detectarAvisoBatalhaRecente30mCacadas()) return 'batalha recente 30min';
+    if (extrairNivelAbaixoMinimoCacadas()) return 'nivel abaixo do minimo';
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < avisos.length; i++) {
+      var norm = normalizarTextoCombate(avisos[i].innerText || avisos[i].textContent || '');
+      if (norm.indexOf('penal') !== -1) return 'penalidade';
+      if (norm.indexOf('energia') !== -1 && norm.indexOf('baixa') !== -1) return 'energia baixa';
+    }
+    return null;
+  }
+
+  function processarMissaoNovoAtacar() {
+    var falha = detectarFalhaAtaqueMissaoNovoPagina();
+    if (falha) {
+      falhaAtaqueMissaoNovoTentarProximo(falha);
+      return true;
+    }
+
+    var btnAtacar = document.querySelector('form[action="atacar"] input[type="submit"]');
+    if (!btnAtacar) {
+      falhaAtaqueMissaoNovoTentarProximo('formulario atacar ausente');
+      return true;
+    }
+
+    var resultado = validarAlvoMissaoNovoAtacar();
+    salvarUltimoAlvo(resultado.dados);
+    if (!resultado.ok) {
+      falhaAtaqueMissaoNovoTentarProximo(resultado.motivos.join('; '));
+      return true;
+    }
+
+    if (!garantirHpParaAtacar('missao novo atacar')) return true;
+
+    console.log('[Missao Novo] Atacar aprovado — ' + nomeExibicaoInimigo(resultado.dados) +
+      ' | diff ' + resultado.dados.diffNivel);
+    atacarJaProcessado = true;
+    salvarTsAntesAtaqueMissaoNovo();
+    btnAtacar.click();
+    return true;
+  }
+
+  function ataqueConfirmadoNoRelatorio(alvo) {
+    var tsAntes = lerTsAntesAtaqueMissaoNovo();
+    var ultimo = extrairUltimoAtaqueRelatorios();
+    if (!ultimo || ultimo.ts === null) return false;
+    if (tsAntes && ultimo.ts <= tsAntes) return false;
+    if (alvo && ultimo.vitima &&
+        normalizarNomeCacadas(ultimo.vitima) !== normalizarNomeCacadas(alvo)) {
+      return false;
+    }
+    return true;
+  }
+
+  function processarMissaoNovoCombate() {
+    var slot = obterSlotAtaqueMissaoNovo();
+    var alvo = lerAlvoMissaoNovo();
+    var parsed = classificarResultadoCombate();
+
+    if (parsed) {
+      console.log('[Missao Novo] Combate: ' + parsed.resultado + ' — ' + parsed.texto);
+      concluirAtaqueMissaoNovoSucesso(slot, alvo);
+      return true;
+    }
+
+    console.log('[Missao Novo] Combate sem resultado claro — validando relatorio...');
+    window.location.href = URL_RELATORIOS_ATAQUE + '&bot_missao_novo_validar=1';
+    return true;
+  }
+
+  function processarMissaoNovoRelatorioValidar() {
+    var slot = obterSlotAtaqueMissaoNovo();
+    var alvo = lerAlvoMissaoNovo();
+    if (ataqueConfirmadoNoRelatorio(alvo)) {
+      concluirAtaqueMissaoNovoSucesso(slot, alvo);
+      return true;
+    }
+    falhaAtaqueMissaoNovoTentarProximo('ataque nao confirmado no relatorio');
+    return true;
+  }
+
+  function agendarRecheckMissaoNovo(segundos) {
+    var ms = Math.max(5000, (segundos || 60) * 1000);
+    console.log('[Missao Novo] Aguardando ' + Math.round(ms / 1000) + 's na tela de missao...');
+    setTimeout(function() {
+      if (missaoNovoAtivo()) window.location.reload();
+    }, ms);
+  }
+
+  function processarMissaoNovoMissoes() {
+    instalarConfirmAutoOkMissao();
+    var params = lerParamsMissaoNovo();
+    var meuNivel = extrairNivelJogadorSidebar();
+
+    if (missaoConcluidaAguardandoReceber()) {
+      var formRec = obterFormReceberMissao();
+      if (formRec) {
+        var btnRec = formRec.querySelector('input[type="submit"]');
+        if (btnRec) {
+          console.log('[Missao Novo] Missao concluida — recebendo recompensa...');
+          limparEstadoMissaoNovo();
+          btnRec.click();
+          return true;
+        }
+      }
+    }
+
+    if (!paginaMissoesComMissaoAtiva()) {
+      var melhor = escolherMelhorMissao1h(meuNivel);
+      if (!melhor) {
+        console.warn('[Missao Novo] Nenhuma missao de ' + params.horas + 'h disponivel para lvl ' + meuNivel + '.');
+        return false;
+      }
+      var selectHoras = melhor.form.querySelector('select[name="horas"]');
+      if (selectHoras) selectHoras.value = String(params.horas);
+      console.log('%c[Missao Novo] Iniciando "' + melhor.nome + '" (' + params.horas + 'h, ' +
+        melhor.ryousHora + ' ryous/h, req ' + melhor.nivelReqTexto + ')',
+        'color:#e67e22;font-weight:bold');
+      limparEstadoMissaoNovo();
+      var btn = melhor.form.querySelector('input[type="submit"]');
+      if (btn) btn.click();
+      else melhor.form.submit();
+      return true;
+    }
+
+    var restante = obterSegundosRestantesMissao();
+    var limiteSeg = params.limiteMinSegundoAtaque * 60;
+    console.log('[Missao Novo] Em missao — restante ~' + formatarTempoMissao(restante) +
+      ' | ataque1=' + (ataqueMissaoNovoFeito(1) ? 'ok' : 'pendente') +
+      ' | ataque2=' + (ataqueMissaoNovoFeito(2) ? 'ok' : 'pendente'));
+
+    if (usuarioEmPenalidadeMissao()) {
+      console.warn('[Missao Novo] Usuario em penalidade — pulando ataques deste ciclo.');
+      if (!ataqueMissaoNovoFeito(1)) marcarAtaqueMissaoNovoFeito(1);
+      if (restante !== null && restante <= limiteSeg && !ataqueMissaoNovoFeito(2)) {
+        marcarAtaqueMissaoNovoFeito(2);
+      }
+      if (restante !== null && restante <= 0) return false;
+      agendarRecheckMissaoNovo(restante !== null && restante <= limiteSeg ? 30 : 60);
+      return true;
+    }
+
+    if (restante !== null && restante <= 0) return false;
+
+    if (!ataqueMissaoNovoFeito(1)) {
+      iniciarFluxoAtaqueMissaoNovo(1);
+      return true;
+    }
+
+    if (restante !== null && restante > limiteSeg) {
+      var espera = Math.min(restante - limiteSeg, 120);
+      agendarRecheckMissaoNovo(espera);
+      return true;
+    }
+
+    if (!ataqueMissaoNovoFeito(2)) {
+      iniciarFluxoAtaqueMissaoNovo(2);
+      return true;
+    }
+
+    agendarRecheckMissaoNovo(restante !== null ? Math.min(restante, 60) : 60);
+    return true;
+  }
+
+  function botMissaoNovo(extra) {
+    gravarMissaoNovoParam('1');
+    gravarModoAba('cacadas');
+    if (extra && typeof extra === 'object') {
+      var p = lerParamsMissaoNovo();
+      if (extra.horas != null) p.horas = parseNumeroInteiro(extra.horas) || p.horas;
+      if (extra.diffAlvo != null) p.diffAlvo = parseNumeroInteiro(extra.diffAlvo) || p.diffAlvo;
+      if (extra.minDiff != null) p.minDiff = parseNumeroInteiro(extra.minDiff) || p.minDiff;
+      if (extra.maxRyous != null) p.maxRyous = parseNumeroInteiro(extra.maxRyous) || p.maxRyous;
+      if (extra.limiteMinSegundoAtaque != null) {
+        p.limiteMinSegundoAtaque = parseNumeroInteiro(extra.limiteMinSegundoAtaque) || p.limiteMinSegundoAtaque;
+      }
+      salvarParamsMissaoNovo(p);
+    }
+    var params = lerParamsMissaoNovo();
+    console.log('%c[Missao Novo] ATIVADO — ' + params.horas + 'h | diff ' + params.minDiff + '-' +
+      params.diffAlvo + ' | maxRyous ' + formatarNumeroBr(params.maxRyous) +
+      ' | 2o ataque <= ' + params.limiteMinSegundoAtaque + 'min',
+      'color:#e67e22;font-weight:bold');
+    console.log('[Missao Novo] Modo aba=cacadas (rotina caçadas pausada enquanto missao novo estiver ativo).');
+    console.log('[Missao Novo] Indo para /missoes...');
+    window.location.href = URL_MISSOES;
+    return true;
+  }
+
+  function botMissaoNovoParar() {
+    gravarMissaoNovoParam('0');
+    console.warn('[Missao Novo] DESATIVADO.');
+    return 'off';
+  }
+
+  window.botMissaoNovo = botMissaoNovo;
+  window.botMissaoNovoParar = botMissaoNovoParar;
+
   function processarPaginaMissoes() {
+    if (missaoNovoAtivo()) {
+      return processarMissaoNovoMissoes();
+    }
+
     if (missaoConcluidaAguardandoReceber()) {
       var formRec = obterFormReceberMissao();
       if (formRec) {
@@ -3708,6 +4573,7 @@
   }
 
   function processarRotacaoContaPrincipal() {
+    if (missaoNovoPausaRotinaCacadas()) return false;
     if (!precisaAssumirAutomacaoPosPrincipal()) return false;
     if (obterModoAba() !== 'cacadas') return false;
     if (document.getElementById('login')) return false;
@@ -6895,6 +7761,10 @@
 
     if (!estaNaPaginaCombateCacadas()) return false;
 
+    if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
+      return processarMissaoNovoCombate();
+    }
+
     if (combateJaNotificado()) {
       irParaCacadasAposCombate('Combate ja processado');
       return true;
@@ -7485,6 +8355,10 @@
 
   function redirecionarParaCacadas(motivo) {
     console.warn('[Script] PÁGINA NÃO MAPEADA (' + motivo + '). Redirecionando...');
+    if (missaoNovoPausaRotinaCacadas()) {
+      window.location.href = URL_MISSOES;
+      return;
+    }
     if (obterModoAba() === 'cacadas') {
       if (redirecionarDiarioNoLugarDeCacadas('pagina nao mapeada')) return;
       irParaPortaoRelatorios('Pagina nao mapeada');
@@ -7657,6 +8531,11 @@
         }
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
+          if (missaoNovoPausaRotinaCacadas()) {
+            console.log('[Missao Novo] Status — voltando para /missoes...');
+            window.location.href = URL_MISSOES;
+            return;
+          }
           if (consumirDiarioRetomarPosLogin() && diarioGerenciadaAtivo()) {
             console.log('[Diario] Pos-login — retomando diario na mesma aba (automacao)...');
             marcarRotacaoCicloPendente();
@@ -7706,9 +8585,10 @@
 
       if (processarRotacaoContaPrincipal()) return;
 
-      if (obterModoAba() === 'cacadas' && verificarDiarioRetomarPosInterrupcao()) return;
-
-      if (obterModoAba() === 'cacadas' && redirecionarParaDiarioGerenciada('prioridade diario')) return;
+      if (!missaoNovoPausaRotinaCacadas()) {
+        if (obterModoAba() === 'cacadas' && verificarDiarioRetomarPosInterrupcao()) return;
+        if (obterModoAba() === 'cacadas' && redirecionarParaDiarioGerenciada('prioridade diario')) return;
+      }
 
       if (sessaoExpiradaSemLogin()) {
         redirecionarParaLogin('Sessao expirada');
@@ -7736,8 +8616,45 @@
           }
         },
         {
+          id: 'missao_novo_relatorio',
+          checar: function() {
+            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+            if (urlAtual.indexOf('relatorios_ataque') === -1) return false;
+            try {
+              return new URLSearchParams(window.location.search).get('bot_missao_novo_validar') === '1';
+            } catch (e) {}
+            return false;
+          },
+          executar: function() {
+            return processarMissaoNovoRelatorioValidar();
+          }
+        },
+        {
+          id: 'missao_novo_jogador',
+          checar: function() {
+            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+            return urlAtual.indexOf('jogador') !== -1;
+          },
+          executar: function() {
+            return processarMissaoNovoJogador();
+          }
+        },
+        {
+          id: 'missao_novo_ranking',
+          checar: function() {
+            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+            return urlAtual.indexOf('ranking') !== -1;
+          },
+          executar: function() {
+            return processarMissaoNovoRanking();
+          }
+        },
+        {
           id: 'combate',
           checar: function() {
+            if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo() && ehPaginaCombateCacadas(urlAtual)) {
+              return true;
+            }
             if (obterModoAba() !== 'cacadas') return false;
             if (cacadasBloqueadaPorDiarioGerenciada()) {
               if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
@@ -7751,6 +8668,9 @@
             return ehPaginaCombateCacadas(urlAtual);
           },
           executar: function() {
+            if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
+              return processarPaginaCombate();
+            }
             if (cacadasBloqueadaPorDiarioGerenciada() &&
                 !(diarioDeveRodar() && obterFaseDiario() === 'raid')) {
               return redirecionarDiarioNoLugarDeCacadas('combate caçadas');
@@ -7802,6 +8722,7 @@
         {
           id: 'relatorios_ataque',
           checar: function() {
+            if (missaoNovoPausaRotinaCacadas()) return false;
             if (obterModoAba() !== 'cacadas') return false;
             if (cacadasBloqueadaPorDiarioGerenciada()) return false;
             if (devePriorizarDiarioSobreCacadas()) return false;
@@ -7815,6 +8736,7 @@
         {
           id: 'automacao',
           checar: function() {
+            if (missaoNovoPausaRotinaCacadas()) return false;
             if (obterModoAba() !== 'cacadas') return false;
             return urlAtual.indexOf('automacao') !== -1;
           },
@@ -7825,6 +8747,7 @@
         {
           id: 'missoes',
           checar: function() {
+            if (missaoNovoAtivo()) return urlAtual.indexOf('missoes') !== -1;
             if (obterModoAba() !== 'cacadas') return false;
             return urlAtual.indexOf('missoes') !== -1;
           },
@@ -7840,6 +8763,10 @@
             return true;
           },
           executar: function() {
+            if (missaoNovoPausaRotinaCacadas()) {
+              window.location.href = URL_MISSOES;
+              return true;
+            }
             if (redirecionarParaDiarioGerenciada('Pagina caçadas')) return true;
             if (paginaCacadasBloqueadaPorMissao()) {
               return processarCacadasBloqueadaPorMissao();
@@ -7930,6 +8857,9 @@
             return urlAtual.indexOf('atacar') !== -1 && paginaConfirmacaoAtaque();
           },
           executar: function() {
+            if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
+              return processarMissaoNovoAtacar();
+            }
             if (redirecionarDiarioNoLugarDeCacadas('pagina atacar')) return true;
             if (atacarJaProcessado) return true;
 
