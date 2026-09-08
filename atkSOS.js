@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.72
+// @version      3.73
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.72';
-  var SCRIPT_ATUALIZADO = '08/09/2026 01:35';
+  var SCRIPT_VERSAO = '3.73';
+  var SCRIPT_ATUALIZADO = '08/09/2026 01:45';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1062,6 +1062,8 @@
   var BOT_MISSAO_NOVO_POSICAO_KEY = 'BOT_MISSAO_NOVO_POSICAO';
   var BOT_MISSAO_NOVO_ATACADOS_KEY = 'BOT_MISSAO_NOVO_ATACADOS';
   var BOT_MISSAO_NOVO_HP_RETORNO_KEY = 'BOT_MISSAO_NOVO_HP_RETORNO';
+  var BOT_MISSAO_NOVO_COLETAR_REL_KEY = 'BOT_MISSAO_NOVO_COLETAR_REL';
+  var BOT_MISSAO_NOVO_VALIDAR_REL_KEY = 'BOT_MISSAO_NOVO_VALIDAR_REL';
   var BOT_MISSAO_NOVO_RANK_SCAN_KEY = 'BOT_MISSAO_NOVO_RANK_SCAN';
   var BOT_MISSAO_NOVO_SCAN_INICIAL_KEY = 'BOT_MISSAO_NOVO_SCAN_INICIAL';
   var BOT_MISSAO_NOVO_RETRY_TS_KEY = 'BOT_MISSAO_NOVO_RETRY_TS';
@@ -2913,7 +2915,81 @@
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE1_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE2_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATACADOS_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY);
     } catch (e) {}
+  }
+
+  function marcarColetarRelatorioMissaoNovo() {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY, '1'); } catch (e) {}
+  }
+
+  function limparColetarRelatorioMissaoNovo() {
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY); } catch (e) {}
+  }
+
+  function pendingColetarRelatorioMissaoNovo() {
+    try { return sessionStorage.getItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarValidarRelatorioMissaoNovo() {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY, '1'); } catch (e) {}
+  }
+
+  function limparValidarRelatorioMissaoNovo() {
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY); } catch (e) {}
+  }
+
+  function pendingValidarRelatorioMissaoNovo() {
+    try { return sessionStorage.getItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function ehPaginaMensagens() {
+    try {
+      return (window.location.pathname || '').indexOf('mensagens') !== -1;
+    } catch (e) {}
+    return false;
+  }
+
+  function abaRelatoriosAtaqueVisivel() {
+    var url = window.location.href || '';
+    if (url.indexOf('relatorios_ataque') !== -1) return true;
+    if (document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]')) return true;
+    try {
+      if (coletarRelatoriosAtaque().length > 0) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function missaoNovoDeveColetarRelatorio() {
+    if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+    if (pendingColetarRelatorioMissaoNovo()) return true;
+    try {
+      return new URLSearchParams(window.location.search).get('bot_missao_novo_coletar') === '1';
+    } catch (e) {}
+    return false;
+  }
+
+  function missaoNovoDeveValidarRelatorio() {
+    if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
+    if (pendingValidarRelatorioMissaoNovo()) return true;
+    try {
+      return new URLSearchParams(window.location.search).get('bot_missao_novo_validar') === '1';
+    } catch (e) {}
+    return false;
+  }
+
+  function irParaAbaRelatoriosAtaqueMissaoNovo() {
+    var link = document.querySelector(
+      '.msg-pipetabs a[href*="relatorios_ataque"], a[href*="tab=relatorios_ataque"]'
+    );
+    if (link && link.href) {
+      window.location.href = link.href;
+      return;
+    }
+    window.location.href = URL_RELATORIOS_ATAQUE;
   }
 
   function lerAtacadosMissaoNovo() {
@@ -3626,6 +3702,7 @@
     salvarScanInicialOffMissaoNovo(offInicial);
     limparScanRankingMissaoNovo();
     limparAlvoMissaoNovo();
+    marcarColetarRelatorioMissaoNovo();
     console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
       params.diffAlvo + '->' + params.minDiff + ' lvl abaixo, maxRyous ' +
       formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial + ' (' + resolved.origem +
@@ -3637,6 +3714,13 @@
   function processarMissaoNovoRelatorioColetar() {
     if (!garantirHpParaMissaoNovoAtacar('relatorio ataques')) return true;
 
+    if (ehPaginaMensagens() && !abaRelatoriosAtaqueVisivel()) {
+      console.log('[Missao Novo] /mensagens — abrindo aba relatorios de ataque...');
+      irParaAbaRelatoriosAtaqueMissaoNovo();
+      return true;
+    }
+
+    limparColetarRelatorioMissaoNovo();
     var coleta = coletarAtacadosRelatorioParaMissaoNovo();
     var off = lerRankingOffMissaoNovo();
     console.log('%c[Missao Novo] Relatorio: ' + coleta.total + ' ninja(s) ja atacado(s) hoje' +
@@ -3877,17 +3961,26 @@
     }
 
     console.log('[Missao Novo] Combate sem resultado claro — validando relatorio...');
+    marcarValidarRelatorioMissaoNovo();
     window.location.href = URL_RELATORIOS_ATAQUE + '&bot_missao_novo_validar=1';
     return true;
   }
 
   function processarMissaoNovoRelatorioValidar() {
+    if (ehPaginaMensagens() && !abaRelatoriosAtaqueVisivel()) {
+      console.log('[Missao Novo] /mensagens — abrindo aba para validar ataque...');
+      irParaAbaRelatoriosAtaqueMissaoNovo();
+      return true;
+    }
+
     var slot = obterSlotAtaqueMissaoNovo();
     var alvo = lerAlvoMissaoNovo();
     if (ataqueConfirmadoNoRelatorio(alvo)) {
+      limparValidarRelatorioMissaoNovo();
       concluirAtaqueMissaoNovoSucesso(slot, alvo);
       return true;
     }
+    limparValidarRelatorioMissaoNovo();
     falhaAtaqueMissaoNovoTentarProximo('ataque nao confirmado no relatorio');
     return true;
   }
@@ -4031,7 +4124,8 @@
       ataque2: ataqueMissaoNovoFeito(2),
       aguardandoRetry: missaoNovoAguardandoRetentativaRanking(),
       retrySeg: segundosRestantesRetentativaRankingMissaoNovo(),
-      atacadosHoje: Object.keys(lerAtacadosMissaoNovo()).length
+      atacadosHoje: Object.keys(lerAtacadosMissaoNovo()).length,
+      curaHpPendente: curarHpParaMissaoNovo() && curarHpAtivo()
     };
     console.log('%c[Missao Novo] Status', 'color:#e67e22;font-weight:bold', out);
     console.log('[Missao Novo] Ranking persistente: localStorage.' + BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY +
@@ -9150,12 +9244,8 @@
         {
           id: 'missao_novo_relatorio_coletar',
           checar: function() {
-            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
-            if (urlAtual.indexOf('relatorios_ataque') === -1) return false;
-            try {
-              return new URLSearchParams(window.location.search).get('bot_missao_novo_coletar') === '1';
-            } catch (e) {}
-            return false;
+            if (!missaoNovoDeveColetarRelatorio()) return false;
+            return ehPaginaMensagens() || urlAtual.indexOf('relatorios_ataque') !== -1;
           },
           executar: function() {
             return processarMissaoNovoRelatorioColetar();
@@ -9164,12 +9254,8 @@
         {
           id: 'missao_novo_relatorio',
           checar: function() {
-            if (!missaoNovoAtivo() || !emFluxoAtaqueMissaoNovo()) return false;
-            if (urlAtual.indexOf('relatorios_ataque') === -1) return false;
-            try {
-              return new URLSearchParams(window.location.search).get('bot_missao_novo_validar') === '1';
-            } catch (e) {}
-            return false;
+            if (!missaoNovoDeveValidarRelatorio()) return false;
+            return ehPaginaMensagens() || urlAtual.indexOf('relatorios_ataque') !== -1;
           },
           executar: function() {
             return processarMissaoNovoRelatorioValidar();
@@ -9448,6 +9534,20 @@
       }
 
       if (!paginaEncontrada) {
+        if (missaoNovoDeveColetarRelatorio() && ehPaginaMensagens()) {
+          processarMissaoNovoRelatorioColetar();
+          return;
+        }
+        if (missaoNovoDeveValidarRelatorio() && ehPaginaMensagens()) {
+          processarMissaoNovoRelatorioValidar();
+          return;
+        }
+        if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
+          console.warn('[Missao Novo] Pagina nao mapeada durante ataque (' + urlAtual +
+            ') — voltando a /missoes.');
+          window.location.href = URL_MISSOES;
+          return;
+        }
         redirecionarParaCacadas(urlAtual);
       }
 
