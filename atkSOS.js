@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.69
+// @version      3.70
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.69';
-  var SCRIPT_ATUALIZADO = '08/09/2026 01:05';
+  var SCRIPT_VERSAO = '3.70';
+  var SCRIPT_ATUALIZADO = '08/09/2026 01:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1059,6 +1059,7 @@
   var BOT_MISSAO_NOVO_CAND_IDX_KEY = 'BOT_MISSAO_NOVO_CAND_IDX';
   var BOT_MISSAO_NOVO_RANKING_OFF_KEY = 'BOT_MISSAO_NOVO_RANKING_OFF';
   var BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY = 'BOT_MISSAO_NOVO_RANKING_ULTIMO';
+  var BOT_MISSAO_NOVO_POSICAO_KEY = 'BOT_MISSAO_NOVO_POSICAO';
   var BOT_MISSAO_NOVO_RANK_SCAN_KEY = 'BOT_MISSAO_NOVO_RANK_SCAN';
   var BOT_MISSAO_NOVO_SCAN_INICIAL_KEY = 'BOT_MISSAO_NOVO_SCAN_INICIAL';
   var BOT_MISSAO_NOVO_RETRY_TS_KEY = 'BOT_MISSAO_NOVO_RETRY_TS';
@@ -3099,6 +3100,71 @@
     try { sessionStorage.setItem(BOT_MISSAO_NOVO_RANK_SCAN_KEY, String(n)); } catch (e) {}
   }
 
+  function extrairPosicaoRankingJogador() {
+    var divs = document.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < divs.length; i++) {
+      var t = (divs[i].textContent || divs[i].innerText || '').replace(/\s+/g, ' ').trim();
+      var m = t.match(/Sua\s+posi(?:c|ç)(?:a|ã)o\s*:\s*(\d+)/i);
+      if (m) return parseInt(m[1], 10) || null;
+    }
+    return null;
+  }
+
+  function salvarPosicaoRankingMissaoNovo(pos) {
+    if (!pos || pos < 1) return;
+    try { localStorage.setItem(BOT_MISSAO_NOVO_POSICAO_KEY, String(pos)); } catch (e) {}
+  }
+
+  function lerPosicaoRankingMissaoNovo() {
+    try {
+      var raw = localStorage.getItem(BOT_MISSAO_NOVO_POSICAO_KEY);
+      if (raw !== null && raw !== '') return parseInt(raw, 10) || 0;
+    } catch (e) {}
+    return 0;
+  }
+
+  function offsetRankingPorPosicao(posicao) {
+    if (!posicao || posicao < 1) return 0;
+    return Math.max(0, Math.floor((posicao - 1) / MISSAO_NOVO_PASSO_RANKING) * MISSAO_NOVO_PASSO_RANKING);
+  }
+
+  function resolverOffsetInicialRankingMissaoNovo() {
+    var ultimo = lerRankingUltimoMissaoNovo();
+    if (ultimo > 0) {
+      return { offset: ultimo, origem: 'ultimo ataque ok' };
+    }
+    var pos = lerPosicaoRankingMissaoNovo();
+    if (pos > 0) {
+      var offPos = offsetRankingPorPosicao(pos);
+      return { offset: offPos, origem: 'sua posicao #' + pos + ' (ranking=' + offPos + ')' };
+    }
+    return { offset: 0, origem: 'sem historico (detecta posicao na pagina)' };
+  }
+
+  function tentarPularParaPosicaoRankingMissaoNovo() {
+    if (lerRankingUltimoMissaoNovo() > 0) return false;
+    if (lerScanRankingMissaoNovo() > 0) return false;
+
+    var posicao = extrairPosicaoRankingJogador();
+    if (posicao) salvarPosicaoRankingMissaoNovo(posicao);
+    if (!posicao) return false;
+
+    var alvo = offsetRankingPorPosicao(posicao);
+    var offsetAtual = lerRankingOffMissaoNovo();
+    if (alvo === offsetAtual) return false;
+
+    console.log('%c[Missao Novo] Posicao #' + posicao + ' — pulando para ranking=' + alvo +
+      ' (pagina do seu nivel, era ' + offsetAtual + ')',
+      'color:#3498db;font-weight:bold');
+    salvarRankingOffMissaoNovo(alvo);
+    salvarScanInicialOffMissaoNovo(alvo);
+    salvarCandIdxMissaoNovo(0);
+    salvarCandidatosMissaoNovo([]);
+    limparAlvoMissaoNovo();
+    window.location.href = montarUrlRankingMissao(alvo);
+    return true;
+  }
+
   function diffNivelMissaoNovo(j, meuNivel) {
     if (!j || j.nivel === null || meuNivel === null) return -1;
     return meuNivel - j.nivel;
@@ -3453,7 +3519,8 @@
 
   function iniciarFluxoAtaqueMissaoNovo(slot) {
     var params = lerParamsMissaoNovo();
-    var offInicial = lerRankingUltimoMissaoNovo();
+    var resolved = resolverOffsetInicialRankingMissaoNovo();
+    var offInicial = resolved.offset;
     definirSlotAtaqueMissaoNovo(slot);
     salvarCandidatosMissaoNovo([]);
     salvarCandIdxMissaoNovo(0);
@@ -3463,8 +3530,7 @@
     limparAlvoMissaoNovo();
     console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
       params.diffAlvo + '->' + params.minDiff + ' lvl abaixo, maxRyous ' +
-      formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial +
-      (offInicial ? ' (ultimo ataque ok)' : ' (sem historico, busca do topo)') + ')',
+      formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial + ' (' + resolved.origem + '))',
       'color:#e67e22;font-weight:bold');
     window.location.href = montarUrlRankingMissao(offInicial);
   }
@@ -3516,6 +3582,10 @@
 
   function processarMissaoNovoRanking() {
     if (!garantirHpParaMissaoNovoAtacar('ranking')) return true;
+
+    var posRanking = extrairPosicaoRankingJogador();
+    if (posRanking) salvarPosicaoRankingMissaoNovo(posRanking);
+    if (tentarPularParaPosicaoRankingMissaoNovo()) return true;
 
     var params = lerParamsMissaoNovo();
     var meuNivel = extrairNivelJogadorSidebar();
@@ -3833,6 +3903,7 @@
       ativo: missaoNovoAtivo(),
       params: params,
       rankingUltimo: lerRankingUltimoMissaoNovo(),
+      posicaoRanking: lerPosicaoRankingMissaoNovo(),
       rankingOff: lerRankingOffMissaoNovo(),
       scanInicial: lerScanInicialOffMissaoNovo(),
       slot: obterSlotAtaqueMissaoNovo(),
