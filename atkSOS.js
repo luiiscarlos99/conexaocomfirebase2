@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.64
+// @version      3.65
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.64';
-  var SCRIPT_ATUALIZADO = '08/09/2026 00:05';
+  var SCRIPT_VERSAO = '3.65';
+  var SCRIPT_ATUALIZADO = '08/09/2026 00:20';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1086,6 +1086,7 @@
   var BOT_HP_SNAPSHOT_KEY = 'BOT_HP_SNAPSHOT';
   var BOT_HP_COMPRAR_MERCADO_KEY = 'BOT_HP_COMPRAR_MERCADO';
   var BOT_HP_COMPRAR_AVISADO_KEY = 'BOT_HP_COMPRAR_AVISADO';
+  var BOT_HP_CURAR_MISSAO_NOVO_KEY = 'BOT_HP_CURAR_MISSAO_NOVO';
   var ICHIRAKU_COMPRA_QTD_ALVO = 30;
   var BOT_DOUJUTSU_ATIVAR_KEY = 'BOT_DOUJUTSU_ATIVAR';
   var BOT_INVASOR_EVENTO_CACHE_KEY = 'BOT_INVASOR_EVENTO_CACHE';
@@ -1093,6 +1094,7 @@
   var DOUJUTSU_CUSTO_RYOUS = 10000;
   var HP_MINIMO_ATACAR_RATIO = 0.5;
   var HP_MINIMO_FIREBASE_FILA_RATIO = 0.8;
+  var HP_MINIMO_MISSAO_NOVO_RATIO = 0.9;
   var HP_MINIMO_RAID = 100;
 
   function obterHpMinimoAtacarRatio() {
@@ -3306,6 +3308,8 @@
   }
 
   function processarMissaoNovoRanking() {
+    if (!garantirHpParaMissaoNovoAtacar('ranking')) return true;
+
     var params = lerParamsMissaoNovo();
     var meuNivel = extrairNivelJogadorSidebar();
     if (meuNivel === null) {
@@ -3346,6 +3350,8 @@
   }
 
   function processarMissaoNovoJogador() {
+    if (!garantirHpParaMissaoNovoAtacar('perfil alvo')) return true;
+
     var alvo = lerAlvoMissaoNovo();
     if (!alvo) {
       window.location.href = URL_MISSOES;
@@ -3433,7 +3439,7 @@
       return true;
     }
 
-    if (!garantirHpParaAtacar('missao novo atacar')) return true;
+    if (!garantirHpParaMissaoNovoAtacar('atacar')) return true;
 
     console.log('[Missao Novo] Atacar aprovado — ' + nomeExibicaoInimigo(resultado.dados) +
       ' | diff ' + resultado.dados.diffNivel);
@@ -3546,6 +3552,7 @@
     if (restante !== null && restante <= 0) return false;
 
     if (!ataqueMissaoNovoFeito(1)) {
+      if (!garantirHpParaMissaoNovoAtacar('antes ataque 1')) return true;
       iniciarFluxoAtaqueMissaoNovo(1);
       return true;
     }
@@ -3557,6 +3564,7 @@
     }
 
     if (!ataqueMissaoNovoFeito(2)) {
+      if (!garantirHpParaMissaoNovoAtacar('antes ataque 2')) return true;
       iniciarFluxoAtaqueMissaoNovo(2);
       return true;
     }
@@ -3965,6 +3973,7 @@
     try {
       sessionStorage.removeItem(BOT_HP_CURAR_ATIVO_KEY);
       sessionStorage.removeItem(BOT_HP_CURAR_RAID_KEY);
+      sessionStorage.removeItem(BOT_HP_CURAR_MISSAO_NOVO_KEY);
       sessionStorage.removeItem(BOT_HP_SNAPSHOT_KEY);
       sessionStorage.removeItem(BOT_HP_COMPRAR_MERCADO_KEY);
       sessionStorage.removeItem(BOT_HP_COMPRAR_AVISADO_KEY);
@@ -4136,28 +4145,55 @@
     return !!(hp && hp.ok && hp.current > HP_MINIMO_RAID);
   }
 
+  function curarHpParaMissaoNovo() {
+    try { return sessionStorage.getItem(BOT_HP_CURAR_MISSAO_NOVO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarCurarHpMissaoNovo() {
+    try { sessionStorage.setItem(BOT_HP_CURAR_MISSAO_NOVO_KEY, '1'); } catch (e) {}
+  }
+
+  function hpAtendeMinimoMissaoNovo(hp) {
+    return !!(hp && hp.ok && hp.pct >= HP_MINIMO_MISSAO_NOVO_RATIO);
+  }
+
+  function metaHpAbsolutaMissaoNovo(hp) {
+    if (!hp || !hp.ok) return null;
+    return Math.ceil(hp.max * HP_MINIMO_MISSAO_NOVO_RATIO);
+  }
+
   function hpAtendeMetaParaCurar(hp) {
     if (!hp || !hp.ok) return false;
     if (curarHpParaRaidDiario()) return hpAtendeMinimoRaid(hp);
+    if (curarHpParaMissaoNovo()) return hpAtendeMinimoMissaoNovo(hp);
     return hp.pct >= obterHpMinimoAtacarRatio();
   }
 
   function metaHpAbsolutaParaCurar(hp) {
     if (curarHpParaRaidDiario()) return HP_MINIMO_RAID + 1;
+    if (curarHpParaMissaoNovo()) return metaHpAbsolutaMissaoNovo(hp);
     return Math.ceil(hp.max * obterHpMinimoAtacarRatio());
   }
 
   function urlPosCurarHp() {
+    if (curarHpParaMissaoNovo()) return URL_MISSOES;
     if (curarHpParaRaidDiario()) return URL_RAID;
     return URL_RELATORIOS_ATAQUE;
   }
 
   function finalizarCurarHpPosIchiraku(motivoLog) {
+    var voltarMissao = curarHpParaMissaoNovo();
     var voltarRaid = curarHpParaRaidDiario();
     var hp = obterStatusHp();
     console.log('[HP] ' + motivoLog + ' — ' + formatarHpLog(hp) +
-      (voltarRaid ? ' | voltando para raids...' : ' | voltando ao portao...'));
+      (voltarMissao ? ' | voltando para missao...' :
+        (voltarRaid ? ' | voltando para raids...' : ' | voltando ao portao...')));
     limparCurarHpAtivo();
+    if (voltarMissao) {
+      window.location.href = URL_MISSOES;
+      return true;
+    }
     if (voltarRaid) {
       window.location.href = URL_RAID;
       return true;
@@ -4220,6 +4256,43 @@
     console.log('[HP] ' + motivo + ' — ' + formatarHpLog(hp) + ' | indo para /status (Ichiraku)...');
     consumirGateCacadas();
     window.location.href = URL_STATUS;
+  }
+
+  function garantirHpParaMissaoNovoAtacar(contexto) {
+    if (!missaoNovoAtivo()) return true;
+
+    var hp = obterStatusHp();
+    var url = window.location.href || '';
+    var naPaginaStatus = url.indexOf('status') !== -1;
+
+    if (curarHpAtivo() && curarHpParaMissaoNovo()) {
+      if (naPaginaStatus) return false;
+      if (hp.ok && hpAtendeMinimoMissaoNovo(hp)) {
+        limparCurarHpAtivo();
+        return true;
+      }
+      if (hp.ok && !hpAtendeMinimoMissaoNovo(hp)) {
+        console.log('[Missao Novo] Cura pendente — retomando /status (' + contexto + ') — ' +
+          formatarHpLog(hp) + ' (meta >= ' + Math.round(HP_MINIMO_MISSAO_NOVO_RATIO * 100) + '%)');
+        redirecionarParaCurarHp('missao novo (' + contexto + ')');
+        return false;
+      }
+      console.warn('[Missao Novo] Cura pendente sem HP legivel — limpando (' + contexto + ')');
+      limparCurarHpAtivo();
+      hp = obterStatusHp();
+    }
+
+    if (!hp.ok) {
+      console.warn('[Missao Novo] HP ilegivel — ' + contexto + ' (seguindo sem bloqueio).');
+      return true;
+    }
+    if (hpAtendeMinimoMissaoNovo(hp)) return true;
+
+    console.log('[Missao Novo] HP abaixo de ' + Math.round(HP_MINIMO_MISSAO_NOVO_RATIO * 100) +
+      '% — ' + formatarHpLog(hp) + ' | curando antes de atacar (' + contexto + ')');
+    marcarCurarHpMissaoNovo();
+    redirecionarParaCurarHp('missao novo (' + contexto + ')');
+    return false;
   }
 
   function garantirHpParaAtacar(contexto) {
@@ -4322,13 +4395,15 @@
     var precisaCurarRaid = diarioDeveRodar() && obterFaseDiario() === 'raid' &&
       !diarioRaidDerrotaAtiva() &&
       hp.ok && !hpAtendeMinimoRaid(hp);
+    var precisaCurarMissao = missaoNovoAtivo() && hp.ok && !hpAtendeMinimoMissaoNovo(hp);
     var precisaCurar = hp.ok && !hpAtendeMetaParaCurar(hp);
 
     if (precisaCurarRaid && !curarHpParaRaidDiario()) marcarCurarHpRaidDiario();
 
     if (!curarHpAtivo()) {
-      if (!precisaCurar && !precisaCurarRaid) return false;
+      if (!precisaCurar && !precisaCurarRaid && !precisaCurarMissao) return false;
       marcarCurarHpAtivo();
+      if (precisaCurarMissao) marcarCurarHpMissaoNovo();
     } else if (hp.ok && hpAtendeMetaParaCurar(hp)) {
       return finalizarCurarHpPosIchiraku('Vida recuperada');
     }
@@ -8533,6 +8608,8 @@
         var modoStatus = ehReferrerPosLogin() ? recuperarModoAbaPosLogin() : obterModoAba();
         if (modoStatus === 'cacadas') {
           if (missaoNovoPausaRotinaCacadas()) {
+            if (processarCurarHpNaPaginaStatus()) return;
+            if (curarHpAtivo()) return;
             console.log('[Missao Novo] Status — voltando para /missoes...');
             window.location.href = URL_MISSOES;
             return;
@@ -8659,9 +8736,9 @@
             if (obterModoAba() !== 'cacadas') return false;
             if (cacadasBloqueadaPorDiarioGerenciada()) {
               if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
-            return true;
-              }
-              return false;
+              return true;
+            }
+            return false;
             }
             if (diarioDeveRodar() && obterFaseDiario() === 'raid' && ehPaginaCombateCacadas(urlAtual)) {
               return true;
@@ -8790,8 +8867,8 @@
             }
 
             if (processarInimigoEnergiaVitalBaixaCacadas()) {
-              return true;
-            }
+                  return true;
+                }
 
             if (processarJaAtacouHojeCacadas()) {
               return true;
