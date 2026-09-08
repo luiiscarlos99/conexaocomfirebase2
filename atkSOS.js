@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.73
+// @version      3.74
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.73';
-  var SCRIPT_ATUALIZADO = '08/09/2026 01:45';
+  var SCRIPT_VERSAO = '3.74';
+  var SCRIPT_ATUALIZADO = '08/09/2026 02:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -2957,6 +2957,7 @@
     var url = window.location.href || '';
     if (url.indexOf('relatorios_ataque') !== -1) return true;
     if (document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]')) return true;
+    if (obterTabelaRelatoriosAtaque()) return true;
     try {
       if (coletarRelatoriosAtaque().length > 0) return true;
     } catch (e) {}
@@ -5462,9 +5463,8 @@
     return dt.getTime();
   }
 
-  function extrairNomeVitimaCelulaRelatorio(celula) {
+  function extrairNomeJogadorDeCelula(celula) {
     if (!celula) return null;
-
     var link = celula.querySelector('a[href*="jogador"]');
     if (link) {
       var href = link.getAttribute('href') || '';
@@ -5479,13 +5479,20 @@
       var nomeLink = (link.innerText || link.textContent || '').replace(/\s+/g, ' ').trim();
       if (nomeLink) return nomeLink;
     }
-
     var texto = textoCelulaRelatorio(celula);
     return texto || null;
   }
 
+  function extrairNomeVitimaCelulaRelatorio(celula) {
+    return extrairNomeJogadorDeCelula(celula);
+  }
+
   function ehCabecalhoColunaAtacado(textoNorm) {
     return textoNorm === 'atacado' || textoNorm === 'atacante';
+  }
+
+  function ehCabecalhoColunaVencedor(textoNorm) {
+    return textoNorm === 'vencedor' || textoNorm === 'vitoria' || textoNorm === 'vitorias';
   }
 
   function obterTabelaRelatoriosAtaque() {
@@ -5494,13 +5501,15 @@
 
     for (var i = 0; i < linhas.length; i++) {
       var celulas = linhas[i].cells;
-      if (!celulas || celulas.length < 2) continue;
+      if (!celulas || celulas.length < 4) continue;
 
       var idxAtacado = -1;
+      var idxVencedor = -1;
       var idxData = -1;
       for (var c = 0; c < celulas.length; c++) {
         var t = normalizarTextoCombate(textoCelulaRelatorio(celulas[c]));
         if (ehCabecalhoColunaAtacado(t)) idxAtacado = c;
+        if (ehCabecalhoColunaVencedor(t)) idxVencedor = c;
         if (t === 'data') idxData = c;
       }
 
@@ -5512,10 +5521,45 @@
       }
       if (!tabela || !tabela.rows) continue;
 
-      return { tabela: tabela, idxData: idxData, idxAtacado: idxAtacado };
+      return {
+        tabela: tabela,
+        idxData: idxData,
+        idxAtacado: idxAtacado,
+        idxVencedor: idxVencedor
+      };
     }
 
     return null;
+  }
+
+  function coletarRelatoriosAtaqueTabela(infoTabela, adicionar) {
+    if (!infoTabela || !infoTabela.tabela) return 0;
+    var rows = infoTabela.tabela.rows;
+    var n = 0;
+
+    for (var r = 0; r < rows.length; r++) {
+      var celulas = rows[r].cells;
+      if (!celulas || celulas.length <= infoTabela.idxData) continue;
+      if (ehCabecalhoColunaAtacado(normalizarTextoCombate(textoCelulaRelatorio(celulas[infoTabela.idxAtacado])))) {
+        continue;
+      }
+
+      var dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(celulas[infoTabela.idxData]));
+      if (!dataTexto) dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rows[r]));
+      if (!dataTexto) continue;
+
+      var vitima = extrairNomeJogadorDeCelula(celulas[infoTabela.idxAtacado]);
+      if (!vitima) continue;
+
+      adicionar({
+        ts: parseDataHoraRelatorioAtaque(dataTexto),
+        dataTexto: dataTexto,
+        vitima: vitima,
+        resumo: textoCelulaRelatorio(rows[r])
+      });
+      n++;
+    }
+    return n;
   }
 
   function coletarRelatoriosAtaque() {
@@ -5534,70 +5578,48 @@
     }
 
     var infoTabela = obterTabelaRelatoriosAtaque();
-    if (infoTabela) {
-      var rows = infoTabela.tabela.rows;
-      for (var r = 0; r < rows.length; r++) {
-        var celulas = rows[r].cells;
-        if (!celulas || celulas.length <= infoTabela.idxData) continue;
-        if (ehCabecalhoColunaAtacado(normalizarTextoCombate(textoCelulaRelatorio(celulas[infoTabela.idxAtacado])))) {
-          continue;
+    var linhasTabela = infoTabela ? coletarRelatoriosAtaqueTabela(infoTabela, adicionar) : 0;
+
+    if (!linhasTabela) {
+      var linksJogador = col.querySelectorAll('a[href*="jogador"]');
+      for (var j = 0; j < linksJogador.length; j++) {
+        var rowJ = linksJogador[j].closest ? linksJogador[j].closest('tr') : null;
+        if (!rowJ || !rowJ.cells || rowJ.cells.length < 3) continue;
+
+        var vitimaJ = extrairNomeVitimaCelulaRelatorio(rowJ.cells[0]);
+        if (!vitimaJ) continue;
+
+        var dataTextoJ = null;
+        for (var cj = rowJ.cells.length - 1; cj >= 0; cj--) {
+          dataTextoJ = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rowJ.cells[cj]));
+          if (dataTextoJ) break;
         }
 
-        var dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(celulas[infoTabela.idxData]));
-        if (!dataTexto) dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rows[r]));
-        if (!dataTexto) continue;
-
-        var ts = parseDataHoraRelatorioAtaque(dataTexto);
-        var resumo = textoCelulaRelatorio(rows[r]);
-        var vitima = extrairNomeVitimaCelulaRelatorio(celulas[infoTabela.idxAtacado]);
-        if (!vitima) vitima = extrairVitimaDoRelatorioAtaque(resumo);
         adicionar({
-          ts: ts,
-          dataTexto: dataTexto,
-          vitima: vitima,
-          resumo: resumo
+          ts: dataTextoJ ? parseDataHoraRelatorioAtaque(dataTextoJ) : null,
+          dataTexto: dataTextoJ,
+          vitima: vitimaJ,
+          resumo: textoCelulaRelatorio(rowJ)
         });
       }
-    }
 
-    var linksJogador = col.querySelectorAll('a[href*="jogador"]');
-    for (var j = 0; j < linksJogador.length; j++) {
-      var rowJ = linksJogador[j].closest ? linksJogador[j].closest('tr') : null;
-      if (!rowJ || !rowJ.cells || rowJ.cells.length < 3) continue;
+      var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
+      for (var i = 0; i < links.length; i++) {
+        var href = links[i].getAttribute('href') || '';
+        if (href.indexOf('ver=') === -1) continue;
 
-      var vitimaJ = extrairNomeVitimaCelulaRelatorio(rowJ.cells[0]);
-      if (!vitimaJ) continue;
+        var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
+        var matchData = matchTextoDataHoraRelatorio(texto);
+        var vitima = extrairVitimaDoRelatorioAtaque(texto);
+        if (!matchData && !vitima) continue;
 
-      var dataTextoJ = null;
-      for (var cj = rowJ.cells.length - 1; cj >= 0; cj--) {
-        dataTextoJ = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rowJ.cells[cj]));
-        if (dataTextoJ) break;
+        adicionar({
+          ts: matchData ? parseDataHoraRelatorioAtaque(matchData) : null,
+          dataTexto: matchData,
+          vitima: vitima,
+          resumo: texto
+        });
       }
-
-      adicionar({
-        ts: dataTextoJ ? parseDataHoraRelatorioAtaque(dataTextoJ) : null,
-        dataTexto: dataTextoJ,
-        vitima: vitimaJ,
-        resumo: textoCelulaRelatorio(rowJ)
-      });
-    }
-
-    var links = col.querySelectorAll('a[href*="relatorios_ataque"]');
-    for (var i = 0; i < links.length; i++) {
-      var href = links[i].getAttribute('href') || '';
-      if (href.indexOf('ver=') === -1) continue;
-
-      var texto = (links[i].innerText || links[i].textContent || '').replace(/\s+/g, ' ').trim();
-      var matchData = matchTextoDataHoraRelatorio(texto);
-      var vitima = extrairVitimaDoRelatorioAtaque(texto);
-      if (!matchData && !vitima) continue;
-
-      adicionar({
-        ts: matchData ? parseDataHoraRelatorioAtaque(matchData) : null,
-        dataTexto: matchData,
-        vitima: vitima,
-        resumo: texto
-      });
     }
 
     return lista;
