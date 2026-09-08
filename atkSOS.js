@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.65
+// @version      3.66
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.65';
-  var SCRIPT_ATUALIZADO = '08/09/2026 00:20';
+  var SCRIPT_VERSAO = '3.66';
+  var SCRIPT_ATUALIZADO = '08/09/2026 00:25';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1058,6 +1058,7 @@
   var BOT_MISSAO_NOVO_CANDIDATOS_KEY = 'BOT_MISSAO_NOVO_CANDIDATOS';
   var BOT_MISSAO_NOVO_CAND_IDX_KEY = 'BOT_MISSAO_NOVO_CAND_IDX';
   var BOT_MISSAO_NOVO_RANKING_OFF_KEY = 'BOT_MISSAO_NOVO_RANKING_OFF';
+  var BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY = 'BOT_MISSAO_NOVO_RANKING_ULTIMO';
   var BOT_MISSAO_NOVO_ATAQUE1_KEY = 'BOT_MISSAO_NOVO_ATAQUE1';
   var BOT_MISSAO_NOVO_ATAQUE2_KEY = 'BOT_MISSAO_NOVO_ATAQUE2';
   var MISSAO_NOVO_DEFAULTS = {
@@ -2994,6 +2995,25 @@
     return 0;
   }
 
+  function lerRankingUltimoMissaoNovo() {
+    try {
+      var raw = localStorage.getItem(BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY);
+      if (raw !== null && raw !== '') return parseInt(raw, 10) || 0;
+    } catch (e) {}
+    return 0;
+  }
+
+  function salvarRankingUltimoMissaoNovo(off) {
+    try {
+      localStorage.setItem(BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY, String(typeof off === 'number' ? off : 0));
+    } catch (e) {}
+  }
+
+  function diffNivelMissaoNovo(j, meuNivel) {
+    if (!j || j.nivel === null || meuNivel === null) return -1;
+    return meuNivel - j.nivel;
+  }
+
   function parseNivelReqMissao(texto) {
     if (!texto) return 0;
     var t = normalizarTextoCombate(texto);
@@ -3206,8 +3226,11 @@
     return true;
   }
 
-  function ordenarCandidatosMissaoNovo(lista) {
+  function ordenarCandidatosMissaoNovo(lista, meuNivel) {
     lista.sort(function(a, b) {
+      var diffA = diffNivelMissaoNovo(a, meuNivel);
+      var diffB = diffNivelMissaoNovo(b, meuNivel);
+      if (diffA !== diffB) return diffB - diffA;
       if (a.nivel !== b.nivel) return a.nivel - b.nivel;
       if (a.ryous !== b.ryous) return a.ryous - b.ryous;
       return a.vitorias - b.vitorias;
@@ -3221,7 +3244,7 @@
     for (var i = 0; i < jogadores.length; i++) {
       if (candidatoValidoMissaoNovo(jogadores[i], meuNivel, params)) out.push(jogadores[i]);
     }
-    return ordenarCandidatosMissaoNovo(out);
+    return ordenarCandidatosMissaoNovo(out, meuNivel);
   }
 
   function montarUrlRankingMissao(offset) {
@@ -3244,15 +3267,18 @@
 
   function iniciarFluxoAtaqueMissaoNovo(slot) {
     var params = lerParamsMissaoNovo();
+    var offInicial = lerRankingUltimoMissaoNovo();
     definirSlotAtaqueMissaoNovo(slot);
     salvarCandidatosMissaoNovo([]);
     salvarCandIdxMissaoNovo(0);
-    salvarRankingOffMissaoNovo(0);
+    salvarRankingOffMissaoNovo(offInicial);
     limparAlvoMissaoNovo();
     console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
-      params.minDiff + '-' + params.diffAlvo + ', maxRyous ' + formatarNumeroBr(params.maxRyous) + ')',
+      params.diffAlvo + '->' + params.minDiff + ' lvl abaixo, maxRyous ' +
+      formatarNumeroBr(params.maxRyous) + ', ranking=' + offInicial +
+      (offInicial ? ' ultimo ok' : '') + ')',
       'color:#e67e22;font-weight:bold');
-    window.location.href = montarUrlRankingMissao(0);
+    window.location.href = montarUrlRankingMissao(offInicial);
   }
 
   function concluirAtaqueMissaoNovoSemAlvo(slot) {
@@ -3265,7 +3291,9 @@
   }
 
   function concluirAtaqueMissaoNovoSucesso(slot, alvo) {
-    console.log('%c[Missao Novo] Ataque ' + slot + ' confirmado vs ' + (alvo || '?') + ' — voltando a missao.',
+    salvarRankingUltimoMissaoNovo(lerRankingOffMissaoNovo());
+    console.log('%c[Missao Novo] Ataque ' + slot + ' confirmado vs ' + (alvo || '?') +
+      ' — ranking ' + lerRankingOffMissaoNovo() + ' salvo — voltando a missao.',
       'color:#2ecc71;font-weight:bold');
     marcarAtaqueMissaoNovoFeito(slot);
     limparAlvoMissaoNovo();
@@ -3342,8 +3370,10 @@
     var idx = lerCandIdxMissaoNovo();
     if (idx >= candidatos.length) idx = 0;
     var alvo = candidatos[idx];
+    var diffAlvo = diffNivelMissaoNovo(alvo, meuNivel);
     console.log('[Missao Novo] Alvo #' + (idx + 1) + '/' + candidatos.length + ': ' + alvo.nome +
-      ' (lvl ' + alvo.nivel + ', vit ' + alvo.vitorias + ', ryous ' + alvo.ryousTexto + ')');
+      ' (lvl ' + alvo.nivel + ', ' + diffAlvo + ' lvl abaixo, vit ' + alvo.vitorias +
+      ', ryous ' + alvo.ryousTexto + ')');
     salvarAlvoMissaoNovo(alvo.nome);
     window.location.href = alvo.urlJogador;
     return true;
