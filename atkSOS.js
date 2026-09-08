@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.63
+// @version      3.64
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.62';
-  var SCRIPT_ATUALIZADO = '07/09/2026 23:20';
+  var SCRIPT_VERSAO = '3.64';
+  var SCRIPT_ATUALIZADO = '08/09/2026 00:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -975,8 +975,8 @@
   })()) {
     var missaoNovoRanking = false;
     try {
-      missaoNovoRanking = localStorage.getItem('BOT_MISSAO_NOVO_ATIVO') === '1' &&
-        !!sessionStorage.getItem('BOT_MISSAO_NOVO_SLOT_KEY');
+      missaoNovoRanking = localStorage.getItem('BOT_MISSAO_NOVO_ATIVO') === '1' ||
+        !!sessionStorage.getItem('BOT_MISSAO_NOVO_SLOT');
     } catch (e) {}
     if (!missaoNovoRanking) {
       console.log('[Script Caçadas] Pagina /ranking — sem acao (use bot-ranking.js + botRankingScan()).');
@@ -3224,7 +3224,8 @@
 
   function montarUrlRankingMissao(offset) {
     return 'https://shadowofshinobi.com/ranking?view=personagens&vila=geral&ranking=' +
-      String(typeof offset === 'number' ? offset : 0);
+      String(typeof offset === 'number' ? offset : 0) +
+      '&bot_modo=cacadas&bot_missao_novo=1';
   }
 
   function paginaRankingSemCandidatosPossivel(jogadores, meuNivel, params) {

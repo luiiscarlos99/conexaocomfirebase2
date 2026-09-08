@@ -282,13 +282,32 @@
         el.style.lineHeight = '1.35';
         el.style.fontSize = '9pt';
         el.style.whiteSpace = 'normal';
-        el.innerHTML = [
-          escHtmlPainelBootstrap(el.dataset.botServerBase),
-          'Bot: <b>manual</b> (ranking — sem acao)',
-          montarHtmlLinhaPrincipalLoginBootstrap(login),
-          '<span style="opacity:.65">—</span>',
-          'Ranking: bot-ranking.js + botRankingScan()'
-        ].join('<br>');
+        var missaoNovoRanking = false;
+        var slotMissao = '';
+        try {
+          missaoNovoRanking = localStorage.getItem('BOT_MISSAO_NOVO_ATIVO') === '1' ||
+            !!sessionStorage.getItem('BOT_MISSAO_NOVO_SLOT');
+          slotMissao = sessionStorage.getItem('BOT_MISSAO_NOVO_SLOT') || '';
+        } catch (e) {}
+        var linhasRanking;
+        if (missaoNovoRanking) {
+          linhasRanking = [
+            escHtmlPainelBootstrap(el.dataset.botServerBase),
+            'Bot: <b>cacadas</b> (missao novo — ataque' + (slotMissao ? ' ' + escHtmlPainelBootstrap(slotMissao) : '') + ')',
+            montarHtmlLinhaPrincipalLoginBootstrap(login),
+            '<span style="opacity:.65">—</span>',
+            'Ranking: atkSOS processarMissaoNovoRanking()'
+          ];
+        } else {
+          linhasRanking = [
+            escHtmlPainelBootstrap(el.dataset.botServerBase),
+            'Bot: <b>manual</b> (ranking — sem acao)',
+            montarHtmlLinhaPrincipalLoginBootstrap(login),
+            '<span style="opacity:.65">—</span>',
+            'Ranking: bot-ranking.js + botRankingScan()'
+          ];
+        }
+        el.innerHTML = linhasRanking.join('<br>');
         instalarEditorPrincipalLoginBootstrap(el);
         return true;
       }
