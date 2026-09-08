@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.74
-// @description  Automação Caçadas/Atacar + Missão Novo (1h, 2 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
+// @version      3.75
+// @description  Automação Caçadas/Atacar + Missão Novo (1h, 3 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.74';
-  var SCRIPT_ATUALIZADO = '08/09/2026 02:00';
+  var SCRIPT_VERSAO = '3.75';
+  var SCRIPT_ATUALIZADO = '08/09/2026 12:15';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1069,6 +1069,13 @@
   var BOT_MISSAO_NOVO_RETRY_TS_KEY = 'BOT_MISSAO_NOVO_RETRY_TS';
   var BOT_MISSAO_NOVO_ATAQUE1_KEY = 'BOT_MISSAO_NOVO_ATAQUE1';
   var BOT_MISSAO_NOVO_ATAQUE2_KEY = 'BOT_MISSAO_NOVO_ATAQUE2';
+  var BOT_MISSAO_NOVO_ATAQUE3_KEY = 'BOT_MISSAO_NOVO_ATAQUE3';
+  var BOT_MISSAO_NOVO_ESPERA_SLOT_KEY = 'BOT_MISSAO_NOVO_ESPERA_SLOT';
+  var BOT_MISSAO_NOVO_ESPERA_TS_KEY = 'BOT_MISSAO_NOVO_ESPERA_TS';
+  var MISSAO_NOVO_ATAQUE2_RESTANTE_SEG = 45 * 60;
+  var MISSAO_NOVO_ATAQUE3_RESTANTE_SEG = 15 * 60;
+  var MISSAO_NOVO_ESPERA_HUMANA_MIN_SEG = 60;
+  var MISSAO_NOVO_ESPERA_HUMANA_MAX_SEG = 180;
   var MISSAO_NOVO_DEFAULTS = {
     horas: 1,
     diffAlvo: 19,
@@ -2804,7 +2811,7 @@
     return true;
   }
 
-  // --- Missão Novo: 1h + 2 ataques via ranking (sem acessar caçadas) ---
+  // --- Missão Novo: 1h + 3 ataques via ranking (sem acessar caçadas) ---
   function gravarMissaoNovoParam(valor) {
     var s = String(valor).trim().toLowerCase();
     if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
@@ -2914,6 +2921,9 @@
       sessionStorage.removeItem(BOT_MISSAO_NOVO_RETRY_TS_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE1_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE2_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ATAQUE3_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ESPERA_SLOT_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ESPERA_TS_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATACADOS_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY);
@@ -3089,13 +3099,15 @@
 
   function marcarAtaqueMissaoNovoFeito(slot) {
     try {
-      if (slot === 2) sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE2_KEY, '1');
+      if (slot === 3) sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE3_KEY, '1');
+      else if (slot === 2) sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE2_KEY, '1');
       else sessionStorage.setItem(BOT_MISSAO_NOVO_ATAQUE1_KEY, '1');
     } catch (e) {}
   }
 
   function ataqueMissaoNovoFeito(slot) {
     try {
+      if (slot === 3) return sessionStorage.getItem(BOT_MISSAO_NOVO_ATAQUE3_KEY) === '1';
       if (slot === 2) return sessionStorage.getItem(BOT_MISSAO_NOVO_ATAQUE2_KEY) === '1';
       return sessionStorage.getItem(BOT_MISSAO_NOVO_ATAQUE1_KEY) === '1';
     } catch (e) {}
@@ -3109,9 +3121,107 @@
   function obterSlotAtaqueMissaoNovo() {
     try {
       var s = sessionStorage.getItem(BOT_MISSAO_NOVO_SLOT_KEY);
+      if (s === '3') return 3;
       if (s === '2') return 2;
     } catch (e) {}
     return 1;
+  }
+
+  function sortearEsperaHumanaMissaoNovo() {
+    var min = MISSAO_NOVO_ESPERA_HUMANA_MIN_SEG;
+    var max = MISSAO_NOVO_ESPERA_HUMANA_MAX_SEG;
+    return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function salvarEsperaAtaqueMissaoNovo(slot, segundos) {
+    try {
+      sessionStorage.setItem(BOT_MISSAO_NOVO_ESPERA_SLOT_KEY, String(slot));
+      sessionStorage.setItem(BOT_MISSAO_NOVO_ESPERA_TS_KEY, String(Date.now() + segundos * 1000));
+    } catch (e) {}
+  }
+
+  function limparEsperaAtaqueMissaoNovo() {
+    try {
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ESPERA_SLOT_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_ESPERA_TS_KEY);
+    } catch (e) {}
+  }
+
+  function lerEsperaHumanaSlotMissaoNovo() {
+    try {
+      var s = sessionStorage.getItem(BOT_MISSAO_NOVO_ESPERA_SLOT_KEY);
+      if (s === '3') return 3;
+      if (s === '2') return 2;
+      if (s === '1') return 1;
+    } catch (e) {}
+    return null;
+  }
+
+  function segundosRestantesEsperaHumanaMissaoNovo() {
+    try {
+      var ts = parseInt(sessionStorage.getItem(BOT_MISSAO_NOVO_ESPERA_TS_KEY), 10);
+      if (!ts || isNaN(ts)) return 0;
+      return Math.max(0, Math.ceil((ts - Date.now()) / 1000));
+    } catch (e) {}
+    return 0;
+  }
+
+  function resolverProximoAtaqueMissaoNovo(restante) {
+    if (!ataqueMissaoNovoFeito(1)) {
+      return { slot: 1, rotulo: 'inicio' };
+    }
+    if (!ataqueMissaoNovoFeito(2)) {
+      if (restante === null || restante > MISSAO_NOVO_ATAQUE2_RESTANTE_SEG) return null;
+      return { slot: 2, rotulo: '45min restantes' };
+    }
+    if (!ataqueMissaoNovoFeito(3)) {
+      if (restante === null || restante > MISSAO_NOVO_ATAQUE3_RESTANTE_SEG) return null;
+      return { slot: 3, rotulo: '15min restantes' };
+    }
+    return null;
+  }
+
+  function calcularRecheckAteProximoAtaqueMissaoNovo(restante) {
+    if (restante === null || restante <= 0) return 60;
+    if (!ataqueMissaoNovoFeito(1)) return 30;
+    if (!ataqueMissaoNovoFeito(2) && restante > MISSAO_NOVO_ATAQUE2_RESTANTE_SEG) {
+      return Math.min(restante - MISSAO_NOVO_ATAQUE2_RESTANTE_SEG + 5, 120);
+    }
+    if (!ataqueMissaoNovoFeito(3) && restante > MISSAO_NOVO_ATAQUE3_RESTANTE_SEG) {
+      return Math.min(restante - MISSAO_NOVO_ATAQUE3_RESTANTE_SEG + 5, 120);
+    }
+    return 30;
+  }
+
+  function processarAtaquesAgendadosMissaoNovo(restante) {
+    var prox = resolverProximoAtaqueMissaoNovo(restante);
+    if (!prox) {
+      agendarRecheckMissaoNovo(calcularRecheckAteProximoAtaqueMissaoNovo(restante));
+      return true;
+    }
+
+    var esperaSlot = lerEsperaHumanaSlotMissaoNovo();
+    if (esperaSlot !== prox.slot) {
+      limparEsperaAtaqueMissaoNovo();
+      var segHum = sortearEsperaHumanaMissaoNovo();
+      salvarEsperaAtaqueMissaoNovo(prox.slot, segHum);
+      console.log('[Missao Novo] Ataque ' + prox.slot + ' (' + prox.rotulo + ') liberado — aguardando ' +
+        segHum + 's antes de iniciar (humanizado)...');
+      agendarRecheckMissaoNovo(segHum);
+      return true;
+    }
+
+    var segRest = segundosRestantesEsperaHumanaMissaoNovo();
+    if (segRest > 0) {
+      console.log('[Missao Novo] Ataque ' + prox.slot + ' (' + prox.rotulo + ') — faltam ' + segRest + 's...');
+      agendarRecheckMissaoNovo(segRest);
+      return true;
+    }
+
+    limparEsperaAtaqueMissaoNovo();
+    if (!garantirHpParaMissaoNovoAtacar('antes ataque ' + prox.slot)) return true;
+    iniciarFluxoAtaqueMissaoNovo(prox.slot);
+    return true;
   }
 
   function emFluxoAtaqueMissaoNovo() {
@@ -4031,19 +4141,23 @@
     }
 
     var restante = obterSegundosRestantesMissao();
-    var limiteSeg = params.limiteMinSegundoAtaque * 60;
     console.log('[Missao Novo] Em missao — restante ~' + formatarTempoMissao(restante) +
       ' | ataque1=' + (ataqueMissaoNovoFeito(1) ? 'ok' : 'pendente') +
-      ' | ataque2=' + (ataqueMissaoNovoFeito(2) ? 'ok' : 'pendente'));
+      ' | ataque2=' + (ataqueMissaoNovoFeito(2) ? 'ok' : 'pendente') +
+      ' | ataque3=' + (ataqueMissaoNovoFeito(3) ? 'ok' : 'pendente'));
 
     if (usuarioEmPenalidadeMissao()) {
       console.warn('[Missao Novo] Usuario em penalidade — pulando ataques deste ciclo.');
       if (!ataqueMissaoNovoFeito(1)) marcarAtaqueMissaoNovoFeito(1);
-      if (restante !== null && restante <= limiteSeg && !ataqueMissaoNovoFeito(2)) {
+      if (restante !== null && restante <= MISSAO_NOVO_ATAQUE2_RESTANTE_SEG && !ataqueMissaoNovoFeito(2)) {
         marcarAtaqueMissaoNovoFeito(2);
       }
+      if (restante !== null && restante <= MISSAO_NOVO_ATAQUE3_RESTANTE_SEG && !ataqueMissaoNovoFeito(3)) {
+        marcarAtaqueMissaoNovoFeito(3);
+      }
+      limparEsperaAtaqueMissaoNovo();
       if (restante !== null && restante <= 0) return false;
-      agendarRecheckMissaoNovo(restante !== null && restante <= limiteSeg ? 30 : 60);
+      agendarRecheckMissaoNovo(calcularRecheckAteProximoAtaqueMissaoNovo(restante));
       return true;
     }
 
@@ -4056,26 +4170,7 @@
       return true;
     }
 
-    if (!ataqueMissaoNovoFeito(1)) {
-      if (!garantirHpParaMissaoNovoAtacar('antes ataque 1')) return true;
-      iniciarFluxoAtaqueMissaoNovo(1);
-      return true;
-    }
-
-    if (restante !== null && restante > limiteSeg) {
-      var espera = Math.min(restante - limiteSeg, 120);
-      agendarRecheckMissaoNovo(espera);
-      return true;
-    }
-
-    if (!ataqueMissaoNovoFeito(2)) {
-      if (!garantirHpParaMissaoNovoAtacar('antes ataque 2')) return true;
-      iniciarFluxoAtaqueMissaoNovo(2);
-      return true;
-    }
-
-    agendarRecheckMissaoNovo(restante !== null ? Math.min(restante, 60) : 60);
-    return true;
+    return processarAtaquesAgendadosMissaoNovo(restante);
   }
 
   function botMissaoNovo(extra) {
@@ -4087,15 +4182,12 @@
       if (extra.diffAlvo != null) p.diffAlvo = parseNumeroInteiro(extra.diffAlvo) || p.diffAlvo;
       if (extra.minDiff != null) p.minDiff = parseNumeroInteiro(extra.minDiff) || p.minDiff;
       if (extra.maxRyous != null) p.maxRyous = parseNumeroInteiro(extra.maxRyous) || p.maxRyous;
-      if (extra.limiteMinSegundoAtaque != null) {
-        p.limiteMinSegundoAtaque = parseNumeroInteiro(extra.limiteMinSegundoAtaque) || p.limiteMinSegundoAtaque;
-      }
       salvarParamsMissaoNovo(p);
     }
     var params = lerParamsMissaoNovo();
     console.log('%c[Missao Novo] ATIVADO — ' + params.horas + 'h | diff ' + params.minDiff + '-' +
       params.diffAlvo + ' | maxRyous ' + formatarNumeroBr(params.maxRyous) +
-      ' | 2o ataque <= ' + params.limiteMinSegundoAtaque + 'min',
+      ' | 3 ataques: inicio, 45min e 15min restantes (+ espera 1-3min humanizada)',
       'color:#e67e22;font-weight:bold');
     console.log('[Missao Novo] Modo aba=cacadas (rotina caçadas pausada enquanto missao novo estiver ativo).');
     console.log('[Missao Novo] Indo para /missoes...');
@@ -4123,6 +4215,9 @@
       emFluxoAtaque: emFluxoAtaqueMissaoNovo(),
       ataque1: ataqueMissaoNovoFeito(1),
       ataque2: ataqueMissaoNovoFeito(2),
+      ataque3: ataqueMissaoNovoFeito(3),
+      esperaAtaqueSlot: lerEsperaHumanaSlotMissaoNovo(),
+      esperaAtaqueSeg: segundosRestantesEsperaHumanaMissaoNovo(),
       aguardandoRetry: missaoNovoAguardandoRetentativaRanking(),
       retrySeg: segundosRestantesRetentativaRankingMissaoNovo(),
       atacadosHoje: Object.keys(lerAtacadosMissaoNovo()).length,
