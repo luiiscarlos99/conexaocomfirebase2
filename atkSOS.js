@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.88
+// @version      3.89
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.88';
-  var SCRIPT_ATUALIZADO = '09/09/2026 17:00';
+  var SCRIPT_VERSAO = '3.89';
+  var SCRIPT_ATUALIZADO = '09/09/2026 18:22';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3409,34 +3409,53 @@
     return automPrepValidacaoInicialContinuar(ctx);
   }
 
-  function processarAutomPrepQuests() {
-    if (!atacarAutomacoesPrepAtivo() || obterFaseAutomPrep() !== 'quests') return false;
-    var btn = document.querySelector('form[action*="quests"] input[name="acao"][value="coletar_todas"]');
-    if (btn) {
-      var form = btn.closest('form');
-      var submitBtn = form ? form.querySelector('button[type="submit"], input[type="submit"]') : null;
-      if (submitBtn) {
-        console.log('[Autom Prep] Coletando todas as quests...');
-        submitBtn.click();
-        return true;
+  function automPrepQuestColetaDisponivel() {
+    var inputs = document.querySelectorAll('input[name="acao"][value="coletar_todas"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var form = inputs[i].closest('form');
+      if (!form) continue;
+      var submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (!submitBtn || submitBtn.disabled) continue;
+      return submitBtn;
+    }
+    var btnCollect = document.querySelector('.qx-btn-collect');
+    if (btnCollect && !btnCollect.disabled) {
+      var formBtn = btnCollect.closest('form');
+      if (formBtn && formBtn.querySelector('input[name="acao"][value="coletar_todas"]')) {
+        return btnCollect;
       }
     }
-    console.log('[Autom Prep] Sem quests para coletar — seguindo para HP.');
-    definirFaseAutomPrep('hp');
-    window.location.href = 'https://shadowofshinobi.com/status';
-    return true;
+    return null;
   }
 
-  function processarAutomPrepPosQuests() {
-    if (!atacarAutomacoesPrepAtivo()) return false;
-    if (obterFaseAutomPrep() !== 'quests') return false;
-    if (!garantirHpParaAutomPrep('pos-quests')) return true;
+  function automPrepAvancarAposQuests(contexto) {
+    if (!garantirHpParaAutomPrep(contexto || 'pos-quests')) return true;
     lerAutomacaoCoord(function(coord) {
       var emCooldown = coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
       definirFaseAutomPrep(emCooldown ? 'prep_ate_venda' : 'vender_inicial');
       window.location.href = URL_ANIMAL_MEUS;
     });
     return true;
+  }
+
+  function processarAutomPrepQuests() {
+    if (!atacarAutomacoesPrepAtivo()) return false;
+    var fase = obterFaseAutomPrep();
+    if (fase !== 'quests' && fase !== 'hp') return false;
+
+    var submitBtn = automPrepQuestColetaDisponivel();
+    if (submitBtn) {
+      console.log('[Autom Prep] Coletando todas as quests...');
+      submitBtn.click();
+      return true;
+    }
+
+    console.log('[Autom Prep] Sem botao para coletar quests — pulando etapa.');
+    return automPrepAvancarAposQuests('sem quests');
+  }
+
+  function processarAutomPrepPosQuests() {
+    return processarAutomPrepQuests();
   }
 
   function automPrepPublicarReady(ctx) {
@@ -3487,7 +3506,6 @@
     if (falta <= AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS) return false;
     var seg = Math.round(falta / 1000);
     var nome = ctx && ctx.nome ? ctx.nome : 'proxima gerenciada';
-    var loginDono = ctx && ctx.login_dono ? ctx.login_dono : obterUsuarioLogin();
     console.log('[Autom Prep] Penalidade Shizuo (~' + seg + 's) — aguardando antes de ' + nome + '...');
     setTimeout(function() {
       window.location.reload();
@@ -6521,12 +6539,8 @@
     }
     if (curarHpParaAutomPrep()) {
       try { sessionStorage.removeItem(BOT_HP_CURAR_AUTOM_PREP_KEY); } catch (e) {}
-      if (obterFaseAutomPrep() === 'quests') {
-        lerAutomacaoCoord(function(coord) {
-          var emCooldown = coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
-          definirFaseAutomPrep(emCooldown ? 'prep_ate_venda' : 'vender_inicial');
-          window.location.href = URL_ANIMAL_MEUS;
-        });
+      if (obterFaseAutomPrep() === 'quests' || obterFaseAutomPrep() === 'hp') {
+        automPrepAvancarAposQuests('pos-cura hp');
       } else {
         window.location.href = urlPosCurarHpAutom();
       }
@@ -11255,14 +11269,14 @@
         {
           id: 'autom_prep_quests',
           checar: function() {
-            return atacarAutomacoesPrepAtivo() && obterFaseAutomPrep() === 'quests' &&
-              urlAtual.indexOf('quests') !== -1;
+            if (!atacarAutomacoesPrepAtivo()) return false;
+            var faseQuest = obterFaseAutomPrep();
+            if (faseQuest === 'quests' && urlAtual.indexOf('quests') !== -1) return true;
+            if (faseQuest === 'hp' && urlAtual.indexOf('status') !== -1) return true;
+            return false;
           },
           executar: function() {
-            if (document.querySelector('form[action*="quests"]')) {
-              return processarAutomPrepQuests();
-            }
-            return processarAutomPrepPosQuests();
+            return processarAutomPrepQuests();
           }
         },
         {
