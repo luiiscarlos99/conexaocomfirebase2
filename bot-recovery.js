@@ -63,6 +63,10 @@
       else if (dg === '0') params.set('bot_diario_gerenciada', '0');
       if (dgs === '1') params.set('bot_diario_sem_cacadas', '1');
       else if (dgs === '0') params.set('bot_diario_sem_cacadas', '0');
+      var aap = localStorage.getItem('BOT_ATACAR_AUTOMACOES_PREP');
+      var aa = localStorage.getItem('BOT_ATACAR_AUTOMACOES');
+      if (aap === '1') params.set('bot_atacar_automacoes_prep', '1');
+      if (aa === '1') params.set('bot_atacar_automacoes', '1');
     } catch (err) {}
 
     var qs = params.toString();
@@ -84,7 +88,8 @@
      'bot_rotacao_automacao',
      'bot_max_ryous_cacadas', 'bot_diff_nivel_cacadas',
      'bot_min_ryous_vitoria_cacadas', 'bot_cacadas_teto_29',
-     'bot_diario_gerenciada', 'bot_diario_sem_cacadas'].forEach(function(k) {
+     'bot_diario_gerenciada', 'bot_diario_sem_cacadas',
+     'bot_atacar_automacoes_prep', 'bot_atacar_automacoes'].forEach(function(k) {
       var v = rp.get(k);
       if (v !== null && v !== '') dest.set(k, v);
     });

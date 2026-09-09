@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.77
-// @description  Automação Caçadas/Atacar + Missão Novo (1h, 3 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
+// @version      3.81
+// @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==UserScript==
@@ -308,9 +308,15 @@
     return cacadasFirebaseFilaFlagAtiva() && cacadaAtualPorNomeFirebase();
   }
 
+  function doujutsuDesejadoPorAutomacaoAtacante() {
+    return atacarAutomacoesAtacanteAtivo() &&
+      (cacadaAtualPorNomeAutomacao() || obterModoAba() === 'cacadas');
+  }
+
   function doujutsuDesejado() {
     if (obterModoAba() !== 'cacadas') return false;
     if (doujutsuDesejadoPorFirebaseFila()) return true;
+    if (doujutsuDesejadoPorAutomacaoAtacante()) return true;
     if (doujutsuFlagManualAtiva()) return true;
     if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada() && dentroJanelaDoujutsuSabado()) {
       return true;
@@ -391,6 +397,82 @@
     return true;
   }
 
+  function gravarAtacarAutomacoesPrepParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem('BOT_ATACAR_AUTOMACOES_PREP'); } catch (e) {}
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_ATACAR_AUTOMACOES_PREP', '1');
+      return true;
+    }
+    return false;
+  }
+
+  function atacarAutomacoesPrepAtivo() {
+    try { return localStorage.getItem('BOT_ATACAR_AUTOMACOES_PREP') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function gravarAtacarAutomacoesParam(valor) {
+    if (valor === null || valor === undefined) return false;
+    var s = String(valor).trim().toLowerCase();
+    if (s === '0' || s === 'false' || s === 'off' || s === 'nao' || s === 'não' || s === 'no') {
+      try { localStorage.removeItem('BOT_ATACAR_AUTOMACOES'); } catch (e) {}
+      if (doujutsuLigadoPorAutomAtacante()) {
+        gravarDoujutsuParam('0');
+        marcarDoujutsuLigadoPorAutomAtacante(false);
+      }
+      return true;
+    }
+    if (s === '1' || s === 'true' || s === 'on' || s === 'sim' || s === 'yes') {
+      localStorage.setItem('BOT_ATACAR_AUTOMACOES', '1');
+      if (!doujutsuFlagManualAtiva()) {
+        gravarDoujutsuParam('1');
+        marcarDoujutsuLigadoPorAutomAtacante(true);
+      } else {
+        marcarDoujutsuLigadoPorAutomAtacante(false);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function doujutsuLigadoPorAutomAtacante() {
+    try { return localStorage.getItem('BOT_DOUJUTSU_POR_AUTOM_ATACANTE') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarDoujutsuLigadoPorAutomAtacante(ativo) {
+    try {
+      if (ativo) localStorage.setItem('BOT_DOUJUTSU_POR_AUTOM_ATACANTE', '1');
+      else localStorage.removeItem('BOT_DOUJUTSU_POR_AUTOM_ATACANTE');
+    } catch (e) {}
+  }
+
+  function atacarAutomacoesAtacanteAtivo() {
+    try { return localStorage.getItem('BOT_ATACAR_AUTOMACOES') === '1'; } catch (e) {}
+    return false;
+  }
+
+  function descreverAtacarAutomacoes() {
+    if (atacarAutomacoesPrepAtivo()) return 'prep ligado (Chrome — rotacao gerenciadas)';
+    if (atacarAutomacoesAtacanteAtivo()) {
+      return 'atacante ligado (Shizuo — doujutsu + Firebase automacao_fila)';
+    }
+    return 'desligado';
+  }
+
+  function cacadasBloqueadaPorAutomPrep() {
+    return atacarAutomacoesPrepAtivo() && !automPrepCicloSequenciaConcluido();
+  }
+
+  function cacadasBloqueadaPorModoAutomacao() {
+    return cacadasBloqueadaPorAutomPrep() || atacarAutomacoesAtacanteAtivo();
+  }
+
   function cacadasFirebaseFilaFlagAtiva() {
     try { return localStorage.getItem('BOT_CACADAS_FIREBASE_FILA') === '1'; } catch (e) {}
     return false;
@@ -432,8 +514,12 @@
     var autoSab = doujutsuAutoSabadoFlagAtiva() ? 'ligado' : 'desligado';
     var efetivo = doujutsuDesejado() ? 'sim' : 'nao';
     var extra = '';
-    if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada()) {
+    if (atacarAutomacoesAtacanteAtivo()) {
+      extra = ' (autom atacante — doujutsu automatico)';
+    } else if (doujutsuAutoSabadoFlagAtiva() && estaEmContaGerenciada()) {
       extra = dentroJanelaDoujutsuSabado() ? ' (janela sab 17:50-20h: agora)' : ' (janela sab 17:50-20h: fora)';
+    } else if (cacadasFirebaseFilaFlagAtiva()) {
+      extra = ' (firebase fila c/ alvo por nome)';
     }
     return 'manual: ' + manual + ' | auto sabado gerenciada: ' + autoSab + extra + ' | efetivo: ' + efetivo;
   }
@@ -505,6 +591,10 @@
     if (ct29 !== null && ct29 !== '') gravarCacadasPortaoTeto29Param(ct29);
     if (dg !== null && dg !== '') gravarDiarioGerenciadaParam(dg);
     if (dgs !== null && dgs !== '') gravarDiarioSemCacadasParam(dgs);
+    var aap = rp.get('bot_atacar_automacoes_prep');
+    var aa = rp.get('bot_atacar_automacoes');
+    if (aap !== null && aap !== '') gravarAtacarAutomacoesPrepParam(aap);
+    if (aa !== null && aa !== '') gravarAtacarAutomacoesParam(aa);
     var mn = rp.get('bot_missao_novo');
     if (mn !== null && mn !== '') gravarMissaoNovoParam(mn);
     var mnh = rp.get('bot_missao_novo_horas');
@@ -745,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.77';
-  var SCRIPT_ATUALIZADO = '09/09/2026 11:00';
+  var SCRIPT_VERSAO = '3.81';
+  var SCRIPT_ATUALIZADO = '09/09/2026 15:55';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -809,6 +899,10 @@
       else if (dg === '0') params.set('bot_diario_gerenciada', '0');
       if (dgs === '1') params.set('bot_diario_sem_cacadas', '1');
       else if (dgs === '0') params.set('bot_diario_sem_cacadas', '0');
+      var aap = localStorage.getItem('BOT_ATACAR_AUTOMACOES_PREP');
+      var aa = localStorage.getItem('BOT_ATACAR_AUTOMACOES');
+      if (aap === '1') params.set('bot_atacar_automacoes_prep', '1');
+      if (aa === '1') params.set('bot_atacar_automacoes', '1');
     } catch (err) {}
 
     var qs = params.toString();
@@ -966,6 +1060,54 @@
     return diarioSemCacadasPosRotina();
   };
 
+  window.botAtacarAutomacoesPrep = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Autom Prep] ' + descreverAtacarAutomacoes());
+      return atacarAutomacoesPrepAtivo();
+    }
+    if (ligar) {
+      gravarAtacarAutomacoesParam('0');
+      limparAutomPrepCicloConcluido();
+    }
+    gravarAtacarAutomacoesPrepParam(ligar ? '1' : '0');
+    if (ligar && diarioGerenciadaAtivo()) {
+      console.warn('[Autom Prep] Diario gerenciada tambem ativo — considere botDiarioGerenciada(false).');
+    }
+    if (ligar && !obterModoAba()) {
+      gravarModoAba('cacadas');
+      console.log('[Autom Prep] Modo cacadas ativado — recarregando pagina...');
+      location.reload();
+      return true;
+    }
+    console.log('[Autom Prep] ' + descreverAtacarAutomacoes());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return atacarAutomacoesPrepAtivo();
+  };
+
+  window.botAtacarAutomacoes = function(ligar) {
+    if (arguments.length === 0) {
+      console.log('[Autom Atacante] ' + descreverAtacarAutomacoes());
+      return atacarAutomacoesAtacanteAtivo();
+    }
+    if (ligar) gravarAtacarAutomacoesPrepParam('0');
+    gravarAtacarAutomacoesParam(ligar ? '1' : '0');
+    if (ligar && !obterModoAba()) {
+      gravarModoAba('cacadas');
+      console.log('[Autom Atacante] Modo cacadas ativado — recarregando pagina...');
+      location.reload();
+      return true;
+    }
+    console.log('[Autom Atacante] ' + descreverAtacarAutomacoes());
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+    return atacarAutomacoesAtacanteAtivo();
+  };
+
+  window.botAutomPrepReset = function() {
+    limparTodosProgressosAutomPrep();
+    console.log('[Autom Prep] Estado limpo — recarregue ou va para /automacao para reiniciar.');
+    if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
+  };
+
   if ((function() {
     try {
       var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
@@ -1095,7 +1237,26 @@
   var URL_ANIMAL_MEUS = 'https://shadowofshinobi.com/animal?aba=meus';
   var URL_ANIMAL_LOJA = 'https://shadowofshinobi.com/animal?aba=loja';
   var URL_RELATORIOS_ATAQUE = 'https://shadowofshinobi.com/mensagens?tab=relatorios_ataque';
+  var URL_RELATORIOS_DEFESA = 'https://shadowofshinobi.com/mensagens?tab=relatorios';
+  var URL_QUESTS = 'https://shadowofshinobi.com/quests';
   var URL_MERCADO_ICHIRAKU = 'https://shadowofshinobi.com/mercado?aba=loja&secao=itens';
+  var AUTOMACAO_COORD_FB_PATH = 'automacao_coord';
+  var AUTOMACAO_FILA_FB_PATH = 'automacao_fila';
+  var AUTOM_PREP_PENALIDADE_MS = 30 * 60 * 1000;
+  var AUTOM_PREP_READY_TIMEOUT_MS = 3 * 60 * 1000;
+  var AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS = 60 * 1000;
+  var BOT_AUTOM_PREP_FASE_KEY = 'BOT_AUTOM_PREP_FASE';
+  var BOT_AUTOM_PREP_CONTA_KEY = 'BOT_AUTOM_PREP_CONTA';
+  var BOT_AUTOM_PREP_REL_STEP_KEY = 'BOT_AUTOM_PREP_REL_STEP';
+  var BOT_AUTOM_PREP_ANIMAL_SUB_KEY = 'BOT_AUTOM_PREP_ANIMAL_SUB';
+  var BOT_AUTOM_PREP_ANIMAL_IDX_KEY = 'BOT_AUTOM_PREP_ANIMAL_IDX';
+  var BOT_AUTOM_PREP_ANIMAL_BS_KEY = 'BOT_AUTOM_PREP_ANIMAL_BS';
+  var BOT_HP_CURAR_AUTOM_PREP_KEY = 'BOT_HP_CURAR_AUTOM_PREP';
+  var BOT_AUTOM_COMBATE_KEY = 'BOT_AUTOM_COMBATE';
+  var BOT_AUTOM_PREP_FEITAS_KEY = 'BOT_AUTOM_PREP_FEITAS';
+  var BOT_AUTOM_PREP_PRESENTES_KEY = 'BOT_AUTOM_PREP_PRESENTES';
+  var BOT_AUTOM_PREP_LOGINS_FEITOS_KEY = 'BOT_AUTOM_PREP_LOGINS_FEITOS';
+  var BOT_AUTOM_PREP_CICLO_CONCLUIDO_KEY = 'BOT_AUTOM_PREP_CICLO_CONCLUIDO';
   var BOT_DIARIO_FASE_KEY = 'BOT_DIARIO_FASE';
   var BOT_DIARIO_ANIMAL_SUB_KEY = 'BOT_DIARIO_ANIMAL_SUB';
   var BOT_DIARIO_ANIMAL_IDX_KEY = 'BOT_DIARIO_ANIMAL_IDX';
@@ -1268,6 +1429,7 @@
 
   function precisaAssumirAutomacaoPosPrincipal() {
     if (diarioGerenciadaAtivo() && diarioCicloSequenciaConcluido()) return false;
+    if (atacarAutomacoesPrepAtivo() && !automPrepCicloSequenciaConcluido()) return true;
     return rotacaoAutomacaoAtiva() || precisaRetomarGerenciada() || diarioGerenciadaAtivo();
   }
 
@@ -1817,6 +1979,10 @@
   }
 
   function processarPaginaAutomacao() {
+    if (atacarAutomacoesPrepAtivo()) {
+      return processarAutomPrepPaginaAutomacao();
+    }
+
     var cicloPendente = automacaoTemCicloPendente();
     var retomar = precisaRetomarGerenciada();
     var diarioAssumir = diarioAssumirPermitido();
@@ -2708,6 +2874,1071 @@
       return processarDiarioAnimalMeus();
     }
     return processarDiarioAnimalLoja();
+  }
+
+  // --- Atacar Automações (prep Chrome + atacante Shizuo via Firebase) ---
+  function automPrepProgLocalKey(suffix) {
+    return 'BOT_AUTOM_PREP_' + normalizarLoginDiarioSequencia(obterUsuarioLogin()) + '_' + suffix;
+  }
+
+  function automPrepCicloSequenciaConcluido() {
+    try { return sessionStorage.getItem(BOT_AUTOM_PREP_CICLO_CONCLUIDO_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarAutomPrepCicloConcluido() {
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_CICLO_CONCLUIDO_KEY, '1'); } catch (e) {}
+  }
+
+  function limparAutomPrepCicloConcluido() {
+    try { sessionStorage.removeItem(BOT_AUTOM_PREP_CICLO_CONCLUIDO_KEY); } catch (e) {}
+  }
+
+  function limparProgressoAutomPrepLogin(login) {
+    var chave = 'BOT_AUTOM_PREP_' + normalizarLoginDiarioSequencia(login || obterUsuarioLogin()) + '_';
+    try {
+      localStorage.removeItem(chave + 'FEITAS');
+      localStorage.removeItem(chave + 'PRESENTES');
+    } catch (e) {}
+  }
+
+  function limparTodosProgressosAutomPrep() {
+    for (var i = 0; i < DIARIO_LOGINS_SEQUENCIA.length; i++) {
+      limparProgressoAutomPrepLogin(DIARIO_LOGINS_SEQUENCIA[i]);
+    }
+    try {
+      localStorage.removeItem(BOT_AUTOM_PREP_LOGINS_FEITOS_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_FEITAS_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_PRESENTES_KEY);
+    } catch (e) {}
+    limparEstadoAutomPrep();
+    limparAutomPrepCicloConcluido();
+  }
+
+  function lerAutomPrepFeitas() {
+    try {
+      var raw = sessionStorage.getItem(BOT_AUTOM_PREP_FEITAS_KEY) ||
+        localStorage.getItem(automPrepProgLocalKey('FEITAS'));
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return [];
+  }
+
+  function salvarAutomPrepFeitas(feitas) {
+    try {
+      sessionStorage.setItem(BOT_AUTOM_PREP_FEITAS_KEY, JSON.stringify(feitas || []));
+      localStorage.setItem(automPrepProgLocalKey('FEITAS'), JSON.stringify(feitas || []));
+    } catch (e) {}
+  }
+
+  function marcarAutomPrepGerenciadaFeita(nome) {
+    var norm = normalizarNomeCacadas(nome);
+    if (!norm) return;
+    var feitas = lerAutomPrepFeitas();
+    if (feitas.indexOf(norm) === -1) feitas.push(norm);
+    salvarAutomPrepFeitas(feitas);
+  }
+
+  function salvarAutomPrepPresentes(contas) {
+    var lista = (contas || []).map(function(c) {
+      return normalizarNomeCacadas(c.nome);
+    }).filter(Boolean);
+    try {
+      sessionStorage.setItem(BOT_AUTOM_PREP_PRESENTES_KEY, JSON.stringify(lista));
+      localStorage.setItem(automPrepProgLocalKey('PRESENTES'), JSON.stringify(lista));
+    } catch (e) {}
+  }
+
+  function lerAutomPrepPresentesNorm() {
+    try {
+      var raw = sessionStorage.getItem(BOT_AUTOM_PREP_PRESENTES_KEY) ||
+        localStorage.getItem(automPrepProgLocalKey('PRESENTES'));
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return [];
+  }
+
+  function marcarLoginAutomPrepFeito(login) {
+    var norm = normalizarLoginDiarioSequencia(login || obterUsuarioLogin());
+    try {
+      var raw = localStorage.getItem(BOT_AUTOM_PREP_LOGINS_FEITOS_KEY);
+      var feitos = raw ? JSON.parse(raw) : [];
+      if (feitos.indexOf(norm) === -1) feitos.push(norm);
+      localStorage.setItem(BOT_AUTOM_PREP_LOGINS_FEITOS_KEY, JSON.stringify(feitos));
+    } catch (e) {}
+  }
+
+  function obterFaseAutomPrep() {
+    try { return sessionStorage.getItem(BOT_AUTOM_PREP_FASE_KEY) || ''; } catch (e) {}
+    return '';
+  }
+
+  function definirFaseAutomPrep(fase) {
+    try {
+      if (fase) sessionStorage.setItem(BOT_AUTOM_PREP_FASE_KEY, fase);
+      else sessionStorage.removeItem(BOT_AUTOM_PREP_FASE_KEY);
+    } catch (e) {}
+  }
+
+  function limparEstadoAutomPrep() {
+    try {
+      sessionStorage.removeItem(BOT_AUTOM_PREP_FASE_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_CONTA_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_REL_STEP_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_SUB_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_IDX_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_BS_KEY);
+      sessionStorage.removeItem(BOT_HP_CURAR_AUTOM_PREP_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_COMBATE_KEY);
+    } catch (e) {}
+  }
+
+  function salvarContextoAutomPrep(ctx) {
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_CONTA_KEY, JSON.stringify(ctx || {})); } catch (e) {}
+  }
+
+  function lerContextoAutomPrep() {
+    try {
+      var raw = sessionStorage.getItem(BOT_AUTOM_PREP_CONTA_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  }
+
+  function atualizarContextoAutomPrep(partial) {
+    var ctx = lerContextoAutomPrep() || {};
+    for (var k in partial) {
+      if (Object.prototype.hasOwnProperty.call(partial, k)) ctx[k] = partial[k];
+    }
+    salvarContextoAutomPrep(ctx);
+    return ctx;
+  }
+
+  function chaveFirebaseAutomacaoFila(nome) {
+    return normalizarChaveFirebaseRankingFila(nome);
+  }
+
+  function urlFirebaseAutomacao(path) {
+    return FIREBASE_CONFIG.databaseURL + '/' + path + '.json';
+  }
+
+  function fetchFirebaseJson(url, opts) {
+    return fetch(url, opts || { cache: 'no-store' }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function patchFirebaseJson(path, dados, callback) {
+    fetch(urlFirebaseAutomacao(path), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dados || {})
+    }).then(function(r) {
+      if (callback) callback(r.ok);
+    }).catch(function(err) {
+      console.warn('[Autom Prep] Firebase PATCH falhou (' + path + '):', err);
+      if (callback) callback(false);
+    });
+  }
+
+  function lerAutomacaoCoord(callback) {
+    fetchFirebaseJson(urlFirebaseAutomacao(AUTOMACAO_COORD_FB_PATH))
+      .then(function(data) { callback(data && typeof data === 'object' ? data : {}); })
+      .catch(function(err) {
+        console.warn('[Autom Prep] Falha ao ler automacao_coord:', err);
+        callback({});
+      });
+  }
+
+  function gravarAutomacaoCoord(partial, callback) {
+    patchFirebaseJson(AUTOMACAO_COORD_FB_PATH, partial, callback);
+  }
+
+  function gravarAutomacaoFilaItem(nome, partial, callback) {
+    var chave = chaveFirebaseAutomacaoFila(nome);
+    if (!chave) {
+      if (callback) callback(false);
+      return;
+    }
+    patchFirebaseJson(AUTOMACAO_FILA_FB_PATH + '/' + chave, partial, callback);
+  }
+
+  function listarAutomacaoFila(callback) {
+    fetchFirebaseJson(urlFirebaseAutomacao(AUTOMACAO_FILA_FB_PATH))
+      .then(function(data) {
+        var lista = [];
+        if (data && typeof data === 'object') {
+          for (var k in data) {
+            if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+            var item = data[k];
+            if (!item || !item.nome) continue;
+            item._fbKey = k;
+            lista.push(item);
+          }
+        }
+        lista.sort(function(a, b) {
+          var oa = parseInt(a.ordem, 10);
+          var ob = parseInt(b.ordem, 10);
+          if (!isNaN(oa) && !isNaN(ob) && oa !== ob) return oa - ob;
+          return String(a.nome || '').localeCompare(String(b.nome || ''));
+        });
+        callback(lista);
+      })
+      .catch(function(err) {
+        console.warn('[Autom Prep] Falha ao ler automacao_fila:', err);
+        callback([]);
+      });
+  }
+
+  function dataHojeBrAutom() {
+    try {
+      return new Date().toLocaleDateString('pt-BR');
+    } catch (e) {
+      return String(new Date().getDate()).padStart(2, '0') + '/' +
+        String(new Date().getMonth() + 1).padStart(2, '0') + '/' +
+        new Date().getFullYear();
+    }
+  }
+
+  function shizuoAtacouGerenciadaHojeCoord(coord, nome) {
+    if (!coord || !nome) return false;
+    if (coord.shizuo_atacados_data && coord.shizuo_atacados_data !== dataHojeBrAutom()) return false;
+    var lista = coord.shizuo_atacados_hoje;
+    if (!lista || !lista.length) return false;
+    var norm = normalizarNomeCacadas(nome);
+    for (var i = 0; i < lista.length; i++) {
+      if (normalizarNomeCacadas(lista[i]) === norm) return true;
+    }
+    return false;
+  }
+
+  function registrarShizuoAtacouHoje(nome, callback) {
+    var norm = normalizarNomeCacadas(nome);
+    lerAutomacaoCoord(function(coord) {
+      var hoje = dataHojeBrAutom();
+      var lista = [];
+      if (coord.shizuo_atacados_data === hoje && coord.shizuo_atacados_hoje) {
+        lista = coord.shizuo_atacados_hoje.slice();
+      }
+      if (norm && lista.indexOf(norm) === -1) lista.push(norm);
+      gravarAutomacaoCoord({
+        shizuo_atacados_hoje: lista,
+        shizuo_atacados_data: hoje,
+        shizuo_cooldown_until: Date.now() + COOLDOWN_PENALIDADE_CACADAS_MS,
+        shizuo_atacar: null
+      }, callback);
+    });
+  }
+
+  function obterTabelaRelatoriosGenerica(mapaColunas) {
+    var col = document.getElementById('col_direita') || document;
+    var linhas = col.querySelectorAll('tr');
+    for (var i = 0; i < linhas.length; i++) {
+      var celulas = linhas[i].cells;
+      if (!celulas || celulas.length < 3) continue;
+      var idx = {};
+      for (var c = 0; c < celulas.length; c++) {
+        var t = normalizarTextoCombate(textoCelulaRelatorio(celulas[c]));
+        for (var chave in mapaColunas) {
+          if (!Object.prototype.hasOwnProperty.call(mapaColunas, chave)) continue;
+          var aliases = mapaColunas[chave];
+          for (var a = 0; a < aliases.length; a++) {
+            if (t === aliases[a]) idx[chave] = c;
+          }
+        }
+      }
+      if (idx.data === undefined) continue;
+      var tabela = linhas[i].closest ? linhas[i].closest('table') : linhas[i].parentNode;
+      if (tabela && tabela.tagName && tabela.tagName.toLowerCase() !== 'table') {
+        tabela = tabela.parentNode;
+      }
+      if (!tabela || !tabela.rows) continue;
+      return { tabela: tabela, idx: idx };
+    }
+    return null;
+  }
+
+  function coletarRelatoriosGenericos(infoTabela, mapaCampos) {
+    if (!infoTabela || !infoTabela.tabela) return [];
+    var lista = [];
+    var rows = infoTabela.tabela.rows;
+    for (var r = 0; r < rows.length; r++) {
+      var celulas = rows[r].cells;
+      if (!celulas || celulas.length <= infoTabela.idx.data) continue;
+      var dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(celulas[infoTabela.idx.data]));
+      if (!dataTexto) dataTexto = matchTextoDataHoraRelatorio(textoCelulaRelatorio(rows[r]));
+      if (!dataTexto) continue;
+      var item = {
+        ts: parseDataHoraRelatorioAtaque(dataTexto),
+        dataTexto: dataTexto,
+        resumo: textoCelulaRelatorio(rows[r])
+      };
+      for (var campo in mapaCampos) {
+        if (!Object.prototype.hasOwnProperty.call(mapaCampos, campo)) continue;
+        var idxCol = infoTabela.idx[mapaCampos[campo]];
+        item[campo] = idxCol !== undefined ? extrairNomeJogadorDeCelula(celulas[idxCol]) : null;
+      }
+      lista.push(item);
+    }
+    return lista;
+  }
+
+  function coletarRelatoriosDefesa() {
+    var info = obterTabelaRelatoriosGenerica({
+      data: ['data'],
+      atacante: ['atacante'],
+      atacado: ['atacado', 'defensor'],
+      vencedor: ['vencedor', 'vitoria', 'vitorias']
+    });
+    return coletarRelatoriosGenericos(info, {
+      atacante: 'atacante',
+      atacado: 'atacado',
+      vencedor: 'vencedor'
+    });
+  }
+
+  function relatorioRecenteMs(lista, limiteMs) {
+    var agora = Date.now();
+    for (var i = 0; i < lista.length; i++) {
+      var ts = lista[i].ts;
+      if (ts === null || ts === undefined || isNaN(ts)) continue;
+      if (agora - ts <= limiteMs) return lista[i];
+    }
+    return null;
+  }
+
+  function montarMensagemAutomPrepSkip(nome, loginDono, motivo) {
+    return '[Automacao Prep] Pulando **' + (nome || '?') + '** (' + (loginDono || '?') +
+      ') — ' + motivo;
+  }
+
+  function montarMensagemAutomAtacanteSucesso(nome, loginDono, dados) {
+    var ryous = dados && dados.ryousTexto ? dados.ryousTexto : '?';
+    return '[Automacao Atacante] Shizuo atacou **' + (nome || '?') + '** (' +
+      (loginDono || '?') + ') — vitoria | +' + ryous + ' ryous';
+  }
+
+  function montarMensagemAutomPrepTimeout(nome, loginDono) {
+    return '[Automacao Prep] Timeout 3min — Shizuo nao atacou **' + (nome || '?') + '** (' +
+      (loginDono || '?') + '). Comprando pet com reserva atual e indo para proxima automacao.';
+  }
+
+  function automPrepPularGerenciada(ctx, motivo, skipMotivo) {
+    console.warn('[Autom Prep] Pulando ' + (ctx.nome || '?') + ' — ' + motivo);
+    enviarDiscordTexto(montarMensagemAutomPrepSkip(ctx.nome, ctx.login_dono, motivo));
+    gravarAutomacaoFilaItem(ctx.nome, {
+      nome: ctx.nome,
+      login_dono: ctx.login_dono,
+      ordem: ctx.ordem,
+      status: 'skip',
+      skip_motivo: skipMotivo || motivo
+    });
+    marcarAutomPrepGerenciadaFeita(ctx.nome);
+    limparEstadoAutomPrep();
+    marcarRotacaoCicloPendente();
+    window.location.href = URL_AUTOMACAO;
+    return true;
+  }
+
+  function curarHpParaAutomPrep() {
+    try { return sessionStorage.getItem(BOT_HP_CURAR_AUTOM_PREP_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function marcarCurarHpAutomPrep() {
+    try { sessionStorage.setItem(BOT_HP_CURAR_AUTOM_PREP_KEY, '1'); } catch (e) {}
+  }
+
+  function garantirHpParaAutomPrep(contexto) {
+    if (!atacarAutomacoesPrepAtivo() || !estaEmContaGerenciada()) return true;
+    var hp = obterStatusHp();
+    if (curarHpAtivo()) {
+      if (!curarHpParaAutomPrep()) marcarCurarHpAutomPrep();
+      return false;
+    }
+    if (hp.ok && hpAtendeMinimoRaid(hp)) return true;
+    console.log('[Autom Prep] HP baixo (<= ' + HP_MINIMO_RAID + ') — curando (' + contexto + ')');
+    marcarCurarHpAutomPrep();
+    redirecionarParaCurarHp('autom prep (' + contexto + ')');
+    return false;
+  }
+
+  function garantirHpParaAutomAtacante(contexto) {
+    if (!atacarAutomacoesAtacanteAtivo()) return true;
+    var hp = obterStatusHp();
+    if (curarHpAtivo()) return false;
+    if (hp.ok && hp.current > HP_MINIMO_RAID) return true;
+    console.log('[Autom Atacante] HP <= ' + HP_MINIMO_RAID + ' — curando (' + contexto + ')');
+    redirecionarParaCurarHp('autom atacante (' + contexto + ')');
+    return false;
+  }
+
+  function urlPosCurarHpAutom() {
+    if (curarHpParaAutomPrep()) return URL_AUTOMACAO;
+    if (atacarAutomacoesAtacanteAtivo()) return URL_RELATORIOS_ATAQUE;
+    return URL_RELATORIOS_ATAQUE;
+  }
+
+  function iniciarAutomPrepPosAssume(nome, contaId) {
+    var login = obterUsuarioLogin();
+    var ctx = {
+      nome: nome,
+      contaId: contaId || '',
+      login_dono: login,
+      ordem: Date.now()
+    };
+    salvarContextoAutomPrep(ctx);
+    definirFaseAutomPrep('validar');
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_REL_STEP_KEY, 'ataque'); } catch (e) {}
+    console.log('[Autom Prep] Iniciando prep em ' + nome + ' (login ' + login + ')...');
+    window.location.href = URL_RELATORIOS_ATAQUE;
+  }
+
+  function retomarAutomPrepPosAssume() {
+    var ctx = lerContextoAutomPrep();
+    var fase = obterFaseAutomPrep();
+    if (!ctx || !ctx.nome) {
+      iniciarAutomPrepPosAssume(extrairNomeUsuarioLogado(), '');
+      return true;
+    }
+    if (!fase) {
+      definirFaseAutomPrep('validar');
+      try { sessionStorage.setItem(BOT_AUTOM_PREP_REL_STEP_KEY, 'ataque'); } catch (e) {}
+    }
+    console.log('[Autom Prep] Retomando prep em ' + ctx.nome + ' — fase ' + (fase || 'validar'));
+    if (fase === 'quests') {
+      window.location.href = URL_QUESTS;
+      return true;
+    }
+    if (fase === 'hp') {
+      window.location.href = 'https://shadowofshinobi.com/status';
+      return true;
+    }
+    if (fase === 'vender_inicial' || fase === 'waiting_sell' || fase === 'vender_sync' ||
+        fase === 'comprar_pos_ataque') {
+      window.location.href = URL_ANIMAL_MEUS;
+      return true;
+    }
+    if (fase === 'validar') {
+      var step = '';
+      try { step = sessionStorage.getItem(BOT_AUTOM_PREP_REL_STEP_KEY) || 'ataque'; } catch (e) {}
+      window.location.href = step === 'defesa' ? URL_RELATORIOS_DEFESA : URL_RELATORIOS_ATAQUE;
+      return true;
+    }
+    window.location.href = URL_RELATORIOS_ATAQUE;
+    return true;
+  }
+
+  function automPrepValidacaoInicialContinuar(ctx) {
+    definirFaseAutomPrep('quests');
+    window.location.href = URL_QUESTS;
+    return true;
+  }
+
+  function processarAutomPrepRelatoriosValidacao() {
+    if (!atacarAutomacoesPrepAtivo() || obterFaseAutomPrep() !== 'validar') return false;
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || !ctx.nome) return false;
+
+    var step = 'ataque';
+    try { step = sessionStorage.getItem(BOT_AUTOM_PREP_REL_STEP_KEY) || 'ataque'; } catch (e) {}
+
+    if (step === 'ataque') {
+      lerAutomacaoCoord(function(coord) {
+        if (shizuoAtacouGerenciadaHojeCoord(coord, ctx.nome)) {
+          automPrepPularGerenciada(ctx, 'Shizuo ja atacou hoje', 'shizuo_ja_atacou_hoje');
+          return;
+        }
+        var ataques = coletarRelatoriosAtaque();
+        if (relatorioRecenteMs(ataques, AUTOM_PREP_PENALIDADE_MS)) {
+          automPrepPularGerenciada(ctx, 'penalidade 30min (ataque feito)', 'penalidade_30m_ataque');
+          return;
+        }
+        try { sessionStorage.setItem(BOT_AUTOM_PREP_REL_STEP_KEY, 'defesa'); } catch (e) {}
+        window.location.href = URL_RELATORIOS_DEFESA;
+      });
+      return true;
+    }
+
+    var defesas = coletarRelatoriosDefesa();
+    if (relatorioRecenteMs(defesas, AUTOM_PREP_PENALIDADE_MS)) {
+      automPrepPularGerenciada(ctx, 'penalidade 30min (sofreu ataque)', 'penalidade_30m_defesa');
+      return true;
+    }
+    try { sessionStorage.removeItem(BOT_AUTOM_PREP_REL_STEP_KEY); } catch (e) {}
+    return automPrepValidacaoInicialContinuar(ctx);
+  }
+
+  function processarAutomPrepQuests() {
+    if (!atacarAutomacoesPrepAtivo() || obterFaseAutomPrep() !== 'quests') return false;
+    var btn = document.querySelector('form[action*="quests"] input[name="acao"][value="coletar_todas"]');
+    if (btn) {
+      var form = btn.closest('form');
+      var submitBtn = form ? form.querySelector('button[type="submit"], input[type="submit"]') : null;
+      if (submitBtn) {
+        console.log('[Autom Prep] Coletando todas as quests...');
+        submitBtn.click();
+        return true;
+      }
+    }
+    console.log('[Autom Prep] Sem quests para coletar — seguindo para HP.');
+    definirFaseAutomPrep('hp');
+    window.location.href = 'https://shadowofshinobi.com/status';
+    return true;
+  }
+
+  function processarAutomPrepPosQuests() {
+    if (!atacarAutomacoesPrepAtivo()) return false;
+    if (obterFaseAutomPrep() !== 'quests') return false;
+    if (!garantirHpParaAutomPrep('pos-quests')) return true;
+    lerAutomacaoCoord(function(coord) {
+      var emCooldown = coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
+      definirFaseAutomPrep(emCooldown ? 'prep_ate_venda' : 'vender_inicial');
+      window.location.href = URL_ANIMAL_MEUS;
+    });
+    return true;
+  }
+
+  function automPrepPublicarReady(ctx) {
+    var ts = Date.now();
+    gravarAutomacaoFilaItem(ctx.nome, {
+      nome: ctx.nome,
+      login_dono: ctx.login_dono,
+      ordem: ctx.ordem,
+      status: 'ready',
+      ready_ts: ts
+    });
+    gravarAutomacaoCoord({
+      shizuo_atacar: ctx.nome,
+      ordem_login_atual: ctx.login_dono
+    });
+    console.log('[Autom Prep] Ready publicado — Shizuo pode atacar ' + ctx.nome);
+  }
+
+  function automPrepIrProximaGerenciadaAposReady(ctx) {
+    definirFaseAutomPrep('');
+    limparEstadoAutomPrepAnimal();
+    marcarRotacaoCicloPendente();
+    setTimeout(function() {
+      window.location.href = URL_AUTOMACAO;
+    }, 1200);
+  }
+
+  function automPrepVerificarReadyTimeout(callback) {
+    listarAutomacaoFila(function(lista) {
+      var agora = Date.now();
+      var expirado = null;
+      for (var i = 0; i < lista.length; i++) {
+        var item = lista[i];
+        if (item.status !== 'ready' || !item.ready_ts) continue;
+        if (agora - item.ready_ts > AUTOM_PREP_READY_TIMEOUT_MS) {
+          expirado = item;
+          break;
+        }
+      }
+      callback(expirado);
+    });
+  }
+
+  function automPrepExecutarFallbackTimeout(item) {
+    console.warn('[Autom Prep] Timeout 3min pos-venda — ' + item.nome);
+    enviarDiscordTexto(montarMensagemAutomPrepTimeout(item.nome, item.login_dono));
+    gravarAutomacaoFilaItem(item.nome, {
+      status: 'timeout_bought',
+      ready_ts: null
+    });
+    gravarAutomacaoCoord({ shizuo_atacar: null });
+    salvarContextoAutomPrep({
+      nome: item.nome,
+      login_dono: item.login_dono,
+      ordem: item.ordem
+    });
+    definirFaseAutomPrep('comprar_timeout');
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_ANIMAL_SUB_KEY, 'loja'); } catch (e) {}
+    window.location.href = URL_ANIMAL_LOJA;
+    return true;
+  }
+
+  function limparEstadoAutomPrepAnimal() {
+    try {
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_SUB_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_IDX_KEY);
+      sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_BS_KEY);
+    } catch (e) {}
+  }
+
+  function obterSubAutomPrepAnimal() {
+    try { return sessionStorage.getItem(BOT_AUTOM_PREP_ANIMAL_SUB_KEY) || 'meus'; } catch (e) {}
+    return 'meus';
+  }
+
+  function definirSubAutomPrepAnimal(sub) {
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_ANIMAL_SUB_KEY, sub); } catch (e) {}
+  }
+
+  function irParaAnimalLojaIdxAutomPrep(idx) {
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_ANIMAL_IDX_KEY, String(idx)); } catch (e) {}
+    window.location.href = URL_ANIMAL_LOJA + '&idx=' + idx;
+  }
+
+  function obterBuscaAnimalLojaAutomPrep() {
+    try {
+      var raw = sessionStorage.getItem(BOT_AUTOM_PREP_ANIMAL_BS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  }
+
+  function salvarBuscaAnimalLojaAutomPrep(bs) {
+    try { sessionStorage.setItem(BOT_AUTOM_PREP_ANIMAL_BS_KEY, JSON.stringify(bs)); } catch (e) {}
+  }
+
+  function limparBuscaAnimalLojaAutomPrep() {
+    try { sessionStorage.removeItem(BOT_AUTOM_PREP_ANIMAL_BS_KEY); } catch (e) {}
+  }
+
+  function comprarAnimalLojaAutomPrep(dados, meuNivel, meusRyous) {
+    console.log('[Autom Prep] Comprando animal valor=' + formatarNumeroBr(dados.valor) + '...');
+    limparBuscaAnimalLojaAutomPrep();
+    definirSubAutomPrepAnimal('comprando');
+    var btnC = dados.formComprar.querySelector('input[type="submit"], input[name="btn_comprar"]');
+    if (btnC) btnC.click();
+    else dados.formComprar.submit();
+    return true;
+  }
+
+  function processarAutomPrepAnimalLoja() {
+    var meuNivel = extrairNivelJogadorSidebar();
+    var meusRyous = extrairRyousJogadorSidebar();
+    var idxAtual = obterIdxAnimalLojaUrl();
+    var dados = extrairDadosAnimalLojaPagina();
+
+    if (dados && dados.jaPossuiAnimal) {
+      limparBuscaAnimalLojaAutomPrep();
+      definirSubAutomPrepAnimal('meus');
+      window.location.href = URL_ANIMAL_MEUS;
+      return true;
+    }
+
+    var bs = obterBuscaAnimalLojaAutomPrep();
+    if (bs && bs.fase === 'comprar') {
+      if (animalLojaCompravel(dados, meuNivel, meusRyous)) {
+        return comprarAnimalLojaAutomPrep(dados, meuNivel, meusRyous);
+      }
+      limparBuscaAnimalLojaAutomPrep();
+      bs = null;
+    }
+
+    if (!bs) {
+      var maxIdx = extrairUltimoIdxAnimalLoja();
+      if (maxIdx < 0) maxIdx = 0;
+      bs = { low: 0, high: maxIdx, best: -1, fase: 'busca' };
+      salvarBuscaAnimalLojaAutomPrep(bs);
+      irParaAnimalLojaIdxAutomPrep(Math.floor((bs.low + bs.high) / 2));
+      return true;
+    }
+
+    var compravel = animalLojaCompravel(dados, meuNivel, meusRyous);
+    if (compravel) {
+      bs.best = idxAtual;
+      bs.low = idxAtual + 1;
+    } else {
+      bs.high = idxAtual - 1;
+    }
+
+    if (bs.low <= bs.high) {
+      salvarBuscaAnimalLojaAutomPrep(bs);
+      irParaAnimalLojaIdxAutomPrep(Math.floor((bs.low + bs.high) / 2));
+      return true;
+    }
+
+    if (bs.best >= 0) {
+      bs.fase = 'comprar';
+      salvarBuscaAnimalLojaAutomPrep(bs);
+      if (idxAtual === bs.best && compravel) {
+        return comprarAnimalLojaAutomPrep(dados, meuNivel, meusRyous);
+      }
+      irParaAnimalLojaIdxAutomPrep(bs.best);
+      return true;
+    }
+
+    limparBuscaAnimalLojaAutomPrep();
+    console.warn('[Autom Prep] Nenhum animal compravel — seguindo fluxo.');
+    return processarAutomPrepPosCompraAnimal();
+  }
+
+  function processarAutomPrepPosCompraAnimal() {
+    var ctx = lerContextoAutomPrep();
+    var fase = obterFaseAutomPrep();
+    if (!ctx || !ctx.nome) return false;
+
+    if (fase === 'comprar_pos_ataque') {
+      gravarAutomacaoFilaItem(ctx.nome, { status: 'waiting_sell' });
+      definirFaseAutomPrep('waiting_sell');
+      definirSubAutomPrepAnimal('meus');
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+
+    if (fase === 'comprar_timeout') {
+      marcarAutomPrepGerenciadaFeita(ctx.nome);
+      limparEstadoAutomPrep();
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+
+    return false;
+  }
+
+  function processarAutomPrepAnimalMeus() {
+    var ctx = lerContextoAutomPrep();
+    var fase = obterFaseAutomPrep();
+    if (!ctx) return false;
+
+    if (fase === 'prep_ate_venda') {
+      gravarAutomacaoFilaItem(ctx.nome, { status: 'waiting_sell' });
+      definirFaseAutomPrep('waiting_sell');
+      console.log('[Autom Prep] Prep ate venda — parado em /animal/meus (' + ctx.nome + ')');
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+
+    if (fase === 'waiting_sell') {
+      console.log('[Autom Prep] Em /animal/meus aguardando cooldown Shizuo para vender ' + ctx.nome + '...');
+      lerAutomacaoCoord(function(coord) {
+        var cooldown = coord.shizuo_cooldown_until || 0;
+        var falta = cooldown - Date.now();
+        if (falta > AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS) {
+          setTimeout(function() {
+            window.location.reload();
+          }, Math.min(falta - AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS, 60000));
+          return;
+        }
+        definirFaseAutomPrep('vender_sync');
+        processarAutomPrepAnimalMeus();
+      });
+      return true;
+    }
+
+    if (fase === 'vender_sync' || fase === 'vender_inicial') {
+      var formVender = formVenderAnimalMeus();
+      if (formVender) {
+        instalarConfirmAutoOkMissao();
+        console.log('[Autom Prep] Vendendo animal (' + fase + ') — ' + ctx.nome + '...');
+        var btn = formVender.querySelector('input[type="submit"]');
+        if (btn) btn.click();
+        else formVender.submit();
+        return true;
+      }
+      if (fase === 'vender_inicial') {
+        automPrepPublicarReady(ctx);
+        automPrepIrProximaGerenciadaAposReady(ctx);
+        return true;
+      }
+      if (fase === 'vender_sync') {
+        return processarAutomPrepPosVendaSync();
+      }
+      console.warn('[Autom Prep] Sem animal para vender em waiting_sell — voltando automacao.');
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+
+    return false;
+  }
+
+  function processarAutomPrepPosVendaInicial() {
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || obterFaseAutomPrep() !== 'vender_inicial') return false;
+    automPrepPublicarReady(ctx);
+    automPrepIrProximaGerenciadaAposReady(ctx);
+    return true;
+  }
+
+  function processarAutomPrepPosVendaSync() {
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || obterFaseAutomPrep() !== 'vender_sync') return false;
+    automPrepPublicarReady(ctx);
+    definirFaseAutomPrep('');
+    limparEstadoAutomPrep();
+    marcarRotacaoCicloPendente();
+    window.location.href = URL_AUTOMACAO;
+    return true;
+  }
+
+  function processarAutomPrepAnimal() {
+    if (!atacarAutomacoesPrepAtivo() || !estaEmContaGerenciada()) return false;
+    var fase = obterFaseAutomPrep();
+    if (fase !== 'vender_inicial' && fase !== 'prep_ate_venda' && fase !== 'waiting_sell' &&
+        fase !== 'vender_sync' && fase !== 'comprar_pos_ataque' && fase !== 'comprar_timeout') {
+      return false;
+    }
+
+    var sub = obterSubAutomPrepAnimal();
+    var url = window.location.href;
+
+    if (sub === 'comprando') {
+      if (formVenderAnimalMeus()) {
+        return processarAutomPrepPosCompraAnimal();
+      }
+      if (url.indexOf('aba=loja') !== -1) {
+        definirSubAutomPrepAnimal('loja');
+        return processarAutomPrepAnimalLoja();
+      }
+      return true;
+    }
+
+    if (sub === 'loja' || url.indexOf('aba=loja') !== -1) {
+      return processarAutomPrepAnimalLoja();
+    }
+
+    return processarAutomPrepAnimalMeus();
+  }
+
+  function automPrepEscolherProximaConta(contas) {
+    if (!contas.length) return null;
+    salvarAutomPrepPresentes(contas);
+    var feitas = lerAutomPrepFeitas();
+    for (var i = 0; i < contas.length; i++) {
+      var norm = normalizarNomeCacadas(contas[i].nome);
+      if (feitas.indexOf(norm) === -1) return contas[i];
+    }
+    return null;
+  }
+
+  function automPrepTodasGerenciadasFeitas() {
+    var presentes = lerAutomPrepPresentesNorm();
+    var feitas = lerAutomPrepFeitas();
+    if (!presentes.length) return false;
+    for (var i = 0; i < presentes.length; i++) {
+      if (feitas.indexOf(presentes[i]) === -1) return false;
+    }
+    return true;
+  }
+
+  function automPrepConcluirLoginAtual() {
+    marcarLoginAutomPrepFeito(obterUsuarioLogin());
+    salvarAutomPrepFeitas([]);
+    limparEstadoAutomPrep();
+    var proximo = obterProximoLoginDiarioSequencia(obterUsuarioLogin());
+    if (!proximo) {
+      marcarAutomPrepCicloConcluido();
+      console.log('[Autom Prep] Ciclo completo — Shiroe -> Shizuo -> Sora concluido.');
+      return;
+    }
+    console.log('[Autom Prep] Login concluido — proximo: ' + proximo);
+    irParaLoginDiarioMesmaAba(proximo);
+  }
+
+  function processarAutomPrepPaginaAutomacao() {
+    if (!atacarAutomacoesPrepAtivo()) return false;
+
+    automPrepVerificarReadyTimeout(function(expirado) {
+      if (expirado) {
+        automPrepExecutarFallbackTimeout(expirado);
+        return;
+      }
+
+      listarAutomacaoFila(function(lista) {
+        var login = obterUsuarioLogin();
+        var processarWaitingSell = function(coord) {
+          for (var w = 0; w < lista.length; w++) {
+            var ws = lista[w];
+            if (ws.login_dono !== login || ws.status !== 'waiting_sell') continue;
+            var falta = (coord.shizuo_cooldown_until || 0) - Date.now();
+            if (falta > AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS) continue;
+            salvarContextoAutomPrep({
+              nome: ws.nome,
+              login_dono: ws.login_dono,
+              ordem: ws.ordem,
+              contaId: ws.contaId || ''
+            });
+            definirFaseAutomPrep('vender_sync');
+            definirSubAutomPrepAnimal('meus');
+            var contasWs = extrairContasAutomacaoPagina();
+            var contaWs = encontrarContaAutomacaoPorSnapshot(contasWs, { nome: ws.nome, contaId: ws.contaId || '' });
+            if (contaWs) {
+              automacaoAssumirEmAndamento = true;
+              marcarContaAutomacaoAssumida();
+              var btnWs = contaWs.form.querySelector('input[type="submit"]');
+              if (btnWs) btnWs.click();
+              else contaWs.form.submit();
+            } else {
+              window.location.href = URL_ANIMAL_MEUS;
+            }
+            return true;
+          }
+          return false;
+        };
+
+        lerAutomacaoCoord(function(coord) {
+          if (processarWaitingSell(coord)) return;
+
+        for (var i = 0; i < lista.length; i++) {
+          var item = lista[i];
+          if (item.login_dono !== login) continue;
+          if (item.status === 'attacked') {
+            salvarContextoAutomPrep({
+              nome: item.nome,
+              login_dono: item.login_dono,
+              ordem: item.ordem
+            });
+            definirFaseAutomPrep('comprar_pos_ataque');
+            definirSubAutomPrepAnimal('loja');
+            limparBuscaAnimalLojaAutomPrep();
+            var snap = { nome: item.nome, contaId: item.contaId || '' };
+            var contas = extrairContasAutomacaoPagina();
+            var conta = encontrarContaAutomacaoPorSnapshot(contas, snap);
+            if (conta) {
+              automacaoAssumirEmAndamento = true;
+              marcarContaAutomacaoAssumida();
+              var btn = conta.form.querySelector('input[type="submit"]');
+              if (btn) btn.click();
+              else conta.form.submit();
+            } else {
+              window.location.href = URL_ANIMAL_LOJA;
+            }
+            return;
+          }
+        }
+
+        if (automPrepTodasGerenciadasFeitas()) {
+          automPrepConcluirLoginAtual();
+          return;
+        }
+
+        var contas = extrairContasAutomacaoPagina();
+        var proxima = automPrepEscolherProximaConta(contas);
+        if (!proxima) {
+          automPrepConcluirLoginAtual();
+          return;
+        }
+
+        automacaoAssumirEmAndamento = true;
+        marcarContaAutomacaoAssumida();
+        salvarUltimaGerenciadaSnapshot(proxima.nome, proxima.contaId);
+        atualizarContextoAutomPrep({
+          nome: proxima.nome,
+          contaId: proxima.contaId,
+          login_dono: obterUsuarioLogin(),
+          ordem: Date.now()
+        });
+        console.warn('[Autom Prep] Assumindo ' + proxima.nome + ' (id ' + proxima.contaId + ')');
+        var btnAssumir = proxima.form.querySelector('input[type="submit"]');
+        if (btnAssumir) btnAssumir.click();
+        else proxima.form.submit();
+        });
+      });
+    });
+    return true;
+  }
+
+  function marcarAutomCombateIniciado() {
+    try { sessionStorage.setItem(BOT_AUTOM_COMBATE_KEY, '1'); } catch (e) {}
+  }
+
+  function consumirAutomCombateIniciado() {
+    try {
+      if (sessionStorage.getItem(BOT_AUTOM_COMBATE_KEY) === '1') {
+        sessionStorage.removeItem(BOT_AUTOM_COMBATE_KEY);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function definirModoCacadasAutomacao(nome) {
+    try {
+      sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'automacao_atacar');
+      sessionStorage.setItem(BOT_CACADAS_ALVO_NOME_KEY, nome);
+    } catch (e) {}
+    console.warn('[Autom Atacante] Alvo por nome: ' + nome);
+  }
+
+  function cacadaAtualPorNomeAutomacao() {
+    return atacarAutomacoesAtacanteAtivo() &&
+      obterModoCacadasSessao() === 'automacao_atacar' &&
+      !!obterAlvoNomeCacadasSessao();
+  }
+
+  function buscarProximoAlvoAutomacaoAtacante(coord, callback) {
+    listarAutomacaoFila(function(lista) {
+      var alvoNome = coord && coord.shizuo_atacar ? coord.shizuo_atacar : '';
+      if (alvoNome) {
+        for (var i = 0; i < lista.length; i++) {
+          if (normalizarNomeCacadas(lista[i].nome) === normalizarNomeCacadas(alvoNome) &&
+              lista[i].status === 'ready') {
+            callback(lista[i]);
+            return;
+          }
+        }
+      }
+      for (var j = 0; j < lista.length; j++) {
+        if (lista[j].status === 'ready') {
+          callback(lista[j]);
+          return;
+        }
+      }
+      callback(null);
+    });
+  }
+
+  function resolverAutomacaoAtacanteNoPortao(decisao, callback) {
+    limparEstadoModoCacadas();
+    lerAutomacaoCoord(function(coord) {
+      buscarProximoAlvoAutomacaoAtacante(coord, function(alvo) {
+        if (alvo) {
+          definirModoCacadasAutomacao(alvo.nome);
+          callback(true);
+          return;
+        }
+        console.log('[Autom Atacante] Nenhum alvo ready — aguardando prep no portao...');
+        callback(false);
+      });
+    });
+  }
+
+  function processarAutomAtacantePaginaCombate(parsed, dados) {
+    if (!atacarAutomacoesAtacanteAtivo() || !cacadaAtualPorNomeAutomacao()) return false;
+    if (!consumirAutomCombateIniciado()) {
+      console.warn('[Autom Atacante] Combate sem flag — ignorando sucesso.');
+      irParaPortaoRelatorios('Autom atacante sem flag combate');
+      return true;
+    }
+
+    var ctxNome = obterAlvoNomeCacadasSessao();
+    if (parsed.resultado === 'vitoria') {
+      enviarDiscordTexto(montarMensagemAutomAtacanteSucesso(
+        ctxNome, '', dados));
+      gravarAutomacaoFilaItem(ctxNome, {
+        status: 'attacked',
+        ready_ts: null,
+        ultimo_ataque_shizuo_ts: Date.now()
+      });
+      registrarShizuoAtacouHoje(ctxNome);
+      console.log('[Autom Atacante] Vitoria confirmada contra ' + ctxNome);
+    } else {
+      gravarAutomacaoFilaItem(ctxNome, { status: 'ready' });
+      console.warn('[Autom Atacante] Derrota contra ' + ctxNome + ' — mantendo ready.');
+    }
+
+    limparEstadoModoCacadas();
+    irParaPortaoRelatorios('Autom atacante pos-combate');
+    return true;
+  }
+
+  function processarAutomAtacantePaginaAtacar(btnAtacar) {
+    if (!atacarAutomacoesAtacanteAtivo() || !cacadaAtualPorNomeAutomacao()) return false;
+    if (!garantirHpParaAutomAtacante('pagina atacar')) return true;
+    if (!garantirDoujutsuParaAtacar('autom atacante')) return true;
+    marcarAutomCombateIniciado();
+    atacarJaProcessado = true;
+    btnAtacar.click();
+    return true;
   }
 
   function processarDiarioPosCombateRaid() {
@@ -4983,11 +6214,13 @@
   function finalizarCurarHpPosIchiraku(motivoLog) {
     var voltarMissao = curarHpParaMissaoNovo();
     var voltarRaid = curarHpParaRaidDiario();
+    var voltarAutom = curarHpParaAutomPrep() || atacarAutomacoesAtacanteAtivo();
     var hp = obterStatusHp();
     var destinoMissao = voltarMissao ? urlPosCurarHpMissaoNovo() : '';
     console.log('[HP] ' + motivoLog + ' — ' + formatarHpLog(hp) +
       (voltarMissao ? ' | voltando missao novo (' + (destinoMissao.indexOf('missoes') !== -1 ? '/missoes' : 'fluxo ataque') + ')...' :
-        (voltarRaid ? ' | voltando para raids...' : ' | voltando ao portao...')));
+        (voltarRaid ? ' | voltando para raids...' :
+          (voltarAutom ? ' | voltando autom prep/atacante...' : ' | voltando ao portao...'))));
     limparCurarHpAtivo();
     if (voltarMissao) {
       window.location.href = destinoMissao;
@@ -4995,6 +6228,23 @@
     }
     if (voltarRaid) {
       window.location.href = URL_RAID;
+      return true;
+    }
+    if (curarHpParaAutomPrep()) {
+      try { sessionStorage.removeItem(BOT_HP_CURAR_AUTOM_PREP_KEY); } catch (e) {}
+      if (obterFaseAutomPrep() === 'quests') {
+        lerAutomacaoCoord(function(coord) {
+          var emCooldown = coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
+          definirFaseAutomPrep(emCooldown ? 'prep_ate_venda' : 'vender_inicial');
+          window.location.href = URL_ANIMAL_MEUS;
+        });
+      } else {
+        window.location.href = urlPosCurarHpAutom();
+      }
+      return true;
+    }
+    if (atacarAutomacoesAtacanteAtivo()) {
+      window.location.href = URL_RELATORIOS_ATAQUE;
       return true;
     }
     if (tentarAtivarDoujutsuAposHpOk(motivoLog)) return true;
@@ -6044,6 +7294,11 @@
   }
 
   function irParaCacadasLiberado(motivo) {
+    if (atacarAutomacoesAtacanteAtivo() && !cacadaAtualPorNomeAutomacao()) {
+      console.log('[Autom Atacante] Sem alvo ready — permanece no portao (' + motivo + ').');
+      agendarRetentativaPortao('autom atacante sem alvo');
+      return;
+    }
     if (redirecionarDiarioNoLugarDeCacadas('portao -> caçadas (' + motivo + ')')) return;
     var urlAntes = window.location.href;
     if (!garantirHpParaAtacar('portao -> caçadas (' + motivo + ')')) {
@@ -6057,6 +7312,9 @@
       return;
     }
     if (!garantirCacadasLiberadaPorInvasor('portao -> caçadas (' + motivo + ')')) return;
+    if (atacarAutomacoesAtacanteAtivo() && !garantirDoujutsuParaAtacar('portao -> caçadas (' + motivo + ')')) {
+      return;
+    }
     console.log('[Caçadas] ' + motivo + ' — redirecionando para caçadas.');
     liberarGateCacadas();
     window.location.href = URL_CACADAS;
@@ -6098,6 +7356,10 @@
 
   function processarPortaoRelatoriosAtaqueContinuar() {
     if (portaoRelatoriosAgendado) return;
+
+    if (atacarAutomacoesAtacanteAtivo() && !garantirDoujutsuParaAtacar('portao autom atacante')) {
+      return true;
+    }
 
     var ultimo = extrairUltimoAtaqueRelatorios();
     var decisao = calcularEsperaAposUltimoAtaque(ultimo ? ultimo.ts : null);
@@ -7254,7 +8516,8 @@
   }
 
   function cacadaAtualPorNomeFila() {
-    return cacadaAtualPorNomeBlacklist() || cacadaAtualPorNomeFirebase();
+    return cacadaAtualPorNomeBlacklist() || cacadaAtualPorNomeFirebase() ||
+      cacadaAtualPorNomeAutomacao();
   }
 
   function resolverFirebaseFilaNoPortao(decisao, callback, opcoes) {
@@ -7296,6 +8559,13 @@
 
   function resolverDestinoNoPortao(decisao, callback, opcoes) {
     var opts = opcoes || {};
+    if (atacarAutomacoesAtacanteAtivo()) {
+      resolverAutomacaoAtacanteNoPortao(decisao, function(encontrou) {
+        if (encontrou) callback();
+        else agendarRetentativaPortao('autom atacante aguardando alvo ready');
+      });
+      return;
+    }
     if (forcarBlacklistCacadasPendente()) {
       marcarForcarBlacklistCacadas(false);
       marcarCacadasTetoOcioso(false);
@@ -8665,6 +9935,14 @@
       return processarMissaoNovoCombate();
     }
 
+    var parsedAutom = classificarResultadoCombate();
+    if (atacarAutomacoesAtacanteAtivo() && cacadaAtualPorNomeAutomacao() && parsedAutom) {
+      var dadosAutom = extrairDadosResultadoCombate();
+      dadosAutom.resumoCombate = parsedAutom.texto;
+      aplicarRyousDoResumoCombate(dadosAutom, parsedAutom.texto, parsedAutom.resultado);
+      return processarAutomAtacantePaginaCombate(parsedAutom, dadosAutom);
+    }
+
     if (combateJaNotificado()) {
       irParaCacadasAposCombate('Combate ja processado');
       return true;
@@ -9360,9 +10638,11 @@
     ' | InvasorVivo: ' + descreverInvasorVivo() +
     ' | Teto29: ' + descreverCacadasPortaoTeto29() +
     ' | Diario gerenciada: ' + descreverDiarioGerenciada() +
+    ' | Atacar automacoes: ' + descreverAtacarAutomacoes() +
     ' | Console: botDoujutsu() / botDoujutsu(true|false) / botDoujutsuAutoSabado()' +
     ' | botInvasorVivo() / botInvasorVivo(true|false) | botCacadasTeto29() / botCacadasTeto29(true|false)' +
     ' | botDiarioGerenciada() / botDiarioGerenciada(true|false) | botDiarioSemCacadas() / botDiarioSemCacadas(true|false) | botDiarioReset()' +
+    ' | botAtacarAutomacoesPrep() / botAtacarAutomacoesPrep(true|false) | botAtacarAutomacoes() / botAtacarAutomacoes(true|false) | botAutomPrepReset()' +
     ' | Código: ' + CODIGO_SERVIDOR
   );
   logOcrAutoNoConsole();
@@ -9393,6 +10673,12 @@
 
       if (obterModoAba() === 'cacadas' && consumirContaAutomacaoAssumida()) {
         limparRetomarGerenciada();
+        if (atacarAutomacoesPrepAtivo()) {
+          var nomePrep = extrairNomeUsuarioLogado();
+          var snapPrep = lerUltimaGerenciadaSnapshot();
+          iniciarAutomPrepPosAssume(nomePrep || (snapPrep && snapPrep.nome) || '', snapPrep && snapPrep.contaId);
+          return;
+        }
         if (diarioGerenciadaAtivo()) {
           retomarDiarioGerenciadaPosAssume();
           return;
@@ -9631,11 +10917,52 @@
           }
         },
         {
+          id: 'autom_prep_relatorios',
+          checar: function() {
+            if (!atacarAutomacoesPrepAtivo()) return false;
+            if (obterFaseAutomPrep() !== 'validar') return false;
+            return urlAtual.indexOf('relatorios_ataque') !== -1 ||
+              urlAtual.indexOf('tab=relatorios') !== -1 ||
+              !!document.querySelector('.msg-pipetabs a.active[href*="relatorios"]');
+          },
+          executar: function() {
+            return processarAutomPrepRelatoriosValidacao();
+          }
+        },
+        {
+          id: 'autom_prep_quests',
+          checar: function() {
+            return atacarAutomacoesPrepAtivo() && obterFaseAutomPrep() === 'quests' &&
+              urlAtual.indexOf('quests') !== -1;
+          },
+          executar: function() {
+            if (document.querySelector('form[action*="quests"]')) {
+              return processarAutomPrepQuests();
+            }
+            return processarAutomPrepPosQuests();
+          }
+        },
+        {
+          id: 'autom_prep_animal',
+          checar: function() {
+            if (!atacarAutomacoesPrepAtivo() || urlAtual.indexOf('/animal') === -1) return false;
+            var faseAutom = obterFaseAutomPrep();
+            return faseAutom === 'vender_inicial' || faseAutom === 'prep_ate_venda' ||
+              faseAutom === 'waiting_sell' || faseAutom === 'vender_sync' ||
+              faseAutom === 'comprar_pos_ataque' || faseAutom === 'comprar_timeout';
+          },
+          executar: function() {
+            return processarAutomPrepAnimal();
+          }
+        },
+        {
           id: 'relatorios_ataque',
           checar: function() {
             if (missaoNovoPausaRotinaCacadas()) return false;
             if (obterModoAba() !== 'cacadas') return false;
+            if (atacarAutomacoesPrepAtivo() && obterFaseAutomPrep() === 'validar') return false;
             if (cacadasBloqueadaPorDiarioGerenciada()) return false;
+            if (cacadasBloqueadaPorAutomPrep() && !atacarAutomacoesAtacanteAtivo()) return false;
             if (devePriorizarDiarioSobreCacadas()) return false;
             if (urlAtual.indexOf('relatorios_ataque') !== -1) return true;
             return !!document.querySelector('.msg-pipetabs a.active[href*="relatorios_ataque"]');
@@ -9649,6 +10976,7 @@
           checar: function() {
             if (missaoNovoPausaRotinaCacadas()) return false;
             if (obterModoAba() !== 'cacadas') return false;
+            if (atacarAutomacoesAtacanteAtivo()) return false;
             return urlAtual.indexOf('automacao') !== -1;
           },
           executar: function() {
@@ -9670,6 +10998,7 @@
           id: 'cacadas',
           checar: function() {
             if (obterModoAba() !== 'cacadas' || urlAtual.indexOf('cacadas') === -1) return false;
+            if (cacadasBloqueadaPorAutomPrep()) return false;
             if (devePriorizarDiarioSobreCacadas()) return false;
             return true;
           },
@@ -9770,6 +11099,10 @@
           executar: function() {
             if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
               return processarMissaoNovoAtacar();
+            }
+            if (atacarAutomacoesAtacanteAtivo() && cacadaAtualPorNomeAutomacao()) {
+              var btnAutom = document.querySelector('form[action="atacar"] input[type="submit"]');
+              if (btnAutom && processarAutomAtacantePaginaAtacar(btnAutom)) return true;
             }
             if (redirecionarDiarioNoLugarDeCacadas('pagina atacar')) return true;
             if (atacarJaProcessado) return true;

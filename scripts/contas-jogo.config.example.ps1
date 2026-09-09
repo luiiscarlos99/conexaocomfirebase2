@@ -13,9 +13,10 @@ $NivelCacadas = '1'
 #   Caçadas (blacklist por nome):  ...&bot_blacklist_cacadas=Nome1,Nome2,Nome3
 #   Caçadas (rotacao 10 contas automacao):  ...&bot_rotacao_automacao=1
 #   Caçadas (portao 5-6min, teto ocioso 29min):  ...&bot_cacadas_teto_29=1
+#   Atacar automacoes PREP (Chrome — Shiroe rotaciona logins):  ...&bot_atacar_automacoes_prep=1
+#   Atacar automacoes ATACANTE (Opera — Shizuo fixo, doujutsu automatico):  ...&bot_atacar_automacoes=1
 #   Invasor:  $UrlBase/invasor?bot_modo=invasor
-#   Invasor (so early, sem last hit):  ...&bot_lasthit_modo=off&bot_invasor_early=1
-#   Invasor (sem ataque auto — padrao):  ...&bot_lasthit_modo=off
+#   Invasor (so early, sem last hit):  ...&bot_lasthit_modo=off
 #   Invasor (last hit por data):  ...&bot_lasthit_modo=data
 #   Invasor (last hit sorteio 26k-27k):  ...&bot_lasthit_modo=sorteio
 #   Invasor (last hit scout):  ...&bot_lasthit_modo=scout
@@ -47,20 +48,22 @@ $AvisarDiscordStart = $true
 # BotModo: 'cacadas' ou 'invasor' — define login + aba da fase 2
 $Contas = @(
     @{
-        Rotulo  = 'Chrome anônimo - Shiroe'
+        Rotulo  = 'Chrome anônimo - Shiroe (prep automacoes)'
         Exe     = $ChromeExe
         Anonimo = $true
         BotModo = 'cacadas'
         Usuario = 'Shiroe'
         Senha   = 'SUA_SENHA'
+        # URL fase 2 sugerida: $UrlBase/automacao?bot_modo=cacadas&bot_atacar_automacoes_prep=1
     },
     @{
-        Rotulo  = 'Opera - Shizuo'
+        Rotulo  = 'Opera - Shizuo (atacante automacoes)'
         Exe     = $OperaExe
         Anonimo = $false
         BotModo = 'cacadas'
         Usuario = 'Shizuo'
         Senha   = 'SUA_SENHA'
+        # URL fase 2 sugerida: $UrlBase/mensagens?tab=relatorios_ataque&bot_modo=cacadas&bot_atacar_automacoes=1
     },
     @{
         Rotulo  = 'Opera anônimo - Sora'
