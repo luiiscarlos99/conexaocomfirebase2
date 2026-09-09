@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.83
+// @version      3.84
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.83';
-  var SCRIPT_ATUALIZADO = '09/09/2026 16:12';
+  var SCRIPT_VERSAO = '3.84';
+  var SCRIPT_ATUALIZADO = '09/09/2026 16:28';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1271,6 +1271,7 @@
   var BOT_AUTOM_PREP_ANIMAL_BS_KEY = 'BOT_AUTOM_PREP_ANIMAL_BS';
   var BOT_HP_CURAR_AUTOM_PREP_KEY = 'BOT_HP_CURAR_AUTOM_PREP';
   var BOT_AUTOM_COMBATE_KEY = 'BOT_AUTOM_COMBATE';
+  var BOT_AUTOM_ATACANTE_ALVO_KEY = 'BOT_AUTOM_ATACANTE_ALVO';
   var BOT_AUTOM_PREP_FEITAS_KEY = 'BOT_AUTOM_PREP_FEITAS';
   var BOT_AUTOM_PREP_PRESENTES_KEY = 'BOT_AUTOM_PREP_PRESENTES';
   var BOT_AUTOM_PREP_LOGINS_FEITOS_KEY = 'BOT_AUTOM_PREP_LOGINS_FEITOS';
@@ -3355,7 +3356,13 @@
   }
 
   function processarAutomPrepRelatoriosValidacao() {
-    if (!atacarAutomacoesPrepAtivo() || obterFaseAutomPrep() !== 'validar') return false;
+    if (!atacarAutomacoesPrepAtivo()) return false;
+    var faseRel = obterFaseAutomPrep();
+    if (!faseRel && lerContextoAutomPrep()) {
+      definirFaseAutomPrep('validar');
+      faseRel = 'validar';
+    }
+    if (faseRel !== 'validar') return false;
     var ctx = lerContextoAutomPrep();
     if (!ctx || !ctx.nome) return false;
 
@@ -3791,6 +3798,64 @@
     irParaLoginDiarioMesmaAba(proximo);
   }
 
+  function automPrepIniciarCompraPosAtaque(item) {
+    salvarContextoAutomPrep({
+      nome: item.nome,
+      login_dono: item.login_dono,
+      ordem: item.ordem,
+      contaId: item.contaId || ''
+    });
+    definirFaseAutomPrep('comprar_pos_ataque');
+    definirSubAutomPrepAnimal('loja');
+    limparBuscaAnimalLojaAutomPrep();
+    var snap = { nome: item.nome, contaId: item.contaId || '' };
+    var contas = extrairContasAutomacaoPagina();
+    var conta = encontrarContaAutomacaoPorSnapshot(contas, snap);
+    if (conta) {
+      automacaoAssumirEmAndamento = true;
+      marcarContaAutomacaoAssumida();
+      var btn = conta.form.querySelector('input[type="submit"]');
+      if (btn) btn.click();
+      else conta.form.submit();
+    } else {
+      window.location.href = URL_ANIMAL_LOJA;
+    }
+  }
+
+  function automPrepDetectarAtaqueConcluido(coord, lista, login) {
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || !ctx.nome) return false;
+    if (obterFaseAutomPrep() !== 'aguardar_ataque') return false;
+
+    var itemCtx = null;
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i].login_dono !== login) continue;
+      if (normalizarNomeCacadas(lista[i].nome) !== normalizarNomeCacadas(ctx.nome)) continue;
+      itemCtx = lista[i];
+      break;
+    }
+    if (!itemCtx) return false;
+
+    if (itemCtx.status === 'attacked') {
+      console.log('[Autom Prep] Shizuo atacou ' + itemCtx.nome + ' (status attacked) — comprando pet.');
+      automPrepIniciarCompraPosAtaque(itemCtx);
+      return true;
+    }
+
+    if (itemCtx.status === 'ready' && shizuoAtacouGerenciadaHojeCoord(coord, ctx.nome)) {
+      console.log('[Autom Prep] Shizuo atacou ' + ctx.nome + ' (coord) — sincronizando attacked e comprando pet.');
+      gravarAutomacaoFilaItem(ctx.nome, {
+        status: 'attacked',
+        ready_ts: null,
+        ultimo_ataque_shizuo_ts: Date.now()
+      });
+      automPrepIniciarCompraPosAtaque(itemCtx);
+      return true;
+    }
+
+    return false;
+  }
+
   function processarAutomPrepPaginaAutomacao() {
     if (!atacarAutomacoesPrepAtivo()) return false;
 
@@ -3833,37 +3898,21 @@
         };
 
         lerAutomacaoCoord(function(coord) {
+          if (automPrepDetectarAtaqueConcluido(coord, lista, login)) return;
+
+          for (var i = 0; i < lista.length; i++) {
+            var item = lista[i];
+            if (item.login_dono !== login) continue;
+            if (item.status === 'attacked') {
+              console.log('[Autom Prep] Shizuo atacou ' + item.nome + ' — comprando pet.');
+              automPrepIniciarCompraPosAtaque(item);
+              return;
+            }
+          }
+
           if (automPrepAgendarEsperaAtaque(lista, login)) return;
 
           if (processarWaitingSell(coord)) return;
-
-        for (var i = 0; i < lista.length; i++) {
-          var item = lista[i];
-          if (item.login_dono !== login) continue;
-          if (item.status === 'attacked') {
-            salvarContextoAutomPrep({
-              nome: item.nome,
-              login_dono: item.login_dono,
-              ordem: item.ordem
-            });
-            definirFaseAutomPrep('comprar_pos_ataque');
-            definirSubAutomPrepAnimal('loja');
-            limparBuscaAnimalLojaAutomPrep();
-            var snap = { nome: item.nome, contaId: item.contaId || '' };
-            var contas = extrairContasAutomacaoPagina();
-            var conta = encontrarContaAutomacaoPorSnapshot(contas, snap);
-            if (conta) {
-              automacaoAssumirEmAndamento = true;
-              marcarContaAutomacaoAssumida();
-              var btn = conta.form.querySelector('input[type="submit"]');
-              if (btn) btn.click();
-              else conta.form.submit();
-            } else {
-              window.location.href = URL_ANIMAL_LOJA;
-            }
-            return;
-          }
-        }
 
         if (automPrepTodasGerenciadasFeitas()) {
           automPrepConcluirLoginAtual();
@@ -3910,11 +3959,42 @@
     return false;
   }
 
+  function persistirAlvoAutomAtacante(nome) {
+    if (!nome) return;
+    try {
+      sessionStorage.setItem(BOT_AUTOM_ATACANTE_ALVO_KEY, nome);
+      localStorage.setItem(BOT_AUTOM_ATACANTE_ALVO_KEY, nome);
+    } catch (e) {}
+  }
+
+  function obterAlvoAutomAtacantePersistido() {
+    try {
+      var s = sessionStorage.getItem(BOT_AUTOM_ATACANTE_ALVO_KEY) ||
+        localStorage.getItem(BOT_AUTOM_ATACANTE_ALVO_KEY) || '';
+      return s ? String(s) : '';
+    } catch (e) {}
+    return '';
+  }
+
+  function limparAlvoAutomAtacantePersistido() {
+    try {
+      sessionStorage.removeItem(BOT_AUTOM_ATACANTE_ALVO_KEY);
+      localStorage.removeItem(BOT_AUTOM_ATACANTE_ALVO_KEY);
+    } catch (e) {}
+  }
+
+  function restaurarModoAutomAtacanteSeNecessario() {
+    if (!atacarAutomacoesAtacanteAtivo() || cacadaAtualPorNomeAutomacao()) return;
+    var alvo = obterAlvoAutomAtacantePersistido();
+    if (alvo) definirModoCacadasAutomacao(alvo);
+  }
+
   function definirModoCacadasAutomacao(nome) {
     try {
       sessionStorage.setItem(BOT_CACADAS_MODO_KEY, 'automacao_atacar');
       sessionStorage.setItem(BOT_CACADAS_ALVO_NOME_KEY, nome);
     } catch (e) {}
+    persistirAlvoAutomAtacante(nome);
     console.warn('[Autom Atacante] Alvo por nome: ' + nome);
   }
 
@@ -3962,14 +4042,28 @@
   }
 
   function processarAutomAtacantePaginaCombate(parsed, dados) {
-    if (!atacarAutomacoesAtacanteAtivo() || !cacadaAtualPorNomeAutomacao()) return false;
-    if (!consumirAutomCombateIniciado()) {
-      console.warn('[Autom Atacante] Combate sem flag — ignorando sucesso.');
+    if (!atacarAutomacoesAtacanteAtivo()) return false;
+
+    var ctxNome = obterAlvoNomeCacadasSessao() || obterAlvoAutomAtacantePersistido();
+    if ((!ctxNome || ctxNome === '(desconhecido)') && dados.inimigo && dados.inimigo !== '(desconhecido)') {
+      ctxNome = dados.inimigo;
+    }
+    if (!ctxNome) return false;
+
+    if (!cacadaAtualPorNomeAutomacao()) {
+      definirModoCacadasAutomacao(ctxNome);
+    }
+
+    var flagCombate = consumirAutomCombateIniciado();
+    var vitimaNorm = dados.inimigo ? normalizarNomeCacadas(dados.inimigo) : '';
+    if (!flagCombate && vitimaNorm !== normalizarNomeCacadas(ctxNome)) {
+      console.warn('[Autom Atacante] Combate sem flag e vitima divergente — ignorando.');
       irParaPortaoRelatorios('Autom atacante sem flag combate');
       return true;
     }
-
-    var ctxNome = obterAlvoNomeCacadasSessao();
+    if (!flagCombate) {
+      console.warn('[Autom Atacante] Combate sem flag — reconhecendo vitima ' + ctxNome + '.');
+    }
     if (parsed.resultado === 'vitoria') {
       enviarDiscordTexto(montarMensagemAutomAtacanteSucesso(
         ctxNome, '', dados));
@@ -3986,12 +4080,15 @@
     }
 
     limparEstadoModoCacadas();
+    limparAlvoAutomAtacantePersistido();
     irParaPortaoRelatorios('Autom atacante pos-combate');
     return true;
   }
 
   function processarAutomAtacantePaginaAtacar(btnAtacar) {
-    if (!atacarAutomacoesAtacanteAtivo() || !cacadaAtualPorNomeAutomacao()) return false;
+    if (!atacarAutomacoesAtacanteAtivo()) return false;
+    restaurarModoAutomAtacanteSeNecessario();
+    if (!cacadaAtualPorNomeAutomacao()) return false;
     if (!garantirHpParaAutomAtacante('pagina atacar')) return true;
     if (!garantirDoujutsuParaAtacar('autom atacante')) return true;
     marcarAutomCombateIniciado();
@@ -6726,7 +6823,10 @@
 
   function garantirDoujutsuParaAtacar(contexto) {
     if (obterModoAba() !== 'cacadas') return true;
-    if (!doujutsuDesejado()) return true;
+    var precisaDoujutsu = atacarAutomacoesAtacanteAtivo() ||
+      obterModoCacadasSessao() === 'automacao_atacar' ||
+      doujutsuDesejado();
+    if (!precisaDoujutsu) return true;
 
     if (doujutsuAtivarPendente()) {
       var chkPendente = ryousSuficienteParaDoujutsu();
@@ -7353,6 +7453,9 @@
   }
 
   function irParaCacadasLiberado(motivo) {
+    if (atacarAutomacoesAtacanteAtivo()) {
+      restaurarModoAutomAtacanteSeNecessario();
+    }
     if (atacarAutomacoesAtacanteAtivo() && !cacadaAtualPorNomeAutomacao()) {
       console.log('[Autom Atacante] Sem alvo ready — permanece no portao (' + motivo + ').');
       agendarRetentativaPortao('autom atacante sem alvo');
@@ -10011,11 +10114,11 @@
     }
 
     var parsedAutom = classificarResultadoCombate();
-    if (atacarAutomacoesAtacanteAtivo() && cacadaAtualPorNomeAutomacao() && parsedAutom) {
+    if (atacarAutomacoesAtacanteAtivo() && parsedAutom) {
       var dadosAutom = extrairDadosResultadoCombate();
       dadosAutom.resumoCombate = parsedAutom.texto;
       aplicarRyousDoResumoCombate(dadosAutom, parsedAutom.texto, parsedAutom.resultado);
-      return processarAutomAtacantePaginaCombate(parsedAutom, dadosAutom);
+      if (processarAutomAtacantePaginaCombate(parsedAutom, dadosAutom)) return true;
     }
 
     if (combateJaNotificado()) {
@@ -10612,6 +10715,9 @@
       window.location.href = URL_MISSOES;
       return;
     }
+    if (atacarAutomacoesPrepAtivo() && (motivo || '').indexOf('relatorios') !== -1) {
+      if (processarAutomPrepRelatoriosValidacao()) return;
+    }
     if (obterModoAba() === 'cacadas') {
       if (redirecionarDiarioNoLugarDeCacadas('pagina nao mapeada')) return;
       irParaPortaoRelatorios('Pagina nao mapeada');
@@ -10645,6 +10751,9 @@
   function executarCacadaPorNome(nome) {
     if (!garantirHpParaAtacar('caçada por nome')) return true;
     if (!garantirCacadasLiberadaPorInvasor('caçada por nome')) return true;
+    if (atacarAutomacoesAtacanteAtivo() || obterModoCacadasSessao() === 'automacao_atacar') {
+      if (!garantirDoujutsuParaAtacar('caçada por nome autom')) return true;
+    }
 
     var input = document.getElementById('por_nome') ||
       document.querySelector('input[name="por_nome"]');
@@ -11182,9 +11291,15 @@
             if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
               return processarMissaoNovoAtacar();
             }
-            if (atacarAutomacoesAtacanteAtivo() && cacadaAtualPorNomeAutomacao()) {
-              var btnAutom = document.querySelector('form[action="atacar"] input[type="submit"]');
-              if (btnAutom && processarAutomAtacantePaginaAtacar(btnAutom)) return true;
+            if (atacarAutomacoesAtacanteAtivo()) {
+              restaurarModoAutomAtacanteSeNecessario();
+              if (cacadaAtualPorNomeAutomacao()) {
+                var btnAutom = document.querySelector('form[action="atacar"] input[type="submit"]');
+                if (btnAutom && processarAutomAtacantePaginaAtacar(btnAutom)) return true;
+              }
+              console.warn('[Autom Atacante] /atacar sem alvo automacao — voltando ao portao.');
+              irParaPortaoRelatorios('Autom atacante sem alvo em /atacar');
+              return true;
             }
             if (redirecionarDiarioNoLugarDeCacadas('pagina atacar')) return true;
             if (atacarJaProcessado) return true;
