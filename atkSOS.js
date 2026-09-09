@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.75
+// @version      3.77
 // @description  Automação Caçadas/Atacar + Missão Novo (1h, 3 ataques via ranking), portão relatórios, blacklist, captcha OCR, Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -745,8 +745,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.75';
-  var SCRIPT_ATUALIZADO = '08/09/2026 12:15';
+  var SCRIPT_VERSAO = '3.77';
+  var SCRIPT_ATUALIZADO = '09/09/2026 11:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -1054,6 +1054,7 @@
   var BOT_MISSAO_NOVO_PARAMS_KEY = 'BOT_MISSAO_NOVO_PARAMS';
   var BOT_MISSAO_NOVO_SLOT_KEY = 'BOT_MISSAO_NOVO_SLOT';
   var BOT_MISSAO_NOVO_TS_ATAQUE_KEY = 'BOT_MISSAO_NOVO_TS_ATAQUE';
+  var BOT_MISSAO_NOVO_COMBATE_KEY = 'BOT_MISSAO_NOVO_COMBATE';
   var BOT_MISSAO_NOVO_ALVO_KEY = 'BOT_MISSAO_NOVO_ALVO';
   var BOT_MISSAO_NOVO_CANDIDATOS_KEY = 'BOT_MISSAO_NOVO_CANDIDATOS';
   var BOT_MISSAO_NOVO_CAND_IDX_KEY = 'BOT_MISSAO_NOVO_CAND_IDX';
@@ -1061,6 +1062,8 @@
   var BOT_MISSAO_NOVO_RANKING_ULTIMO_KEY = 'BOT_MISSAO_NOVO_RANKING_ULTIMO';
   var BOT_MISSAO_NOVO_POSICAO_KEY = 'BOT_MISSAO_NOVO_POSICAO';
   var BOT_MISSAO_NOVO_ATACADOS_KEY = 'BOT_MISSAO_NOVO_ATACADOS';
+  var BOT_MISSAO_NOVO_FALHAS_KEY = 'BOT_MISSAO_NOVO_FALHAS';
+  var MISSAO_NOVO_FALHA_TTL_MS = 30 * 60 * 1000;
   var BOT_MISSAO_NOVO_HP_RETORNO_KEY = 'BOT_MISSAO_NOVO_HP_RETORNO';
   var BOT_MISSAO_NOVO_COLETAR_REL_KEY = 'BOT_MISSAO_NOVO_COLETAR_REL';
   var BOT_MISSAO_NOVO_VALIDAR_REL_KEY = 'BOT_MISSAO_NOVO_VALIDAR_REL';
@@ -2927,6 +2930,7 @@
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ATACADOS_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_COLETAR_REL_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_VALIDAR_REL_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_COMBATE_KEY);
     } catch (e) {}
   }
 
@@ -3052,6 +3056,59 @@
   function missaoNovoJaAtacou(nome) {
     if (!nome) return false;
     return !!lerAtacadosMissaoNovo()[normalizarNomeCacadas(nome)];
+  }
+
+  function limparFalhasExpiradasMissaoNovo(mapa) {
+    var now = Date.now();
+    for (var k in mapa) {
+      if (!Object.prototype.hasOwnProperty.call(mapa, k)) continue;
+      var entry = mapa[k];
+      var ts = typeof entry === 'number' ? entry : (entry && entry.ts);
+      if (!ts || now - ts > MISSAO_NOVO_FALHA_TTL_MS) delete mapa[k];
+    }
+    return mapa;
+  }
+
+  function lerFalhasMissaoNovo() {
+    try {
+      var raw = localStorage.getItem(BOT_MISSAO_NOVO_FALHAS_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          var limpo = limparFalhasExpiradasMissaoNovo(parsed);
+          salvarFalhasMissaoNovo(limpo);
+          return limpo;
+        }
+      }
+    } catch (e) {}
+    return {};
+  }
+
+  function salvarFalhasMissaoNovo(mapa) {
+    try { localStorage.setItem(BOT_MISSAO_NOVO_FALHAS_KEY, JSON.stringify(mapa || {})); } catch (e) {}
+  }
+
+  function registrarFalhaMissaoNovo(nome, motivo) {
+    if (!nome) return;
+    var mapa = lerFalhasMissaoNovo();
+    mapa[normalizarNomeCacadas(nome)] = {
+      nome: String(nome),
+      ts: Date.now(),
+      motivo: String(motivo || '')
+    };
+    salvarFalhasMissaoNovo(mapa);
+    console.log('[Missao Novo] Falha registrada vs ' + nome + ' (' + (motivo || '?') +
+      ') — bloqueado por ' + Math.round(MISSAO_NOVO_FALHA_TTL_MS / 60000) + 'min');
+  }
+
+  function missaoNovoBloqueadoPorFalhaRecente(nome) {
+    if (!nome) return false;
+    var mapa = lerFalhasMissaoNovo();
+    var entry = mapa[normalizarNomeCacadas(nome)];
+    if (!entry) return false;
+    var ts = typeof entry === 'number' ? entry : entry.ts;
+    if (!ts) return false;
+    return (Date.now() - ts) <= MISSAO_NOVO_FALHA_TTL_MS;
   }
 
   function montarUrlRelatorioMissaoNovoColetar() {
@@ -3242,7 +3299,36 @@
     try {
       sessionStorage.removeItem(BOT_MISSAO_NOVO_ALVO_KEY);
       sessionStorage.removeItem(BOT_MISSAO_NOVO_TS_ATAQUE_KEY);
+      sessionStorage.removeItem(BOT_MISSAO_NOVO_COMBATE_KEY);
     } catch (e) {}
+  }
+
+  function marcarCombateMissaoNovo() {
+    try { sessionStorage.setItem(BOT_MISSAO_NOVO_COMBATE_KEY, '1'); } catch (e) {}
+  }
+
+  function combateMissaoNovoOcorreu() {
+    try { return sessionStorage.getItem(BOT_MISSAO_NOVO_COMBATE_KEY) === '1'; } catch (e) {}
+    return false;
+  }
+
+  function limparCombateMissaoNovo() {
+    try { sessionStorage.removeItem(BOT_MISSAO_NOVO_COMBATE_KEY); } catch (e) {}
+  }
+
+  function tentativaAtaqueMissaoNovoEmAndamento() {
+    if (!emFluxoAtaqueMissaoNovo()) return false;
+    if (pendingColetarRelatorioMissaoNovo()) return false;
+    if (pendingValidarRelatorioMissaoNovo()) return false;
+    if (missaoNovoAguardandoRetentativaRanking()) return false;
+    if (combateMissaoNovoOcorreu()) return false;
+    return !!(lerAlvoMissaoNovo() || lerTsAntesAtaqueMissaoNovo());
+  }
+
+  function processarInterrupcaoAtaqueMissaoNovoSemCombate(contexto) {
+    if (!tentativaAtaqueMissaoNovoEmAndamento()) return false;
+    falhaAtaqueMissaoNovoTentarProximo(contexto || 'ataque interrompido sem combate');
+    return true;
   }
 
   function salvarTsAntesAtaqueMissaoNovo() {
@@ -3684,7 +3770,23 @@
     var meuLogin = normalizarNomeCacadas(obterUsuarioExibicao());
     if (meuLogin && normalizarNomeCacadas(j.nome) === meuLogin) return false;
     if (missaoNovoJaAtacou(j.nome)) return false;
+    if (missaoNovoBloqueadoPorFalhaRecente(j.nome)) return false;
     return true;
+  }
+
+  function filtrarCandidatosValidosMissaoNovo(lista, meuNivel, params) {
+    var out = [];
+    for (var i = 0; i < lista.length; i++) {
+      if (candidatoValidoMissaoNovo(lista[i], meuNivel, params)) out.push(lista[i]);
+    }
+    return ordenarCandidatosMissaoNovo(out, meuNivel);
+  }
+
+  function proximoIndiceCandidatoValidoMissaoNovo(candidatos, idxInicio, meuNivel, params) {
+    for (var i = idxInicio; i < candidatos.length; i++) {
+      if (candidatoValidoMissaoNovo(candidatos[i], meuNivel, params)) return i;
+    }
+    return -1;
   }
 
   function ordenarCandidatosMissaoNovo(lista, meuNivel) {
@@ -3813,6 +3915,7 @@
     salvarScanInicialOffMissaoNovo(offInicial);
     limparScanRankingMissaoNovo();
     limparAlvoMissaoNovo();
+    limparCombateMissaoNovo();
     marcarColetarRelatorioMissaoNovo();
     console.log('%c[Missao Novo] Iniciando ataque ' + slot + ' via ranking (diff ' +
       params.diffAlvo + '->' + params.minDiff + ' lvl abaixo, maxRyous ' +
@@ -3854,6 +3957,12 @@
   }
 
   function concluirAtaqueMissaoNovoSucesso(slot, alvo) {
+    if (!combateMissaoNovoOcorreu()) {
+      console.warn('[Missao Novo] Sucesso rejeitado — pagina /combate nao detectada vs ' + (alvo || '?'));
+      falhaAtaqueMissaoNovoTentarProximo('sucesso sem pagina de combate');
+      return;
+    }
+    limparCombateMissaoNovo();
     if (alvo) adicionarAtacadoMissaoNovo(alvo);
     salvarRankingUltimoMissaoNovo(lerRankingOffMissaoNovo());
     limparScanRankingMissaoNovo();
@@ -3876,16 +3985,21 @@
     var alvo = lerAlvoMissaoNovo();
     console.warn('[Missao Novo] Falha vs ' + alvo + ': ' + motivo + ' — proximo candidato...');
 
-    if (alvo && (motivo === 'ja atacou hoje' || String(motivo).indexOf('ja atacou') !== -1)) {
-      adicionarAtacadoMissaoNovo(alvo);
+    if (alvo) {
+      if (motivo === 'ja atacou hoje' || String(motivo).indexOf('ja atacou') !== -1) {
+        adicionarAtacadoMissaoNovo(alvo);
+      } else {
+        registrarFalhaMissaoNovo(alvo, motivo);
+      }
     }
 
-    idx++;
-    if (idx < candidatos.length) {
-      salvarCandIdxMissaoNovo(idx);
+    var proxIdx = proximoIndiceCandidatoValidoMissaoNovo(candidatos, idx + 1, meuNivel, params);
+    if (proxIdx >= 0) {
+      salvarCandIdxMissaoNovo(proxIdx);
       limparAlvoMissaoNovo();
-      var prox = candidatos[idx];
+      var prox = candidatos[proxIdx];
       salvarAlvoMissaoNovo(prox.nome);
+      console.log('[Missao Novo] Proximo alvo #' + (proxIdx + 1) + '/' + candidatos.length + ': ' + prox.nome);
       window.location.href = prox.urlJogador;
       return true;
     }
@@ -3911,8 +4025,10 @@
 
     var candidatos = lerCandidatosMissaoNovo();
     if (candidatos.length) {
-      candidatos = ordenarCandidatosMissaoNovo(candidatos, meuNivel);
+      candidatos = filtrarCandidatosValidosMissaoNovo(candidatos, meuNivel, params);
       salvarCandidatosMissaoNovo(candidatos);
+      var idxSalvo = lerCandIdxMissaoNovo();
+      if (idxSalvo >= candidatos.length) salvarCandIdxMissaoNovo(0);
     } else {
       candidatos = coletarCandidatosRankingMissao(meuNivel, params);
       salvarCandidatosMissaoNovo(candidatos);
@@ -3943,6 +4059,7 @@
     console.log('[Missao Novo] Alvo #' + (idx + 1) + '/' + candidatos.length + ': ' + alvo.nome +
       ' (lvl ' + alvo.nivel + ', ' + diffAlvo + ' lvl abaixo, vit ' + alvo.vitorias +
       ', ryous ' + alvo.ryousTexto + ')');
+    limparCombateMissaoNovo();
     salvarAlvoMissaoNovo(alvo.nome);
     window.location.href = alvo.urlJogador;
     return true;
@@ -3954,6 +4071,11 @@
     var alvo = lerAlvoMissaoNovo();
     if (!alvo) {
       window.location.href = URL_MISSOES;
+      return true;
+    }
+    var avisoPerfil = detectarAvisoErroAlvoMissaoNovo();
+    if (avisoPerfil) {
+      falhaAtaqueMissaoNovoTentarProximo(avisoPerfil);
       return true;
     }
     var form = document.querySelector('form[action*="cacadas"] input[name="atacar"]');
@@ -4003,10 +4125,26 @@
     return { ok: motivos.length === 0, motivos: motivos, dados: dados };
   }
 
+  function detectarAvisoErroAlvoMissaoNovo() {
+    var col = document.getElementById('col_direita') || document;
+    var avisos = col.querySelectorAll('.avisos_erro');
+    for (var i = 0; i < avisos.length; i++) {
+      var texto = (avisos[i].innerText || avisos[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+      var norm = normalizarTextoCombate(texto);
+      if (norm.indexOf('ja atacou este ninja hoje') !== -1) return 'ja atacou hoje';
+      if (norm.indexOf('sofreu uma') !== -1 && norm.indexOf('batalha') !== -1 &&
+          norm.indexOf('30 minutos') !== -1) return 'batalha recente 30min';
+      if (norm.indexOf('nao pode atacar') !== -1) return 'nao pode atacar';
+      if (norm.indexOf('impedido') !== -1 || norm.indexOf('protegido') !== -1) return texto;
+    }
+    return null;
+  }
+
   function detectarFalhaAtaqueMissaoNovoPagina() {
+    var avisoAlvo = detectarAvisoErroAlvoMissaoNovo();
+    if (avisoAlvo) return avisoAlvo;
     if (detectarAvisoEnergiaVitalBaixaCacadas()) return 'energia vital baixa';
-    if (extrairJaAtacouHojeCacadas()) return 'ja atacou hoje';
-    if (detectarAvisoBatalhaRecente30mCacadas()) return 'batalha recente 30min';
     if (extrairNivelAbaixoMinimoCacadas()) return 'nivel abaixo do minimo';
     var col = document.getElementById('col_direita') || document;
     var avisos = col.querySelectorAll('.avisos_erro');
@@ -4061,6 +4199,7 @@
   }
 
   function processarMissaoNovoCombate() {
+    marcarCombateMissaoNovo();
     var slot = obterSlotAtaqueMissaoNovo();
     var alvo = lerAlvoMissaoNovo();
     var parsed = classificarResultadoCombate();
@@ -4086,6 +4225,11 @@
 
     var slot = obterSlotAtaqueMissaoNovo();
     var alvo = lerAlvoMissaoNovo();
+    if (!combateMissaoNovoOcorreu()) {
+      limparValidarRelatorioMissaoNovo();
+      falhaAtaqueMissaoNovoTentarProximo('validacao relatorio sem combate');
+      return true;
+    }
     if (ataqueConfirmadoNoRelatorio(alvo)) {
       limparValidarRelatorioMissaoNovo();
       concluirAtaqueMissaoNovoSucesso(slot, alvo);
@@ -4106,6 +4250,21 @@
 
   function processarMissaoNovoMissoes() {
     instalarConfirmAutoOkMissao();
+
+    if (emFluxoAtaqueMissaoNovo() && pendingColetarRelatorioMissaoNovo()) {
+      console.log('[Missao Novo] Retomando coleta de relatorio de ataques...');
+      window.location.href = montarUrlRelatorioMissaoNovoColetar();
+      return true;
+    }
+    if (emFluxoAtaqueMissaoNovo() && pendingValidarRelatorioMissaoNovo()) {
+      console.log('[Missao Novo] Retomando validacao de ataque no relatorio...');
+      window.location.href = URL_RELATORIOS_ATAQUE + '&bot_missao_novo_validar=1';
+      return true;
+    }
+    if (processarInterrupcaoAtaqueMissaoNovoSemCombate('redirecionado para /missoes sem combate')) {
+      return true;
+    }
+
     var params = lerParamsMissaoNovo();
     var meuNivel = extrairNivelJogadorSidebar();
 
@@ -4213,6 +4372,7 @@
       scanInicial: lerScanInicialOffMissaoNovo(),
       slot: obterSlotAtaqueMissaoNovo(),
       emFluxoAtaque: emFluxoAtaqueMissaoNovo(),
+      combateDetectado: combateMissaoNovoOcorreu(),
       ataque1: ataqueMissaoNovoFeito(1),
       ataque2: ataqueMissaoNovoFeito(2),
       ataque3: ataqueMissaoNovoFeito(3),
@@ -4221,6 +4381,8 @@
       aguardandoRetry: missaoNovoAguardandoRetentativaRanking(),
       retrySeg: segundosRestantesRetentativaRankingMissaoNovo(),
       atacadosHoje: Object.keys(lerAtacadosMissaoNovo()).length,
+      falhasRecentes: Object.keys(lerFalhasMissaoNovo()).length,
+      falhas: lerFalhasMissaoNovo(),
       curaHpPendente: curarHpParaMissaoNovo() && curarHpAtivo()
     };
     console.log('%c[Missao Novo] Status', 'color:#e67e22;font-weight:bold', out);
@@ -9660,6 +9822,10 @@
           return;
         }
         if (missaoNovoAtivo() && emFluxoAtaqueMissaoNovo()) {
+          if (processarInterrupcaoAtaqueMissaoNovoSemCombate(
+              'pagina nao mapeada sem combate (' + urlAtual + ')')) {
+            return;
+          }
           console.warn('[Missao Novo] Pagina nao mapeada durante ataque (' + urlAtual +
             ') — voltando a /missoes.');
           window.location.href = URL_MISSOES;
