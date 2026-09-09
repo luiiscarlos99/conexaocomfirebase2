@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.82
+// @version      3.83
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.82';
-  var SCRIPT_ATUALIZADO = '09/09/2026 16:05';
+  var SCRIPT_VERSAO = '3.83';
+  var SCRIPT_ATUALIZADO = '09/09/2026 16:12';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3434,13 +3434,54 @@
     console.log('[Autom Prep] Ready publicado — Shizuo pode atacar ' + ctx.nome);
   }
 
-  function automPrepIrProximaGerenciadaAposReady(ctx) {
-    definirFaseAutomPrep('');
+  function automPrepBuscarReadyPendente(lista, login) {
+    if (!lista || !lista.length) return null;
+    for (var i = 0; i < lista.length; i++) {
+      var item = lista[i];
+      if (item.login_dono === login && item.status === 'ready') return item;
+    }
+    return null;
+  }
+
+  function automPrepAguardarAtaqueShizuo(ctx) {
+    definirFaseAutomPrep('aguardar_ataque');
     limparEstadoAutomPrepAnimal();
-    marcarRotacaoCicloPendente();
+    if (ctx && ctx.nome) {
+      salvarContextoAutomPrep({
+        nome: ctx.nome,
+        login_dono: ctx.login_dono,
+        ordem: ctx.ordem,
+        contaId: ctx.contaId || ''
+      });
+    }
+    console.log('[Autom Prep] Pet vendido — aguardando Shizuo atacar ' +
+      (ctx && ctx.nome ? ctx.nome : '?') + ' antes da proxima gerenciada...');
     setTimeout(function() {
       window.location.href = URL_AUTOMACAO;
     }, 1200);
+  }
+
+  function automPrepAgendarEsperaAtaque(lista, login) {
+    var readyPend = automPrepBuscarReadyPendente(lista, login);
+    if (!readyPend) return false;
+    definirFaseAutomPrep('aguardar_ataque');
+    salvarContextoAutomPrep({
+      nome: readyPend.nome,
+      login_dono: readyPend.login_dono,
+      ordem: readyPend.ordem,
+      contaId: readyPend.contaId || ''
+    });
+    var faltaMs = AUTOM_PREP_READY_TIMEOUT_MS;
+    if (readyPend.ready_ts) {
+      faltaMs = AUTOM_PREP_READY_TIMEOUT_MS - (Date.now() - readyPend.ready_ts);
+      if (faltaMs < 0) faltaMs = 0;
+    }
+    console.log('[Autom Prep] Aguardando Shizuo atacar ' + readyPend.nome +
+      ' (timeout em ~' + Math.round(faltaMs / 1000) + 's)...');
+    setTimeout(function() {
+      window.location.reload();
+    }, Math.min(8000, Math.max(faltaMs, 3000)));
+    return true;
   }
 
   function automPrepVerificarReadyTimeout(callback) {
@@ -3592,9 +3633,10 @@
     if (!ctx || !ctx.nome) return false;
 
     if (fase === 'comprar_pos_ataque') {
-      gravarAutomacaoFilaItem(ctx.nome, { status: 'waiting_sell' });
-      definirFaseAutomPrep('waiting_sell');
-      definirSubAutomPrepAnimal('meus');
+      gravarAutomacaoFilaItem(ctx.nome, { status: 'prep_ok', ready_ts: null });
+      marcarAutomPrepGerenciadaFeita(ctx.nome);
+      limparEstadoAutomPrep();
+      console.log('[Autom Prep] Pet recomprado pos-ataque — ' + ctx.nome + ' concluida, proxima gerenciada.');
       marcarRotacaoCicloPendente();
       window.location.href = URL_AUTOMACAO;
       return true;
@@ -3654,7 +3696,7 @@
       }
       if (fase === 'vender_inicial') {
         automPrepPublicarReady(ctx);
-        automPrepIrProximaGerenciadaAposReady(ctx);
+        automPrepAguardarAtaqueShizuo(ctx);
         return true;
       }
       if (fase === 'vender_sync') {
@@ -3673,7 +3715,7 @@
     var ctx = lerContextoAutomPrep();
     if (!ctx || obterFaseAutomPrep() !== 'vender_inicial') return false;
     automPrepPublicarReady(ctx);
-    automPrepIrProximaGerenciadaAposReady(ctx);
+    automPrepAguardarAtaqueShizuo(ctx);
     return true;
   }
 
@@ -3681,10 +3723,7 @@
     var ctx = lerContextoAutomPrep();
     if (!ctx || obterFaseAutomPrep() !== 'vender_sync') return false;
     automPrepPublicarReady(ctx);
-    definirFaseAutomPrep('');
-    limparEstadoAutomPrep();
-    marcarRotacaoCicloPendente();
-    window.location.href = URL_AUTOMACAO;
+    automPrepAguardarAtaqueShizuo(ctx);
     return true;
   }
 
@@ -3794,6 +3833,8 @@
         };
 
         lerAutomacaoCoord(function(coord) {
+          if (automPrepAgendarEsperaAtaque(lista, login)) return;
+
           if (processarWaitingSell(coord)) return;
 
         for (var i = 0; i < lista.length; i++) {
@@ -7376,6 +7417,22 @@
     if (portaoRelatoriosAgendado) return;
 
     if (atacarAutomacoesAtacanteAtivo() && !garantirDoujutsuParaAtacar('portao autom atacante')) {
+      return true;
+    }
+
+    if (atacarAutomacoesAtacanteAtivo()) {
+      lerAutomacaoCoord(function(coord) {
+        buscarProximoAlvoAutomacaoAtacante(coord, function(alvo) {
+          if (alvo) {
+            definirModoCacadasAutomacao(alvo.nome);
+            console.log('[Autom Atacante] Alvo ready — ataque imediato (sem espera portao): ' + alvo.nome);
+            irParaCacadasLiberado('autom atacante alvo ready');
+          } else {
+            console.log('[Autom Atacante] Sem alvo ready — retentativa portao em 5s...');
+            agendarRetentativaPortao('autom atacante aguardando prep');
+          }
+        });
+      });
       return true;
     }
 
@@ -11079,6 +11136,13 @@
                   return true;
                 }
               console.warn('[Firebase Fila] Formulario por_nome indisponivel — tentando caçada por nivel...');
+            }
+
+            if (modo === 'automacao_atacar' && alvoNome) {
+              if (executarCacadaPorNome(alvoNome)) {
+                return true;
+              }
+              console.warn('[Autom Atacante] Formulario por_nome indisponivel — tentando caçada por nivel...');
             }
 
             if (modo === 'blacklist' && alvoNome) {
