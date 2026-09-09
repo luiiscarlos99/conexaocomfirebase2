@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.90
+// @version      3.91
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.90';
-  var SCRIPT_ATUALIZADO = '09/09/2026 18:26';
+  var SCRIPT_VERSAO = '3.91';
+  var SCRIPT_ATUALIZADO = '09/09/2026 18:32';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3274,10 +3274,19 @@
     if (!atacarAutomacoesPrepAtivo() || !estaEmContaGerenciada()) return true;
     var hp = obterStatusHp();
     if (curarHpAtivo()) {
-      if (!curarHpParaAutomPrep()) marcarCurarHpAutomPrep();
+      if (curarHpParaAutomPrep()) {
+        console.log('[Autom Prep] Cura HP pendente (' + contexto + ') — indo ao /status...');
+        window.location.href = URL_STATUS;
+      }
       return false;
     }
-    if (hp.ok && hpAtendeMinimoRaid(hp)) return true;
+    if (!hp.ok) {
+      var snapHp = lerHpSnapshot();
+      if (snapHp && hpAtendeMinimoRaid(snapHp)) return true;
+      console.warn('[Autom Prep] HP indisponivel na pagina (' + contexto + ') — seguindo fluxo.');
+      return true;
+    }
+    if (hpAtendeMinimoRaid(hp)) return true;
     console.log('[Autom Prep] HP baixo (<= ' + HP_MINIMO_RAID + ') — curando (' + contexto + ')');
     marcarCurarHpAutomPrep();
     redirecionarParaCurarHp('autom prep (' + contexto + ')');
@@ -3430,10 +3439,28 @@
 
   function automPrepAvancarAposQuests(contexto) {
     if (!garantirHpParaAutomPrep(contexto || 'pos-quests')) return true;
-    lerAutomacaoCoord(function(coord) {
-      var emCooldown = coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
-      definirFaseAutomPrep(emCooldown ? 'prep_ate_venda' : 'vender_inicial');
+
+    var seguirParaAnimal = function(coord) {
+      var emCooldown = coord && coord.shizuo_cooldown_until && coord.shizuo_cooldown_until > Date.now();
+      var fase = emCooldown ? 'prep_ate_venda' : 'vender_inicial';
+      definirFaseAutomPrep(fase);
+      console.log('[Autom Prep] Quests ok — fase ' + fase + ', indo para /animal/meus...');
       window.location.href = URL_ANIMAL_MEUS;
+    };
+
+    var concluido = false;
+    var timerCoord = setTimeout(function() {
+      if (concluido) return;
+      concluido = true;
+      console.warn('[Autom Prep] Firebase coord lento — seguindo para animal sem cooldown.');
+      seguirParaAnimal(null);
+    }, 2500);
+
+    lerAutomacaoCoord(function(coord) {
+      if (concluido) return;
+      concluido = true;
+      clearTimeout(timerCoord);
+      seguirParaAnimal(coord);
     });
     return true;
   }
