@@ -359,20 +359,72 @@
     }
   }
 
-  function registrarComandosConsolePagina() {
+  function injetarNaPagina(codigo) {
     try {
       var el = document.createElement('script');
-      el.textContent =
-        'window.botRotacaoAutomacao=function(ligar){' +
-        'function s(){try{return localStorage.getItem("BOT_ROTACAO_AUTOMACAO")==="1"?' +
-        '"ligada (bot_rotacao_automacao=1)":"desligada";}catch(e){return "desligada";}}' +
-        'if(arguments.length===0)return s();' +
-        'try{if(ligar)localStorage.setItem("BOT_ROTACAO_AUTOMACAO","1");' +
-        'else localStorage.removeItem("BOT_ROTACAO_AUTOMACAO");}catch(e){}' +
-        'console.log("[Automacao] Rotacao: "+s());return s();};';
+      el.textContent = codigo;
       (document.documentElement || document.head).appendChild(el);
       el.parentNode.removeChild(el);
     } catch (e) {}
+  }
+
+  // Inject Code roda isolado; o console F12 usa o contexto da pagina — expor flags via localStorage.
+  function registrarComandosConsolePagina() {
+    injetarNaPagina(
+      'window.botRotacaoAutomacao=function(ligar){' +
+      'function s(){try{return localStorage.getItem("BOT_ROTACAO_AUTOMACAO")==="1"?' +
+      '"ligada (bot_rotacao_automacao=1)":"desligada";}catch(e){return "desligada";}}' +
+      'if(arguments.length===0){console.log("[Automacao] Rotacao: "+s());return localStorage.getItem("BOT_ROTACAO_AUTOMACAO")==="1";}' +
+      'try{if(ligar)localStorage.setItem("BOT_ROTACAO_AUTOMACAO","1");' +
+      'else localStorage.removeItem("BOT_ROTACAO_AUTOMACAO");}catch(e){}' +
+      'console.log("[Automacao] Rotacao: "+s());return localStorage.getItem("BOT_ROTACAO_AUTOMACAO")==="1";};' +
+
+      'window.botAtacarAutomacoes=function(ligar){' +
+      'function st(){try{if(localStorage.getItem("BOT_ATACAR_AUTOMACOES_PREP")==="1")return"prep ligado (Chrome)";' +
+      'if(localStorage.getItem("BOT_ATACAR_AUTOMACOES")==="1")return"atacante ligado (Shizuo)";' +
+      'return"desligado";}catch(e){return"desligado";}}' +
+      'if(arguments.length===0){console.log("[Autom Atacante] "+st());return localStorage.getItem("BOT_ATACAR_AUTOMACOES")==="1";}' +
+      'try{if(ligar){localStorage.removeItem("BOT_ATACAR_AUTOMACOES_PREP");localStorage.setItem("BOT_ATACAR_AUTOMACOES","1");' +
+      'if(localStorage.getItem("BOT_DOUJUTSU")!=="1"){localStorage.setItem("BOT_DOUJUTSU","1");localStorage.setItem("BOT_DOUJUTSU_POR_AUTOM_ATACANTE","1");}' +
+      'else localStorage.removeItem("BOT_DOUJUTSU_POR_AUTOM_ATACANTE");}else{' +
+      'localStorage.removeItem("BOT_ATACAR_AUTOMACOES");' +
+      'if(localStorage.getItem("BOT_DOUJUTSU_POR_AUTOM_ATACANTE")==="1"){localStorage.removeItem("BOT_DOUJUTSU");localStorage.removeItem("BOT_DOUJUTSU_POR_AUTOM_ATACANTE");}}' +
+      'var modo="";try{modo=sessionStorage.getItem("BOT_MODO_ABA")||"";}catch(e){}' +
+      'if(ligar&&!modo){sessionStorage.setItem("BOT_MODO_ABA","cacadas");location.reload();return true;}' +
+      'console.log("[Autom Atacante] "+st());}catch(e){}' +
+      'return localStorage.getItem("BOT_ATACAR_AUTOMACOES")==="1";};' +
+
+      'window.botAtacarAutomacoesPrep=function(ligar){' +
+      'function st(){try{if(localStorage.getItem("BOT_ATACAR_AUTOMACOES_PREP")==="1")return"prep ligado (Chrome)";' +
+      'if(localStorage.getItem("BOT_ATACAR_AUTOMACOES")==="1")return"atacante ligado (Shizuo)";' +
+      'return"desligado";}catch(e){return"desligado";}}' +
+      'if(arguments.length===0){console.log("[Autom Prep] "+st());return localStorage.getItem("BOT_ATACAR_AUTOMACOES_PREP")==="1";}' +
+      'try{if(ligar){localStorage.removeItem("BOT_ATACAR_AUTOMACOES");try{sessionStorage.removeItem("BOT_AUTOM_PREP_CICLO_CONCLUIDO");}catch(e2){}}' +
+      'if(ligar)localStorage.setItem("BOT_ATACAR_AUTOMACOES_PREP","1");else localStorage.removeItem("BOT_ATACAR_AUTOMACOES_PREP");' +
+      'var modo="";try{modo=sessionStorage.getItem("BOT_MODO_ABA")||"";}catch(e){}' +
+      'if(ligar&&!modo){sessionStorage.setItem("BOT_MODO_ABA","cacadas");location.reload();return true;}' +
+      'console.log("[Autom Prep] "+st());}catch(e){}' +
+      'return localStorage.getItem("BOT_ATACAR_AUTOMACOES_PREP")==="1";};' +
+
+      'window.botAutomPrepReset=function(){' +
+      'var logins=["shiroe","shizuo","sora"];' +
+      'try{for(var i=0;i<logins.length;i++){localStorage.removeItem("BOT_AUTOM_PREP_"+logins[i]+"_FEITAS");localStorage.removeItem("BOT_AUTOM_PREP_"+logins[i]+"_PRESENTES");}' +
+      'localStorage.removeItem("BOT_AUTOM_PREP_LOGINS_FEITOS");sessionStorage.removeItem("BOT_AUTOM_PREP_FEITAS");' +
+      'sessionStorage.removeItem("BOT_AUTOM_PREP_PRESENTES");sessionStorage.removeItem("BOT_AUTOM_PREP_CICLO_CONCLUIDO");' +
+      'sessionStorage.removeItem("BOT_AUTOM_PREP_FASE");sessionStorage.removeItem("BOT_AUTOM_PREP_CONTA");' +
+      'sessionStorage.removeItem("BOT_AUTOM_PREP_REL_STEP");sessionStorage.removeItem("BOT_AUTOM_PREP_ANIMAL_SUB");' +
+      'sessionStorage.removeItem("BOT_AUTOM_PREP_ANIMAL_IDX");sessionStorage.removeItem("BOT_AUTOM_PREP_ANIMAL_BS");' +
+      'console.log("[Autom Prep] Estado limpo — recarregue ou va para /automacao para reiniciar.");}catch(e){}};'
+    );
+  }
+
+  function agendarDiagnosticoAtkSOS() {
+    setTimeout(function() {
+      injetarNaPagina(
+        'if(!window.__BOT_BUILD_CACADAS__){console.warn("[Bot Bootstrap] atkSOS nao carregou — ' +
+        'confira URL Inject Code (hash precisa existir no GitHub) e erros em vermelho no console.");}'
+      );
+    }, 6000);
   }
 
   try {
@@ -428,8 +480,9 @@
 
   exibirModoAbaServerID();
   registrarComandosConsolePagina();
-  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '2.1', rotacao: descreverRotacaoAutomacaoBootstrap() };
-  console.log('[Bot Bootstrap] ok | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
+  agendarDiagnosticoAtkSOS();
+  window.__BOT_BOOTSTRAP_BUILD__ = { versao: '2.2', rotacao: descreverRotacaoAutomacaoBootstrap() };
+  console.log('[Bot Bootstrap] ok v2.2 | rotacao automacao: ' + descreverRotacaoAutomacaoBootstrap());
 
   window.__BOT_BOOTSTRAP_OK__ = true;
 })();

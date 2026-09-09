@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.81
+// @version      3.82
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.81';
-  var SCRIPT_ATUALIZADO = '09/09/2026 15:55';
+  var SCRIPT_VERSAO = '3.82';
+  var SCRIPT_ATUALIZADO = '09/09/2026 16:05';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -918,6 +918,28 @@
       try { window.name = '__BOT_RECUP__:' + destino; } catch (e) {}
     }
     return destino;
+  }
+
+  function injetarScriptNaPagina(codigo) {
+    try {
+      var el = document.createElement('script');
+      el.textContent = codigo;
+      (document.documentElement || document.head).appendChild(el);
+      el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
+
+  function publicarBuildCacadasNaPagina() {
+    window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
+    console.log(
+      '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
+      'color:#2ecc71;font-weight:bold'
+    );
+    injetarScriptNaPagina(
+      'window.__BOT_BUILD_CACADAS__={versao:"' + SCRIPT_VERSAO + '",atualizado:"' + SCRIPT_ATUALIZADO + '"};' +
+      'console.log("%c[Bot Ca\\u00e7adas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO +
+      ' (pagina)","color:#2ecc71;font-weight:bold");'
+    );
   }
 
   function agendarRecuperacaoViaLogin(motivo, delayMs) {
@@ -1108,6 +1130,8 @@
     if (typeof exibirModoAbaServerID === 'function') exibirModoAbaServerID();
   };
 
+  publicarBuildCacadasNaPagina();
+
   if ((function() {
     try {
       var p = (window.location.pathname || '').replace(/\/+$/, '') || '/';
@@ -1125,12 +1149,6 @@
       return;
     }
   }
-
-  window.__BOT_BUILD_CACADAS__ = { versao: SCRIPT_VERSAO, atualizado: SCRIPT_ATUALIZADO };
-  console.log(
-    '%c[Bot Caçadas] v' + SCRIPT_VERSAO + ' | atualizado: ' + SCRIPT_ATUALIZADO,
-    'color:#2ecc71;font-weight:bold'
-  );
 
   try {
     if (sessionStorage.getItem(BOT_KILL_KEY) === '1') {
