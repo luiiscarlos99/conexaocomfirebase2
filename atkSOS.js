@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.84
+// @version      3.85
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.84';
-  var SCRIPT_ATUALIZADO = '09/09/2026 16:28';
+  var SCRIPT_VERSAO = '3.85';
+  var SCRIPT_ATUALIZADO = '09/09/2026 16:32';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3239,8 +3239,14 @@
   }
 
   function montarMensagemAutomPrepTimeout(nome, loginDono) {
-    return '[Automacao Prep] Timeout 3min — Shizuo nao atacou **' + (nome || '?') + '** (' +
-      (loginDono || '?') + '). Comprando pet com reserva atual e indo para proxima automacao.';
+    return '**[Automacao Prep] Shizuo NAO atacou** (timeout 3 min)\n' +
+      'Gerenciada: **' + (nome || '?') + '** (' + (loginDono || '?') + ')\n' +
+      'Acao: recomprando pet para proteger a reserva. Proxima gerenciada so apos confirmar compra.';
+  }
+
+  function montarMensagemAutomPrepAtaqueDetectado(nome, loginDono) {
+    return '[Automacao Prep] Shizuo atacou **' + (nome || '?') + '** (' + (loginDono || '?') +
+      ') — recomprando pet antes da proxima gerenciada.';
   }
 
   function automPrepPularGerenciada(ctx, motivo, skipMotivo) {
@@ -3508,7 +3514,8 @@
   }
 
   function automPrepExecutarFallbackTimeout(item) {
-    console.warn('[Autom Prep] Timeout 3min pos-venda — ' + item.nome);
+    console.error('[Autom Prep] Shizuo NAO atacou em 3 min — ' + item.nome +
+      '. Recomprando pet antes da proxima gerenciada.');
     enviarDiscordTexto(montarMensagemAutomPrepTimeout(item.nome, item.login_dono));
     gravarAutomacaoFilaItem(item.nome, {
       status: 'timeout_bought',
@@ -3634,26 +3641,41 @@
     return processarAutomPrepPosCompraAnimal();
   }
 
+  function automPrepPetConfirmadoEmMeus() {
+    return !!formVenderAnimalMeus();
+  }
+
+  function automPrepFinalizarPosCompraPet(ctx, fase) {
+    var statusFinal = fase === 'comprar_timeout' ? 'timeout_bought' : 'prep_ok';
+    gravarAutomacaoFilaItem(ctx.nome, { status: statusFinal, ready_ts: null });
+    marcarAutomPrepGerenciadaFeita(ctx.nome);
+    limparEstadoAutomPrep();
+    if (fase === 'comprar_timeout') {
+      console.log('[Autom Prep] Pet recomprado apos timeout (Shizuo NAO atacou) — ' +
+        ctx.nome + ' concluida, proxima gerenciada.');
+    } else {
+      console.log('[Autom Prep] Pet recomprado pos-ataque — ' + ctx.nome +
+        ' concluida, proxima gerenciada.');
+    }
+    marcarRotacaoCicloPendente();
+    window.location.href = URL_AUTOMACAO;
+  }
+
   function processarAutomPrepPosCompraAnimal() {
     var ctx = lerContextoAutomPrep();
     var fase = obterFaseAutomPrep();
     if (!ctx || !ctx.nome) return false;
 
-    if (fase === 'comprar_pos_ataque') {
-      gravarAutomacaoFilaItem(ctx.nome, { status: 'prep_ok', ready_ts: null });
-      marcarAutomPrepGerenciadaFeita(ctx.nome);
-      limparEstadoAutomPrep();
-      console.log('[Autom Prep] Pet recomprado pos-ataque — ' + ctx.nome + ' concluida, proxima gerenciada.');
-      marcarRotacaoCicloPendente();
-      window.location.href = URL_AUTOMACAO;
-      return true;
-    }
-
-    if (fase === 'comprar_timeout') {
-      marcarAutomPrepGerenciadaFeita(ctx.nome);
-      limparEstadoAutomPrep();
-      marcarRotacaoCicloPendente();
-      window.location.href = URL_AUTOMACAO;
+    if (fase === 'comprar_pos_ataque' || fase === 'comprar_timeout') {
+      if (!automPrepPetConfirmadoEmMeus()) {
+        console.warn('[Autom Prep] Pet ainda nao confirmado em /animal/meus — ' + ctx.nome +
+          ' (fase ' + fase + '). Voltando a loja...');
+        definirSubAutomPrepAnimal('loja');
+        limparBuscaAnimalLojaAutomPrep();
+        window.location.href = URL_ANIMAL_LOJA;
+        return true;
+      }
+      automPrepFinalizarPosCompraPet(ctx, fase);
       return true;
     }
 
@@ -3798,14 +3820,42 @@
     irParaLoginDiarioMesmaAba(proximo);
   }
 
-  function automPrepIniciarCompraPosAtaque(item) {
+  function automPrepBloqueiaProximaGerenciada(lista, login) {
+    var fase = obterFaseAutomPrep();
+    if (fase === 'aguardar_ataque' || fase === 'comprar_pos_ataque' || fase === 'comprar_timeout') {
+      return true;
+    }
+    if (!lista || !lista.length) return false;
+    for (var i = 0; i < lista.length; i++) {
+      var item = lista[i];
+      if (item.login_dono !== login) continue;
+      if (item.status === 'ready' || item.status === 'attacked') return true;
+    }
+    return false;
+  }
+
+  function automPrepRetomarCompraPendente() {
+    var fase = obterFaseAutomPrep();
+    if (fase !== 'comprar_pos_ataque' && fase !== 'comprar_timeout') return false;
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || !ctx.nome) return false;
+    console.log('[Autom Prep] Retomando compra de pet — ' + ctx.nome + ' (' + fase + ').');
+    automPrepIniciarCompraPosAtaque(ctx, fase);
+    return true;
+  }
+
+  function automPrepIniciarCompraPosAtaque(item, faseCompra) {
+    var fase = faseCompra || 'comprar_pos_ataque';
     salvarContextoAutomPrep({
       nome: item.nome,
       login_dono: item.login_dono,
       ordem: item.ordem,
       contaId: item.contaId || ''
     });
-    definirFaseAutomPrep('comprar_pos_ataque');
+    definirFaseAutomPrep(fase);
+    if (fase === 'comprar_pos_ataque') {
+      enviarDiscordTexto(montarMensagemAutomPrepAtaqueDetectado(item.nome, item.login_dono));
+    }
     definirSubAutomPrepAnimal('loja');
     limparBuscaAnimalLojaAutomPrep();
     var snap = { nome: item.nome, contaId: item.contaId || '' };
@@ -3898,6 +3948,8 @@
         };
 
         lerAutomacaoCoord(function(coord) {
+          if (automPrepRetomarCompraPendente()) return;
+
           if (automPrepDetectarAtaqueConcluido(coord, lista, login)) return;
 
           for (var i = 0; i < lista.length; i++) {
@@ -3905,7 +3957,7 @@
             if (item.login_dono !== login) continue;
             if (item.status === 'attacked') {
               console.log('[Autom Prep] Shizuo atacou ' + item.nome + ' — comprando pet.');
-              automPrepIniciarCompraPosAtaque(item);
+              automPrepIniciarCompraPosAtaque(item, 'comprar_pos_ataque');
               return;
             }
           }
@@ -3913,6 +3965,12 @@
           if (automPrepAgendarEsperaAtaque(lista, login)) return;
 
           if (processarWaitingSell(coord)) return;
+
+          if (automPrepBloqueiaProximaGerenciada(lista, login)) {
+            console.warn('[Autom Prep] Ciclo pendente (espera/compra) — proxima gerenciada bloqueada.');
+            setTimeout(function() { window.location.reload(); }, 8000);
+            return;
+          }
 
         if (automPrepTodasGerenciadasFeitas()) {
           automPrepConcluirLoginAtual();
