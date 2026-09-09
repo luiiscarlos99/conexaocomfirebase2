@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.86
+// @version      3.87
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.86';
-  var SCRIPT_ATUALIZADO = '09/09/2026 16:38';
+  var SCRIPT_VERSAO = '3.87';
+  var SCRIPT_ATUALIZADO = '09/09/2026 16:52';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3373,8 +3373,18 @@
       window.location.href = 'https://shadowofshinobi.com/status';
       return true;
     }
-    if (fase === 'vender_inicial' || fase === 'waiting_sell' || fase === 'vender_sync' ||
-        fase === 'comprar_pos_ataque') {
+    if (fase === 'comprar_pos_ataque' || fase === 'comprar_timeout') {
+      definirSubAutomPrepAnimal('loja');
+      limparBuscaAnimalLojaAutomPrep();
+      window.location.href = URL_ANIMAL_LOJA;
+      return true;
+    }
+    if (fase === 'aguardar_ataque') {
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+    if (fase === 'vender_inicial' || fase === 'prep_ate_venda' || fase === 'waiting_sell' ||
+        fase === 'vender_sync') {
       window.location.href = URL_ANIMAL_MEUS;
       return true;
     }
@@ -3409,7 +3419,9 @@
     try { step = sessionStorage.getItem(BOT_AUTOM_PREP_REL_STEP_KEY) || 'ataque'; } catch (e) {}
 
     if (step === 'ataque') {
-      lerAutomacaoCoord(function(coord) {
+      automPrepResgatarCompraSeAtacado(function(resgatou) {
+        if (resgatou) return;
+        lerAutomacaoCoord(function(coord) {
         if (shizuoAtacouGerenciadaHojeCoord(coord, ctx.nome)) {
           automPrepPularGerenciada(ctx, 'Shizuo ja atacou hoje', 'shizuo_ja_atacou_hoje');
           return;
@@ -3421,6 +3433,7 @@
         }
         try { sessionStorage.setItem(BOT_AUTOM_PREP_REL_STEP_KEY, 'defesa'); } catch (e) {}
         window.location.href = URL_RELATORIOS_DEFESA;
+        });
       });
       return true;
     }
@@ -3926,6 +3939,38 @@
     return true;
   }
 
+  function automPrepResgatarCompraSeAtacado(callback) {
+    if (!atacarAutomacoesPrepAtivo()) {
+      callback(false);
+      return;
+    }
+    var fase = obterFaseAutomPrep();
+    if (fase === 'comprar_pos_ataque' || fase === 'comprar_timeout' || fase === 'aguardar_ataque') {
+      callback(false);
+      return;
+    }
+    var ctx = lerContextoAutomPrep();
+    if (!ctx || !ctx.nome) {
+      callback(false);
+      return;
+    }
+    listarAutomacaoFila(function(lista) {
+      var login = obterUsuarioLogin();
+      for (var i = 0; i < lista.length; i++) {
+        var item = lista[i];
+        if (item.login_dono !== login) continue;
+        if (item.status !== 'attacked') continue;
+        if (normalizarNomeCacadas(item.nome) !== normalizarNomeCacadas(ctx.nome)) continue;
+        console.warn('[Autom Prep] Resgate pos-ataque — fase era ' + (fase || '?') +
+          ', iniciando compra de pet em ' + item.nome + '.');
+        automPrepIniciarCompraPosAtaque(item, 'comprar_pos_ataque');
+        callback(true);
+        return;
+      }
+      callback(false);
+    });
+  }
+
   function automPrepIniciarCompraPosAtaque(item, faseCompra) {
     var fase = faseCompra || 'comprar_pos_ataque';
     salvarContextoAutomPrep({
@@ -3934,6 +3979,7 @@
       ordem: item.ordem,
       contaId: item.contaId || ''
     });
+    salvarUltimaGerenciadaSnapshot(item.nome, item.contaId || '');
     definirFaseAutomPrep(fase);
     if (fase === 'comprar_pos_ataque') {
       enviarDiscordTexto(montarMensagemAutomPrepAtaqueDetectado(item.nome, item.login_dono));
@@ -11001,6 +11047,12 @@
       if (obterModoAba() === 'cacadas' && consumirContaAutomacaoAssumida()) {
         limparRetomarGerenciada();
         if (atacarAutomacoesPrepAtivo()) {
+          var fasePrepPosAssume = obterFaseAutomPrep();
+          if (fasePrepPosAssume && fasePrepPosAssume !== 'validar') {
+            console.log('[Autom Prep] Conta assumida — retomando fase ' + fasePrepPosAssume);
+            retomarAutomPrepPosAssume();
+            return;
+          }
           var nomePrep = extrairNomeUsuarioLogado();
           var snapPrep = lerUltimaGerenciadaSnapshot();
           iniciarAutomPrepPosAssume(nomePrep || (snapPrep && snapPrep.nome) || '', snapPrep && snapPrep.contaId);
