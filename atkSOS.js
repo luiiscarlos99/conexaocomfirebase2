@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.87
+// @version      3.88
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.87';
-  var SCRIPT_ATUALIZADO = '09/09/2026 16:52';
+  var SCRIPT_VERSAO = '3.88';
+  var SCRIPT_ATUALIZADO = '09/09/2026 17:00';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3232,48 +3232,10 @@
       ') — ' + motivo;
   }
 
-  function montarMensagemAutomAtacanteSucesso(nome, loginDono, dados) {
-    var ryous = dados && dados.ryousTexto ? dados.ryousTexto : '?';
-    return '[Automacao Atacante] Shizuo atacou **' + (nome || '?') + '** (' +
-      (loginDono || '?') + ') — vitoria | +' + ryous + ' ryous';
-  }
-
   function montarMensagemAutomPrepTimeout(nome, loginDono) {
     return '**[Automacao Prep] Shizuo NAO atacou** (timeout 3 min)\n' +
       'Gerenciada: **' + (nome || '?') + '** (' + (loginDono || '?') + ')\n' +
       'Acao: recomprando pet para proteger a reserva. Proxima gerenciada so apos confirmar compra.';
-  }
-
-  function montarMensagemAutomPrepAtaqueDetectado(nome, loginDono) {
-    return '[Automacao Prep] Shizuo atacou **' + (nome || '?') + '** (' + (loginDono || '?') +
-      ') — recomprando pet antes da proxima gerenciada.';
-  }
-
-  function montarMensagemAutomPrepReady(nome, loginDono) {
-    return '[Automacao Prep] Pet **vendido** em **' + (nome || '?') + '** (' + (loginDono || '?') +
-      ') — aguardando Shizuo atacar (timeout 3 min).';
-  }
-
-  function montarMensagemAutomPrepPetRecomprado(nome, loginDono, posTimeout) {
-    if (posTimeout) {
-      return '[Automacao Prep] Pet **recomprado** em **' + (nome || '?') + '** (' + (loginDono || '?') +
-        ') apos timeout (Shizuo nao atacou) — proxima gerenciada.';
-    }
-    return '[Automacao Prep] Pet **recomprado** em **' + (nome || '?') + '** (' + (loginDono || '?') +
-      ') pos-ataque Shizuo — proxima gerenciada.';
-  }
-
-  function montarMensagemAutomPrepAguardandoCooldown(nome, loginDono, segundos) {
-    return '[Automacao Prep] Shizuo em **penalidade pos-ataque** (~' + segundos + 's restantes) — ' +
-      'aguardando para vender **' + (nome || 'proxima gerenciada') + '** (' + (loginDono || '?') + ').';
-  }
-
-  function montarMensagemAutomAtacanteSemAlvo() {
-    return '[Automacao Atacante] Shizuo no portao **sem alvo ready** — aguardando prep publicar venda.';
-  }
-
-  function montarMensagemAutomAtacanteIndoAtacar(nome) {
-    return '[Automacao Atacante] Shizuo indo atacar **' + (nome || '?') + '** (doujutsu + caçada por nome).';
   }
 
   function automPrepFaltaCooldownShizuoMs(coord) {
@@ -3515,9 +3477,6 @@
     }
     console.log('[Autom Prep] Pet vendido — aguardando Shizuo atacar ' +
       (ctx && ctx.nome ? ctx.nome : '?') + ' antes da proxima gerenciada...');
-    if (ctx && ctx.nome) {
-      enviarDiscordTexto(montarMensagemAutomPrepReady(ctx.nome, ctx.login_dono));
-    }
     setTimeout(function() {
       window.location.href = URL_AUTOMACAO;
     }, 1200);
@@ -3530,13 +3489,6 @@
     var nome = ctx && ctx.nome ? ctx.nome : 'proxima gerenciada';
     var loginDono = ctx && ctx.login_dono ? ctx.login_dono : obterUsuarioLogin();
     console.log('[Autom Prep] Penalidade Shizuo (~' + seg + 's) — aguardando antes de ' + nome + '...');
-    try {
-      var avisoKey = 'BOT_AUTOM_PREP_COOLDOWN_DISCORD_' + normalizarNomeCacadas(nome);
-      if (sessionStorage.getItem(avisoKey) !== String(Math.ceil(falta / 60000))) {
-        sessionStorage.setItem(avisoKey, String(Math.ceil(falta / 60000)));
-        enviarDiscordTexto(montarMensagemAutomPrepAguardandoCooldown(nome, loginDono, seg));
-      }
-    } catch (e) {}
     setTimeout(function() {
       window.location.reload();
     }, Math.min(8000, Math.max(falta - AUTOM_PREP_VENDA_ANTES_COOLDOWN_MS, 3000)));
@@ -3563,7 +3515,7 @@
       ' (timeout em ~' + segRestantes + 's)...');
     if (segRestantes <= 30) {
       console.warn('[Autom Prep] Shizuo ainda nao atacou ' + readyPend.nome +
-        ' — timeout em ' + segRestantes + 's (Discord se nao atacar).');
+        ' — timeout em ' + segRestantes + 's.');
     }
     setTimeout(function() {
       window.location.reload();
@@ -3731,8 +3683,6 @@
       console.log('[Autom Prep] Pet recomprado pos-ataque — ' + ctx.nome +
         ' concluida, proxima gerenciada.');
     }
-    enviarDiscordTexto(montarMensagemAutomPrepPetRecomprado(
-      ctx.nome, ctx.login_dono, fase === 'comprar_timeout'));
     marcarRotacaoCicloPendente();
     window.location.href = URL_AUTOMACAO;
   }
@@ -3981,9 +3931,6 @@
     });
     salvarUltimaGerenciadaSnapshot(item.nome, item.contaId || '');
     definirFaseAutomPrep(fase);
-    if (fase === 'comprar_pos_ataque') {
-      enviarDiscordTexto(montarMensagemAutomPrepAtaqueDetectado(item.nome, item.login_dono));
-    }
     definirSubAutomPrepAnimal('loja');
     limparBuscaAnimalLojaAutomPrep();
     var snap = { nome: item.nome, contaId: item.contaId || '' };
@@ -4253,8 +4200,6 @@
       console.warn('[Autom Atacante] Combate sem flag — reconhecendo vitima ' + ctxNome + '.');
     }
     if (parsed.resultado === 'vitoria') {
-      enviarDiscordTexto(montarMensagemAutomAtacanteSucesso(
-        ctxNome, '', dados));
       gravarAutomacaoFilaItem(ctxNome, {
         status: 'attacked',
         ready_ts: null,
@@ -7717,7 +7662,6 @@
           if (alvo) {
             definirModoCacadasAutomacao(alvo.nome);
             console.log('[Autom Atacante] Alvo ready — ataque imediato (sem espera portao): ' + alvo.nome);
-            enviarDiscordTexto(montarMensagemAutomAtacanteIndoAtacar(alvo.nome));
             irParaCacadasLiberado('autom atacante alvo ready');
           } else {
             console.log('[Autom Atacante] Sem alvo ready — retentativa portao em 5s...');
