@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bot Atacar - Shadow of Shinobi
 // @namespace    http://tampermonkey.net/
-// @version      3.89
+// @version      3.90
 // @description  Automação Caçadas/Atacar + Missão Novo + Atacar Automações (prep/atacante Firebase), portão relatórios, blacklist, captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -835,8 +835,8 @@
   aplicarParamsUrl();
 
   var BOT_KILL_KEY = 'BOT_DESATIVADO_ABA';
-  var SCRIPT_VERSAO = '3.89';
-  var SCRIPT_ATUALIZADO = '09/09/2026 18:22';
+  var SCRIPT_VERSAO = '3.90';
+  var SCRIPT_ATUALIZADO = '09/09/2026 18:26';
   var URL_HOME = 'https://shadowofshinobi.com/';
   var TEMPO_RECUPERACAO_FALHA = 20000;
   var TEMPO_RECUPERACAO_SERVIDOR = 3000;
@@ -3867,6 +3867,25 @@
       if (feitas.indexOf(presentes[i]) === -1) return false;
     }
     return true;
+  }
+
+  function retomarAutomPrepPosLogin() {
+    if (!atacarAutomacoesPrepAtivo() || automPrepCicloSequenciaConcluido()) return false;
+    console.log('[Autom Prep] Pos-login — indo para /automacao...');
+    window.location.href = URL_AUTOMACAO;
+    return true;
+  }
+
+  function retomarRotinaPosLoginMesmaAba() {
+    if (!consumirDiarioRetomarPosLogin()) return false;
+    if (retomarAutomPrepPosLogin()) return true;
+    if (diarioGerenciadaAtivo()) {
+      console.log('[Diario] Pos-login — retomando diario na mesma aba (automacao)...');
+      marcarRotacaoCicloPendente();
+      window.location.href = URL_AUTOMACAO;
+      return true;
+    }
+    return false;
   }
 
   function automPrepConcluirLoginAtual() {
@@ -7019,12 +7038,18 @@
     if (url.indexOf('captcha_seguranca') !== -1) return false;
 
     try {
-      if (sessionStorage.getItem(BOT_ROTACAO_CICLO_KEY) === '1') return false;
+      if (sessionStorage.getItem(BOT_ROTACAO_CICLO_KEY) === '1') {
+        var prepPosLoginPrincipal = atacarAutomacoesPrepAtivo() && !automPrepCicloSequenciaConcluido() &&
+          !estaEmContaGerenciada();
+        if (!prepPosLoginPrincipal) return false;
+      }
       if (sessionStorage.getItem(BOT_ROTACAO_ASSUMIDA_KEY) === '1') return false;
     } catch (e) {}
 
     if (precisaRetomarGerenciada()) {
       console.warn('[Automacao] Conta principal pos-logout — retomando gerenciada via automacao...');
+    } else if (atacarAutomacoesPrepAtivo() && !automPrepCicloSequenciaConcluido()) {
+      console.warn('[Autom Prep] Conta principal pos-login — indo para automacao...');
     } else if (diarioGerenciadaAtivo() && !rotacaoAutomacaoAtiva()) {
       console.warn('[Diario] Conta principal — diario ativo, indo assumir gerenciada...');
     } else {
@@ -11063,12 +11088,7 @@
             window.location.href = retornoMnHp;
             return;
           }
-          if (consumirDiarioRetomarPosLogin() && diarioGerenciadaAtivo()) {
-            console.log('[Diario] Pos-login — retomando diario na mesma aba (automacao)...');
-            marcarRotacaoCicloPendente();
-            window.location.href = URL_AUTOMACAO;
-            return;
-          }
+          if (retomarRotinaPosLoginMesmaAba()) return;
           if (processarRotacaoContaPrincipal()) return;
           if (processarCurarHpNaPaginaStatus()) return;
           if (redirecionarParaDiarioGerenciada('status pos-login')) return;
@@ -11111,6 +11131,7 @@
         return;
       }
 
+      if (retomarRotinaPosLoginMesmaAba()) return;
       if (processarRotacaoContaPrincipal()) return;
 
       if (!missaoNovoPausaRotinaCacadas()) {
