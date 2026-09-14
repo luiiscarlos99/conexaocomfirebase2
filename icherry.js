@@ -1,17 +1,17 @@
 // ==UserScript==
 // @name         iCherry - Caçada por Classe Ninja
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Bot simples: só caçada por classe (por_nivel). Sem login, Firebase ou captcha OCR.
+// @version      1.4
+// @description  Bot simples: caçada por classe (por_nivel) com filtro de alvo. Sem login, Firebase ou captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==/UserScript==
 
 // Inject Code — script separado (nao misturar com atkSOS na mesma aba).
 //
-// Ligar/desligar pela URL (copie e cole na barra de endereco):
-//   ?icherry=1                      liga o bot
-//   ?icherry=0                      desliga
+// Ligar/desligar pela URL (so nesta aba; classe e demais configs valem em todas):
+//   ?icherry=1                      liga o bot nesta aba
+//   ?icherry=0                      desliga nesta aba
 //   ?icherry=sim                    liga  |  ?icherry=nao  desliga
 //   ?icherry=1&icherry_classe=6     classe 6 (padrao) — troque o numero
 //   ?icherry=1&classe=6             atalho igual ao de cima
@@ -21,6 +21,8 @@
 //   botIcherry(true)    ligar  |  botIcherry(false)  desligar
 //   botIcherryClasse()  ver classe atual
 //   botIcherryClasse(6) mudar classe do seletor por_nivel
+//   botIcherryMaxVitorias()     ver teto de vitorias (padrao 1000)
+//   botIcherryMaxVitorias(1000) mudar teto — so ataca se inimigo tiver menos
 //
 (function() {
   'use strict';
@@ -28,7 +30,7 @@
   if (window.__ICHERRY_OK__) return;
   window.__ICHERRY_OK__ = true;
 
-  var VERSAO = '1.2';
+  var VERSAO = '1.4';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var TEMPO_INICIAL_MS = 2000;
   var REFRESH_PENAL_MS = 30000;
@@ -38,19 +40,44 @@
   var KEY_ATIVO = 'ICHERRY_ATIVO';
   var KEY_CLASSE = 'ICHERRY_CLASSE';
   var KEY_ALERTA_TS = 'ICHERRY_ALERTA_SEM_SELETOR_TS';
+  var KEY_MAX_VITORIAS = 'ICHERRY_MAX_VITORIAS';
 
   var CLASSE_PADRAO = 6;
-  var reloadAgendado = false;
+  var MAX_VITORIAS_PADRAO = 1000;
 
-  function lerStorage(chave) {
+  // Filtro = whitelist: nomes/clas que NAO atacar (pagina /atacar).
+  var FILTRO_USUARIOS_PADRAO =
+    'Ghost,Spectre,Wraith,Phantom,Revenant,Eclipse,Oblivion,Noctis,Void,Whisper,Groifh,' +
+    'Todoroki,Kushina,Maito,Sasori,Thalli,Shinobi,Shadow,Katsuro,Katsu,Deidara,' +
+    'Yoruhime,Nezuko,Haggo,Titas,Nemo,Yuki,Taro,Zoe,Amora,Gamora,Alibaba,Shizuo,' +
+    'MIRANHA,PAINKILLER,Lula13,Madeira,Papel,Pedra,Tesoura,MARUKO,Ferro,TOBINHO,' +
+    'Shiroe,KILLER,BARDO,MARIO,CRUELL,CRUELA,Blackfire,Stark,Targaryen,Lannister,Baratheon';
+
+  var FILTRO_CLA_PADRAO = 'Tropa do NP';
+
+  var reloadAgendado = false;
+  var atacarJaProcessado = false;
+
+  function lerLocal(chave) {
     try { return localStorage.getItem(chave); } catch (e) {}
+    return null;
+  }
+
+  function gravarLocal(chave, valor) {
+    try { localStorage.setItem(chave, valor); } catch (e) {}
+  }
+
+  function lerSessao(chave) {
     try { return sessionStorage.getItem(chave); } catch (e) {}
     return null;
   }
 
-  function gravarStorage(chave, valor) {
-    try { localStorage.setItem(chave, valor); } catch (e) {}
+  function gravarSessao(chave, valor) {
     try { sessionStorage.setItem(chave, valor); } catch (e) {}
+  }
+
+  function limparAtivoGlobalLegado() {
+    try { localStorage.removeItem(KEY_ATIVO); } catch (e) {}
   }
 
   function parseSimNao(valor) {
@@ -68,30 +95,36 @@
     try {
       var params = new URLSearchParams(window.location.search || '');
       var ligar = parseSimNao(params.get('icherry'));
-      if (ligar !== null) gravarStorage(KEY_ATIVO, ligar ? '1' : '0');
+      if (ligar !== null) gravarSessao(KEY_ATIVO, ligar ? '1' : '0');
 
       var classeRaw = params.get('icherry_classe');
       if (classeRaw === null || classeRaw === '') classeRaw = params.get('classe');
       if (classeRaw !== null && classeRaw !== '') {
         var n = parseInt(String(classeRaw).trim(), 10);
-        if (!isNaN(n) && n >= 0) gravarStorage(KEY_CLASSE, String(n));
+        if (!isNaN(n) && n >= 0) gravarLocal(KEY_CLASSE, String(n));
+      }
+
+      var maxVitRaw = params.get('icherry_max_vitorias');
+      if (maxVitRaw !== null && maxVitRaw !== '') {
+        var mv = parseInt(String(maxVitRaw).trim(), 10);
+        if (!isNaN(mv) && mv >= 0) gravarLocal(KEY_MAX_VITORIAS, String(mv));
       }
     } catch (e) {}
   }
 
   function icherryAtivo() {
-    return lerStorage(KEY_ATIVO) === '1';
+    return lerSessao(KEY_ATIVO) === '1';
   }
 
   function obterClasseIcherry() {
-    var raw = lerStorage(KEY_CLASSE);
+    var raw = lerLocal(KEY_CLASSE);
     if (raw === null || raw === '') return CLASSE_PADRAO;
     var n = parseInt(raw, 10);
     return isNaN(n) ? CLASSE_PADRAO : n;
   }
 
   function definirIcherryAtivo(ligar) {
-    gravarStorage(KEY_ATIVO, ligar ? '1' : '0');
+    gravarSessao(KEY_ATIVO, ligar ? '1' : '0');
     return ligar;
   }
 
@@ -102,7 +135,7 @@
       console.warn('[iCherry] Classe invalida:', valor);
       return obterClasseIcherry();
     }
-    gravarStorage(KEY_CLASSE, String(n));
+    gravarLocal(KEY_CLASSE, String(n));
     return n;
   }
 
@@ -116,11 +149,165 @@
     return definirClasseIcherry(valor);
   };
 
+  function obterMaxVitoriasIcherry() {
+    var raw = lerLocal(KEY_MAX_VITORIAS);
+    if (raw === null || raw === '') return MAX_VITORIAS_PADRAO;
+    var n = parseInt(raw, 10);
+    return isNaN(n) || n < 0 ? MAX_VITORIAS_PADRAO : n;
+  }
+
+  function definirMaxVitoriasIcherry(valor) {
+    if (valor === undefined || valor === null) return obterMaxVitoriasIcherry();
+    var n = parseInt(valor, 10);
+    if (isNaN(n) || n < 0) {
+      console.warn('[iCherry] Max vitorias invalido:', valor);
+      return obterMaxVitoriasIcherry();
+    }
+    gravarLocal(KEY_MAX_VITORIAS, String(n));
+    return n;
+  }
+
+  window.botIcherryMaxVitorias = function(valor) {
+    if (valor === undefined) return obterMaxVitoriasIcherry();
+    return definirMaxVitoriasIcherry(valor);
+  };
+
   function normalizarTexto(texto) {
     return String(texto || '')
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function normalizarNomeFiltro(nome) {
+    return normalizarTexto(String(nome || '').trim());
+  }
+
+  function parseListaFiltro(raw) {
+    return String(raw || '')
+      .split(',')
+      .map(function(s) { return normalizarNomeFiltro(s); })
+      .filter(Boolean);
+  }
+
+  function obterFiltroUsuarios() {
+    return parseListaFiltro(FILTRO_USUARIOS_PADRAO);
+  }
+
+  function obterFiltroCla() {
+    return parseListaFiltro(FILTRO_CLA_PADRAO);
+  }
+
+  function nomeBloqueadoPorFiltro(nome) {
+    var norm = normalizarNomeFiltro(nome);
+    if (!norm) return false;
+    var lista = obterFiltroUsuarios();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
+  function claBloqueadoPorFiltro(cla) {
+    var norm = normalizarNomeFiltro(cla);
+    if (!norm || norm === '?') return false;
+    var lista = obterFiltroCla();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
+  function parseNumeroInteiro(texto) {
+    if (texto === null || texto === undefined) return null;
+    var s = String(texto).replace(/\./g, '').replace(/[^\d-]/g, '');
+    if (!s) return null;
+    var n = parseInt(s, 10);
+    return isNaN(n) ? null : n;
+  }
+
+  function extrairValorLinhaTabela(rotuloParcial, escopo) {
+    var root = escopo || document.getElementById('col_direita') || document;
+    var linhas = root.querySelectorAll('table tr');
+    var alvo = normalizarTexto(rotuloParcial);
+
+    for (var i = 0; i < linhas.length; i++) {
+      var tds = linhas[i].querySelectorAll('td');
+      if (tds.length < 2) continue;
+
+      var rotulo = normalizarTexto((tds[0].innerText || tds[0].textContent || '').trim());
+      if (rotulo.indexOf(alvo) !== 0) continue;
+
+      return (tds[1].innerText || tds[1].textContent || '').replace(/^\|\s*/, '').trim();
+    }
+
+    return null;
+  }
+
+  function extrairNomeInimigo() {
+    var col = document.getElementById('col_direita');
+    var texto = col ? (col.innerText || col.textContent || '') : '';
+
+    var m = texto.match(/Resultados da busca\s*[-–—]\s*Inimigo\s+(.+)/i);
+    if (m) return m[1].trim();
+
+    var els = col
+      ? col.querySelectorAll('td[style*="padding-top"]')
+      : document.querySelectorAll('td[style*="padding-top"]');
+
+    for (var i = 0; i < els.length; i++) {
+      var txt = (els[i].innerText || els[i].textContent || '').trim();
+      m = txt.match(/Inimigo\s+(.+)/i);
+      if (m) return m[1].trim();
+    }
+
+    return null;
+  }
+
+  function extrairDadosAlvoAtacar() {
+    var colDireita = document.getElementById('col_direita');
+    var inimigo = extrairNomeInimigo();
+    var cla = extrairValorLinhaTabela('clã', colDireita);
+    if (!cla) cla = extrairValorLinhaTabela('cla', colDireita);
+    var vitoriasTexto = extrairValorLinhaTabela('vitórias', colDireita);
+    if (!vitoriasTexto) vitoriasTexto = extrairValorLinhaTabela('vitorias', colDireita);
+
+    return {
+      inimigo: inimigo || '(desconhecido)',
+      cla: cla || '?',
+      vitoriasTexto: vitoriasTexto || '?',
+      vitorias: parseNumeroInteiro(vitoriasTexto)
+    };
+  }
+
+  function validarAlvoAtacar() {
+    var dados = extrairDadosAlvoAtacar();
+    var motivos = [];
+    var maxVitorias = obterMaxVitoriasIcherry();
+
+    if (dados.inimigo === '(desconhecido)') {
+      motivos.push('nome do inimigo nao encontrado');
+    } else if (nomeBloqueadoPorFiltro(dados.inimigo)) {
+      motivos.push('inimigo "' + dados.inimigo + '" esta no filtro de usuarios');
+    }
+
+    if (dados.cla && dados.cla !== '?' && claBloqueadoPorFiltro(dados.cla)) {
+      motivos.push('cla "' + dados.cla + '" esta no filtro de clas');
+    }
+
+    if (dados.vitorias === null) {
+      motivos.push('vitorias do inimigo nao encontradas na pagina');
+    } else if (dados.vitorias >= maxVitorias) {
+      motivos.push(
+        'inimigo tem ' + dados.vitorias + ' vitorias (max ' + (maxVitorias - 1) + ')'
+      );
+    }
+
+    return {
+      ok: motivos.length === 0,
+      motivos: motivos,
+      dados: dados
+    };
   }
 
   function parseSegundosTimer(texto) {
@@ -274,15 +461,37 @@
   }
 
   function processarAtacar() {
+    if (atacarJaProcessado) return;
+
     var btn = document.querySelector('form[action="atacar"] input[type="submit"]');
     if (!btn) {
       btn = document.querySelector('form[action*="atacar"] input[type="submit"]');
     }
-    if (btn) {
-      btn.click();
+    if (!btn) {
+      irParaCacadas();
       return;
     }
-    irParaCacadas();
+
+    var resultado = validarAlvoAtacar();
+    if (!resultado.ok) {
+      atacarJaProcessado = true;
+      console.warn(
+        '[iCherry] Alvo ignorado — ' + resultado.motivos.join(' | ') +
+        ' | inimigo: ' + resultado.dados.inimigo +
+        ' | cla: ' + resultado.dados.cla +
+        ' | vit: ' + resultado.dados.vitoriasTexto
+      );
+      irParaCacadas();
+      return;
+    }
+
+    atacarJaProcessado = true;
+    console.log(
+      '[iCherry] Alvo aprovado — ' + resultado.dados.inimigo +
+      ' | cla: ' + resultado.dados.cla +
+      ' | vit: ' + resultado.dados.vitorias
+    );
+    btn.click();
   }
 
   function processarCombate() {
@@ -317,6 +526,7 @@
     irParaCacadas();
   }
 
+  limparAtivoGlobalLegado();
   aplicarParamsUrl();
   setTimeout(tick, TEMPO_INICIAL_MS);
 })();
