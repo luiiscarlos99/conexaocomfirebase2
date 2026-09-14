@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iCherry - Caçada por Classe Ninja
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Bot simples: só caçada por classe (por_nivel). Sem login, Firebase ou captcha OCR.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -28,7 +28,7 @@
   if (window.__ICHERRY_OK__) return;
   window.__ICHERRY_OK__ = true;
 
-  var VERSAO = '1.0';
+  var VERSAO = '1.1';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var TEMPO_INICIAL_MS = 2000;
   var REFRESH_PENAL_MS = 30000;
@@ -237,12 +237,17 @@
     } catch (e) {}
   }
 
+  function limparCaptchaAguardando() {
+    try { sessionStorage.removeItem(KEY_CAPTCHA_ATE); } catch (e) {}
+  }
+
   function captchaAguardando() {
+    if (!ehPaginaCaptcha()) return false;
     try {
       var ate = parseInt(sessionStorage.getItem(KEY_CAPTCHA_ATE) || '0', 10);
       if (!ate) return false;
       if (Date.now() >= ate) {
-        sessionStorage.removeItem(KEY_CAPTCHA_ATE);
+        limparCaptchaAguardando();
         return false;
       }
       return true;
@@ -326,19 +331,20 @@
     if (!icherryAtivo()) return;
 
     if (ehPaginaCaptcha()) {
+      if (captchaAguardando()) {
+        var faltaCaptcha = REFRESH_CAPTCHA_MS;
+        try {
+          var ate = parseInt(sessionStorage.getItem(KEY_CAPTCHA_ATE) || '0', 10);
+          faltaCaptcha = Math.max(5000, ate - Date.now());
+        } catch (e) {}
+        agendarReload(faltaCaptcha);
+        return;
+      }
       processarCaptcha();
       return;
     }
 
-    if (captchaAguardando()) {
-      var faltaCaptcha = REFRESH_CAPTCHA_MS;
-      try {
-        var ate = parseInt(sessionStorage.getItem(KEY_CAPTCHA_ATE) || '0', 10);
-        faltaCaptcha = Math.max(5000, ate - Date.now());
-      } catch (e) {}
-      agendarReload(faltaCaptcha);
-      return;
-    }
+    limparCaptchaAguardando();
 
     if (ehPaginaCacadas()) {
       processarCacadas();
