@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         iCherry - Caçada por Classe Ninja
+// @name         iCherry - Caçada / Hunter Mults
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  Bot simples: caçada por classe (por_nivel) com filtro de alvo. Sem login, Firebase ou captcha OCR.
+// @version      1.6
+// @description  Caçada por classe (atacar com filtro) ou Hunter (achar mults na lista, parar em /atacar). Sem Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
 // ==/UserScript==
@@ -24,26 +24,45 @@
 //   botIcherryMaxVitorias()     ver teto de vitorias (padrao 1000)
 //   botIcherryMaxVitorias(1000) mudar teto — so ataca se inimigo tiver menos
 //
+// Hunter (mults — nao ataca; para 35 min em /atacar se achar nome da lista):
+//   ?icherry_hunter=1               liga hunter nesta aba (desliga caçada nesta aba)
+//   ?icherry_hunter=0               desliga hunter nesta aba
+//   ?icherry_hunter_classe=7        classe Eremita no #por_nivel (padrao 7)
+//   botIcherryHunter() / botIcherryHunter(true|false)
+//   botIcherryHunterClasse(n)       classe do hunter (so nesta aba)
+//   listaHunter('NOME1,NOME2,...')  substitui lista de mults (so nesta aba)
+//
 (function() {
   'use strict';
 
   if (window.__ICHERRY_OK__) return;
   window.__ICHERRY_OK__ = true;
 
-  var VERSAO = '1.4';
+  var VERSAO = '1.6';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var TEMPO_INICIAL_MS = 2000;
   var REFRESH_PENAL_MS = 30000;
   var REFRESH_CAPTCHA_MS = 300000;
   var ALERTA_SEM_SELETOR_MS = 120000;
+  var HUNTER_ESPERA_MULT_MS = 35 * 60 * 1000;
 
   var KEY_ATIVO = 'ICHERRY_ATIVO';
   var KEY_CLASSE = 'ICHERRY_CLASSE';
   var KEY_ALERTA_TS = 'ICHERRY_ALERTA_SEM_SELETOR_TS';
   var KEY_MAX_VITORIAS = 'ICHERRY_MAX_VITORIAS';
+  var KEY_HUNTER_ATIVO = 'ICHERRY_HUNTER_ATIVO';
+  var KEY_HUNTER_CLASSE = 'ICHERRY_HUNTER_CLASSE';
+  var KEY_HUNTER_LISTA = 'ICHERRY_HUNTER_LISTA';
 
   var CLASSE_PADRAO = 6;
+  var CLASSE_HUNTER_PADRAO = 7;
   var MAX_VITORIAS_PADRAO = 1000;
+
+  var HUNTER_LISTA_PADRAO =
+    'Todoroki,Kushina,Maito,Sasori,Thalli,Shinobi,Shadow,Katsuro,Katsu,Deidara,' +
+    'Nezuko,Haggo,Titas,Nemo,Yuki,Taro,Zoe,Amora,Gamora,Alibaba,' +
+    'MIRANHA,PAINKILLER,Lula13,Madeira,Papel,Pedra,Tesoura,MARUKO,Ferro,TOBINHO,' +
+    'KILLER,BARDO,MARIO,CRUELL,CRUELA,Blackfire,Stark,Targaryen,Lannister,Baratheon';
 
   // Filtro = whitelist: nomes/clas que NAO atacar (pagina /atacar).
   var FILTRO_USUARIOS_PADRAO =
@@ -57,6 +76,8 @@
 
   var reloadAgendado = false;
   var atacarJaProcessado = false;
+  var hunterAtacarJaProcessado = false;
+  var hunterEsperaTimer = null;
 
   function lerLocal(chave) {
     try { return localStorage.getItem(chave); } catch (e) {}
@@ -95,7 +116,22 @@
     try {
       var params = new URLSearchParams(window.location.search || '');
       var ligar = parseSimNao(params.get('icherry'));
-      if (ligar !== null) gravarSessao(KEY_ATIVO, ligar ? '1' : '0');
+      if (ligar !== null) {
+        if (ligar) gravarSessao(KEY_HUNTER_ATIVO, '0');
+        gravarSessao(KEY_ATIVO, ligar ? '1' : '0');
+      }
+
+      var ligarHunter = parseSimNao(params.get('icherry_hunter'));
+      if (ligarHunter !== null) {
+        if (ligarHunter) gravarSessao(KEY_ATIVO, '0');
+        gravarSessao(KEY_HUNTER_ATIVO, ligarHunter ? '1' : '0');
+      }
+
+      var classeHunterRaw = params.get('icherry_hunter_classe');
+      if (classeHunterRaw !== null && classeHunterRaw !== '') {
+        var ch = parseInt(String(classeHunterRaw).trim(), 10);
+        if (!isNaN(ch) && ch >= 0) gravarSessao(KEY_HUNTER_CLASSE, String(ch));
+      }
 
       var classeRaw = params.get('icherry_classe');
       if (classeRaw === null || classeRaw === '') classeRaw = params.get('classe');
@@ -116,6 +152,14 @@
     return lerSessao(KEY_ATIVO) === '1';
   }
 
+  function icherryHunterAtivo() {
+    return lerSessao(KEY_HUNTER_ATIVO) === '1';
+  }
+
+  function algumModoIcherryAtivo() {
+    return icherryAtivo() || icherryHunterAtivo();
+  }
+
   function obterClasseIcherry() {
     var raw = lerLocal(KEY_CLASSE);
     if (raw === null || raw === '') return CLASSE_PADRAO;
@@ -124,9 +168,80 @@
   }
 
   function definirIcherryAtivo(ligar) {
+    if (ligar) gravarSessao(KEY_HUNTER_ATIVO, '0');
     gravarSessao(KEY_ATIVO, ligar ? '1' : '0');
     return ligar;
   }
+
+  function definirIcherryHunterAtivo(ligar) {
+    if (ligar) gravarSessao(KEY_ATIVO, '0');
+    gravarSessao(KEY_HUNTER_ATIVO, ligar ? '1' : '0');
+    return ligar;
+  }
+
+  function obterClasseHunter() {
+    var raw = lerSessao(KEY_HUNTER_CLASSE);
+    if (raw === null || raw === '') return CLASSE_HUNTER_PADRAO;
+    var n = parseInt(raw, 10);
+    return isNaN(n) ? CLASSE_HUNTER_PADRAO : n;
+  }
+
+  function definirClasseHunter(valor) {
+    if (valor === undefined || valor === null) return obterClasseHunter();
+    var n = parseInt(valor, 10);
+    if (isNaN(n) || n < 0) {
+      console.warn('[iCherry Hunter] Classe invalida:', valor);
+      return obterClasseHunter();
+    }
+    gravarSessao(KEY_HUNTER_CLASSE, String(n));
+    return n;
+  }
+
+  function obterListaHunterRaw() {
+    var raw = lerSessao(KEY_HUNTER_LISTA);
+    if (raw === null || String(raw).trim() === '') return HUNTER_LISTA_PADRAO;
+    return String(raw).trim();
+  }
+
+  function obterListaHunter() {
+    return parseListaFiltro(obterListaHunterRaw());
+  }
+
+  function definirListaHunter(lista) {
+    if (lista === undefined || lista === null) return obterListaHunterRaw();
+    var s = String(lista).trim();
+    if (!s) {
+      console.warn('[iCherry Hunter] Lista vazia — mantendo lista atual.');
+      return obterListaHunterRaw();
+    }
+    gravarSessao(KEY_HUNTER_LISTA, s);
+    return s;
+  }
+
+  function nomeNaListaHunter(nome) {
+    var norm = normalizarNomeFiltro(nome);
+    if (!norm) return false;
+    var lista = obterListaHunter();
+    for (var i = 0; i < lista.length; i++) {
+      if (norm === lista[i]) return true;
+    }
+    return false;
+  }
+
+  window.botIcherryHunter = function(ligar) {
+    if (ligar === undefined) return icherryHunterAtivo();
+    return definirIcherryHunterAtivo(!!ligar);
+  };
+
+  window.botIcherryHunterClasse = function(valor) {
+    if (valor === undefined) return obterClasseHunter();
+    return definirClasseHunter(valor);
+  };
+
+  window.listaHunter = function(lista) {
+    if (lista === undefined) return obterListaHunterRaw();
+    return definirListaHunter(lista);
+  };
 
   function definirClasseIcherry(valor) {
     if (valor === undefined || valor === null) return obterClasseIcherry();
@@ -397,7 +512,7 @@
     try { sessionStorage.setItem(KEY_ALERTA_TS, String(agora)); } catch (e) {}
     window.alert(
       'iCherry: seletor de classe (por_nivel) nao encontrado nesta pagina.\n' +
-      'Nao e possivel realizar a caçada por classe ninja.'
+      'Nao e possivel realizar a caçada por classe.'
     );
   }
 
@@ -418,14 +533,17 @@
     agendarReload(REFRESH_CAPTCHA_MS);
   }
 
-  function executarCacadaPorClasse() {
+  function executarCacadaPorClasse(classeValor) {
     var sel = seletorClasseDisponivel();
     if (!sel) {
       alertarSemSeletorClasse();
       return false;
     }
 
-    var classe = obterClasseIcherry();
+    var classe = classeValor !== undefined && classeValor !== null
+      ? parseInt(classeValor, 10)
+      : obterClasseIcherry();
+    if (isNaN(classe)) classe = obterClasseIcherry();
     sel.select.value = String(classe);
     try { sel.select.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
 
@@ -458,6 +576,90 @@
     }
 
     executarCacadaPorClasse();
+  }
+
+  function processarCacadasHunter() {
+    if (emPenalidadeCacadas()) {
+      agendarReload(REFRESH_PENAL_MS);
+      return;
+    }
+
+    if (!seletorClasseDisponivel()) {
+      alertarSemSeletorClasse();
+      agendarReload(REFRESH_PENAL_MS);
+      return;
+    }
+
+    executarCacadaPorClasse(obterClasseHunter());
+  }
+
+  function cancelarEsperaHunterMemoria() {
+    if (hunterEsperaTimer) {
+      clearTimeout(hunterEsperaTimer);
+      hunterEsperaTimer = null;
+    }
+  }
+
+  function paginaAtacarVeioDeReload() {
+    try {
+      var entries = performance.getEntriesByType('navigation');
+      if (entries && entries.length && entries[0].type === 'reload') return true;
+    } catch (e) {}
+    try {
+      if (performance.navigation && performance.navigation.type === 1) return true;
+    } catch (e2) {}
+    return false;
+  }
+
+  function processarAtacarHunter() {
+    if (hunterAtacarJaProcessado || hunterEsperaTimer) return;
+
+    var dados = extrairDadosAlvoAtacar();
+    var nome = dados.inimigo;
+
+    if (nome === '(desconhecido)') {
+      hunterAtacarJaProcessado = true;
+      console.warn('[iCherry Hunter] Nome do inimigo nao encontrado — voltando a caçadas.');
+      irParaCacadas();
+      return;
+    }
+
+    if (!nomeNaListaHunter(nome)) {
+      hunterAtacarJaProcessado = true;
+      console.log(
+        '[iCherry Hunter] Nao e mult da lista — ' + nome + ' | voltando a caçadas.'
+      );
+      irParaCacadas();
+      return;
+    }
+
+    if (paginaAtacarVeioDeReload()) {
+      hunterAtacarJaProcessado = true;
+      console.log(
+        '[iCherry Hunter] Reload em /atacar com mult ' + nome +
+        ' — segue caçando (sem nova espera de 35 min).'
+      );
+      irParaCacadas();
+      return;
+    }
+
+    hunterAtacarJaProcessado = true;
+    var minutos = Math.round(HUNTER_ESPERA_MULT_MS / 60000);
+    console.log(
+      '[iCherry Hunter] Mult encontrada: ' + nome + ' — parado em /atacar por ' +
+      minutos + ' min (sem atacar). Refresh cancela a espera e segue o fluxo normal.'
+    );
+    window.alert(
+      'iCherry Hunter\n\nMult encontrada: ' + nome +
+      '\n\nEsta aba fica em /atacar por ' + minutos + ' min (nao ataca).'
+    );
+
+    hunterEsperaTimer = setTimeout(function() {
+      hunterEsperaTimer = null;
+      hunterAtacarJaProcessado = false;
+      console.log('[iCherry Hunter] Espera de ' + minutos + ' min terminada — voltando a caçadas.');
+      irParaCacadas();
+    }, HUNTER_ESPERA_MULT_MS);
   }
 
   function processarAtacar() {
@@ -496,33 +698,42 @@
 
   function processarCombate() {
     setTimeout(function() {
-      if (icherryAtivo()) irParaCacadas();
+      if (algumModoIcherryAtivo()) irParaCacadas();
     }, 1500);
   }
 
   function tick() {
-    if (!icherryAtivo()) return;
+    if (!algumModoIcherryAtivo()) return;
+
+    var modoHunter = icherryHunterAtivo();
 
     if (ehPaginaCaptcha()) {
+      cancelarEsperaHunterMemoria();
       processarCaptcha();
       return;
     }
 
     if (ehPaginaCacadas()) {
-      processarCacadas();
+      cancelarEsperaHunterMemoria();
+      hunterAtacarJaProcessado = false;
+      if (modoHunter) processarCacadasHunter();
+      else processarCacadas();
       return;
     }
 
     if (ehPaginaAtacar()) {
-      processarAtacar();
+      if (modoHunter) processarAtacarHunter();
+      else processarAtacar();
       return;
     }
 
     if (ehPaginaCombate()) {
+      cancelarEsperaHunterMemoria();
       processarCombate();
       return;
     }
 
+    cancelarEsperaHunterMemoria();
     irParaCacadas();
   }
 
