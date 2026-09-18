@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         iCherry - Caçada / Hunter Mults
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Caçada por classe (atacar com filtro) ou Hunter (achar mults na lista, parar em /atacar). Sem Firebase.
 // @match        https://shadowofshinobi.com/*
 // @grant        none
@@ -38,7 +38,7 @@
   if (window.__ICHERRY_OK__) return;
   window.__ICHERRY_OK__ = true;
 
-  var VERSAO = '1.6';
+  var VERSAO = '1.7';
   var URL_CACADAS = 'https://shadowofshinobi.com/cacadas';
   var TEMPO_INICIAL_MS = 2000;
   var REFRESH_PENAL_MS = 30000;
@@ -648,10 +648,6 @@
     console.log(
       '[iCherry Hunter] Mult encontrada: ' + nome + ' — parado em /atacar por ' +
       minutos + ' min (sem atacar). Refresh cancela a espera e segue o fluxo normal.'
-    );
-    window.alert(
-      'iCherry Hunter\n\nMult encontrada: ' + nome +
-      '\n\nEsta aba fica em /atacar por ' + minutos + ' min (nao ataca).'
     );
 
     hunterEsperaTimer = setTimeout(function() {
